@@ -1,19 +1,7 @@
-mod cli;
-mod commands;
-mod date;
-mod db;
-mod render;
-mod status;
-mod stint;
-mod storage;
-mod time;
-mod week;
-mod week_target;
-mod week_view;
-
 use chrono::{DateTime, Local, Timelike};
 use clap::Parser;
-use cli::{Cli, Command, WeekAction};
+use mlm::cli::{Cli, Command, WeekAction};
+use mlm::{commands, db, status, week_target, week_view};
 
 fn main() {
     std::process::exit(run());

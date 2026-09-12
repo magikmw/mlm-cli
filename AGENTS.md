@@ -23,11 +23,24 @@ stretch ideas (not implemented):
 
 ## Layout
 
-- `src/cli.rs` — clap arg definitions (`Cli`, `Command`)
-- `src/db.rs` — SQLite connection + schema, app-data path resolution
-  via `directories::ProjectDirs`
-- `src/time.rs` — time-of-day parsing and duration math (chrono)
-- `src/main.rs` — wires the above together
+`mlm` is both a library (`src/lib.rs`) and a thin binary (`src/main.rs`)
+in the same package, specifically so `examples/`/`tests/` can reuse the
+real logic instead of re-deriving it — new top-level modules go in
+`src/lib.rs`'s `pub mod` list.
+
+- `src/cli.rs` — clap arg definitions (`Cli`, `Command`, per-command args)
+- `src/db.rs` — SQLite connection + schema/migrations, app-data path
+  resolution via `directories::ProjectDirs` (+ `MLM_DB_PATH` override)
+- `src/time.rs` — TIME/DURATION parsing and the one duration formatter
+- `src/date.rs` — DATE/WEEK_ID parsing, `WeekId`
+- `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read
+- `src/stint.rs` — LIFO stint-pairing algorithm (§4.3)
+- `src/week.rs` — target/carry/fulfillment accounting (§2.4/§5)
+- `src/render.rs` — shared rendering helpers used by both `status`/`week`
+- `src/commands.rs`, `src/status.rs`, `src/week_target.rs`,
+  `src/week_view.rs` — per-command wiring over the above
+- `src/main.rs` — CLI entry point: parses args, dispatches, exit code
+- `examples/seed_test_data.rs` — dev-only test-data generator (below)
 
 ## Conventions
 
@@ -36,7 +49,7 @@ stretch ideas (not implemented):
 - Target platforms: Linux and Windows (MSVC). `rusqlite` uses the
   `bundled` feature so SQLite compiles from source — no external
   system dependency needed on either platform.
-- Cargo.lock is committed (this is a binary, not a library).
+- Cargo.lock is committed (this ships a binary).
 
 ## Verifying changes
 
@@ -47,6 +60,35 @@ cargo clippy --all-targets -- -D warnings
 MLM_DB_PATH=/tmp/mlm-check.db cargo run -- start "9:00" "note"
 MLM_DB_PATH=/tmp/mlm-check.db cargo run -- status
 ```
+
+## Test-data seeding (dev tool, not shipped)
+
+`examples/seed_test_data.rs` populates a database with a few weeks of
+randomized-but-plausible punches/notes ending today, for manually
+poking at `status`/`week` without hand-typing entries. Writes through
+the real `mlm::storage`/`mlm::db` insert functions (so it's exactly
+what real punches would look like), just backdated — something the
+real CLI deliberately never allows (§1.2). Not part of the shipped
+command surface.
+
+```sh
+cargo run --example seed_test_data -- --db /tmp/mlm-seed.db --seed 42
+MLM_DB_PATH=/tmp/mlm-seed.db cargo run -- status
+```
+
+Refuses to run without an explicit `--db PATH` or `MLM_DB_PATH` set —
+never guesses/falls back to the real app-data path. `--weeks N`
+(default 3) and `--seed N` (for a reproducible run) are also
+available. Occasionally injects a deliberate anomaly (an orphaned
+`end`) so `[!]` rendering has something to show too — printed to
+stdout when it happens, along with a `try:` block naming the exact
+commands to inspect the result.
+
+Since it's a `crate::` package with both a `lib.rs` and `main.rs`
+(added specifically so this tool and `examples`/`tests` can reuse the
+real logic modules instead of re-deriving them), any new top-level
+module goes in `src/lib.rs`'s `pub mod` list, not `src/main.rs`'s —
+`main.rs` is just the thin CLI entry point now.
 
 ## Pre-commit quality gate (CRAP-ish: complexity + coverage)
 
