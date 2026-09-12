@@ -10,64 +10,9 @@
 // "dead" from the non-test build's point of view.
 #![allow(dead_code)]
 
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::{BTreeMap, BTreeSet};
 
-// TODO(integration): replace with `use crate::date::WeekId;` once Milestone 2
-// lands. This is a local stand-in matching PLAN.md contract 9's API exactly
-// (private fields, validated constructor, `start()`, `from_date()`, `next()`,
-// `iso_year()`/`week()` accessors, `Copy + Ord` with chronological order).
-/// An ISO (year, week) pair, e.g. `2026-07`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WeekId {
-    // Field order is load-bearing: derived `Ord` must be year-then-week so
-    // that `BTreeSet::iter().next()` yields the chronologically earliest week.
-    iso_year: i32,
-    week: u32,
-}
-
-impl WeekId {
-    /// Checked constructor: `None` when `week` is not a real ISO week of
-    /// `iso_year` (e.g. week 53 of a 52-week year, or week 0).
-    pub fn new(iso_year: i32, week: u32) -> Option<Self> {
-        NaiveDate::from_isoywd_opt(iso_year, week, Weekday::Mon)?;
-        Some(Self { iso_year, week })
-    }
-
-    /// The ISO year component.
-    pub fn iso_year(self) -> i32 {
-        self.iso_year
-    }
-
-    /// The ISO week number component (1-53).
-    pub fn week(self) -> u32 {
-        self.week
-    }
-
-    /// The Monday that starts this week.
-    pub fn start(self) -> NaiveDate {
-        NaiveDate::from_isoywd_opt(self.iso_year, self.week, Weekday::Mon)
-            .expect("WeekId is validated at construction")
-    }
-
-    /// The ISO week containing `date`.
-    pub fn from_date(date: NaiveDate) -> Self {
-        let iso = date.iso_week();
-        Self {
-            iso_year: iso.year(),
-            week: iso.week(),
-        }
-    }
-
-    /// The next ISO week in sequence.
-    ///
-    /// Deliberately date-based rather than "week + 1, wrapping at 52":
-    /// the naive version silently corrupts every 53-week ISO year
-    /// (2020, 2026, 2032, ...).
-    pub fn next(self) -> Self {
-        Self::from_date(self.start() + Duration::days(7))
-    }
-}
+use crate::date::WeekId;
 
 /// SPEC §2.3 / §6.2: 40h, used when a week has no `week_targets` row.
 pub const DEFAULT_WEEK_TARGET_MINUTES: i64 = 2400;
@@ -284,10 +229,11 @@ pub fn daily_target_minutes(week_target_minutes: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Datelike, Duration, NaiveDate, Weekday};
 
     /// Test-only shorthand for a validated `WeekId`.
     fn wk(year: i32, week: u32) -> WeekId {
-        WeekId::new(year, week).expect("test fixture uses a real ISO week")
+        WeekId::new(year, week, "test").expect("test fixture uses a real ISO week")
     }
 
     /// Number of ISO weeks in `year`, read off chrono rather than assumed.
@@ -344,9 +290,9 @@ mod tests {
 
     #[test]
     fn week_53_of_a_52_week_year_is_not_constructible() {
-        assert_eq!(WeekId::new(2025, 53), None);
-        assert_eq!(WeekId::new(2026, 54), None);
-        assert_eq!(WeekId::new(2026, 0), None);
+        assert!(WeekId::new(2025, 53, "test").is_err());
+        assert!(WeekId::new(2026, 54, "test").is_err());
+        assert!(WeekId::new(2026, 0, "test").is_err());
     }
 
     #[test]
