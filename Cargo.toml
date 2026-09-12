@@ -7,6 +7,7 @@ authors = ["Michał Walczak <mw@michalwalczak.eu>"]
 description = "A quick CLI time tracker: log start/stop punches and notes, see your day/week status."
 license = "EUPL-1.2"
 readme = "README.md"
+repository = "https://github.com/magikmw/mlm-cli"
 keywords = ["time-tracking", "cli", "productivity", "timesheet"]
 categories = ["command-line-utilities"]
 # Internal planning/process artifacts — not useful to someone
@@ -17,8 +18,12 @@ exclude = [
     "PLAN.md",
     "plans/",
     ".githooks/",
+    ".github/",
     "clippy.toml",
     "coverage-baseline.json",
+    "cliff.toml",
+    "dist-workspace.toml",
+    "scripts/",
 ]
 
 [dependencies]
@@ -36,3 +41,15 @@ rusqlite_migration = "2.6.0"
 [dev-dependencies]
 chrono-tz = "0.10.4"
 tempfile = "3.27.0"
+
+# cargo-binstall verifies release artifacts against this key; see SIGNING.md.
+# The matching private key lives only as the MINISIGN_SECRET_KEY GitHub
+# Actions secret, never in this repo.
+[package.metadata.binstall.signing]
+algorithm = "minisign"
+pubkey = "RWTNO3Iugq4ICzcJhLwnwtOT1T0evn7RYI0951dfE+IkEyRykSvv0V/n"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
