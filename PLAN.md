@@ -7,48 +7,130 @@ review pass, so each one is written to stand alone as a reviewable unit:
 a bounded piece of behavior, a spec citation, and acceptance criteria
 concrete enough to write tests from without asking clarifying questions.
 
-## Ordering rationale
+## Ordering & parallelization strategy
 
 The current scaffold (`cli.rs`, `db.rs`, `time.rs`, `main.rs`) has the
 right module shape but placeholder content only (a single flat
 `entries` table, naive time parsing with no UTC/local split, a CLI
 surface that doesn't match §3). The plan below replaces the scaffold's
-contents milestone by milestone, ordered so nothing is built on top of
-behavior that hasn't been tested yet:
+contents milestone by milestone.
 
-1. **Parsing/formatting primitives first** (time-of-day, duration,
-   date, week-id) — pure functions, no DB, no CLI wiring, and almost
-   every later milestone depends on at least one of them.
-2. **Schema and migrations next** — the storage shape everything else
-   reads and writes, but still no CLI surface.
-3. **Punch/note storage** (insert + read back) — exercises the schema
-   with real rows before anything tries to derive meaning from them.
-4. **Stint-pairing logic** as its own unit, over an in-memory or
-   fixture set of punches — the trickiest pure-logic piece (§4.3), kept
-   separate from both storage and rendering so its edge cases (E7, E8,
-   E14, E15) get focused tests without CLI or output noise.
-5. **Week accounting** (target/carry/fulfillment) as its own unit,
-   likewise over fixture data — the other trickiest pure-logic piece
-   (§2.4, §5), independent of stint pairing and of rendering.
-6. **CLI commands that only write** (`start`, `stop`, `note`) — thin
-   wiring over milestones 1-3, testable via exit codes/DB state without
-   needing any rendering yet.
-7. **`week target`** — a small write command, slotted after week
-   accounting exists to validate against/feed it.
-8. **Rendering/output** for `status` and `week` — layered last since it
-   consumes everything above (parsing, storage, stint pairing, week
-   accounting) and is where most of §7's formatting rules and most of
-   §8's flows converge into observable command output.
-9. **Cross-cutting polish pass** (error-tier consistency, exit codes,
-   DST spot-check, plain-ASCII audit) as a final verification milestone
-   that re-reads across everything already built rather than adding new
-   behavior.
+This revision (post independent review) is written for **parallel
+worktrees**, not a strict linear sequence: milestones are numbered for
+readability, not execution order. Two of the "trickiest pure-logic"
+milestones (5, 6) are deliberately fixture-driven rather than
+DB-dependent specifically so they don't have to wait on storage's real
+implementation — only on an agreed data-shape contract, pinned in
+advance (see "Interface contracts to pin down before parallel work"
+below). Skipping that pinning step and letting each worktree guess its
+own shapes is the single biggest risk to this working smoothly; do not
+open parallel worktrees before those contracts are agreed.
+
+**Wave 1 — start immediately, no dependencies beyond the current
+scaffold and the pinned contracts:**
+- Milestone 1 (time/duration parsing+formatting)
+- Milestone 2 (date/week-id parsing+formatting)
+- Milestone 3 (schema/migrations)
+- Milestone 5 (stint pairing) — against the pinned punch-shape and
+  stint-classification-result contracts, not Milestone 4's actual code
+- Milestone 6 (week accounting) — against the pinned week-id and
+  worked-minutes/accounting-result contracts, not Milestone 4/5's
+  actual code
+
+**Wave 2 — needs specific wave-1 artifacts to land:**
+- Milestone 4 (punch/note storage) — needs Milestone 1 (TIME parsing)
+  and Milestone 3 (schema)
+- Milestone 8 (`week target` command) — needs Milestone 2 (WEEK_ID
+  parsing) and Milestone 3 (schema) **only**; it does not actually
+  exercise Milestone 6's accounting logic (its acceptance criteria
+  never calls into the week-walk), so it belongs in wave 2 rather than
+  after week accounting as earlier drafts of this plan implied
+
+**Wave 3 — integration + the shared rendering surface:**
+- Swap Milestone 5/6's fixture inputs for Milestone 4's real storage
+  reads (no new behavior, just wiring real data through already-tested
+  logic)
+- Milestone 7 (`start`/`stop`/`note` commands) — needs Milestone 1 and
+  Milestone 4
+- **Milestone 9 (shared rendering helpers, new in this revision)** —
+  needs Milestones 1, 2, 5, 6; exists specifically to stop Milestones
+  10 and 11 from each independently reinventing the same
+  current-week/headline-framing logic and anomaly-summary shape (see
+  "Recommended plan changes" context below and the milestone itself)
+
+**Wave 4 — leaves, need everything above:**
+- Milestone 10 (`status` command + rendering)
+- Milestone 11 (`week` command + rendering)
+
+**Wave 5 — final verification, no new behavior:**
+- Cross-cutting polish pass (error-tier consistency, exit codes, DST
+  spot-check, plain-ASCII audit) — re-reads across everything already
+  built rather than adding anything new
+
+**Critical path** (the longest genuinely-sequential chain, which sets
+the minimum wall-clock time regardless of worker count): Milestone 3
+→ Milestone 4 → (fixture-to-real-data integration for 5/6) → Milestone
+9 → Milestones 10/11 → cross-cutting. That's five sequential stages.
+Skipping the fixture strategy (making 5/6 wait for 4's real
+implementation instead) would add a stage and remove the wave-1
+parallelism that makes 5 and 6 available on day one.
 
 Non-goals from §1.2 (editing/deleting entries, project tagging, the
 ratatui dashboard, shell-prompt integration, non-ISO weeks, 12h time
 input, `+N`/`-N` relative dates, backdated punches, cross-midnight
 stint pairing) are excluded from every milestone below; none of them
 gets a milestone.
+
+## Interface contracts to pin down before opening parallel worktrees
+
+These are handoff shapes between milestones — described in plain
+terms, not code. Agree all of these across whoever's picking up wave-1
+work *before* any worktree opens; guessing independently here is what
+causes painful merge-time rework, not the milestone boundaries
+themselves.
+
+1. **Punch value shape** (Milestone 4 → Milestone 5, and what
+   Milestone 5's fixtures stand in for pre-integration): an ordered
+   instant (UTC + local calendar date), a start/end kind, and an
+   id/insertion-order tiebreaker — matching Milestone 4's existing
+   "sorted by instant, ties broken by insertion order" contract. Pin
+   down the actual *shape* handed across (a full row vs. a lighter
+   intermediate value), not just the sort behavior.
+2. **Stint classification result shape** (Milestone 5 → Milestones 9,
+   10, 11): a list of completed stints (start, end, duration), the
+   open stint if any, a multi-open flag, and a list of orphaned-end
+   anomalies (each with its own timestamp). Must separate
+   *renderable anomaly detail* (full sentences, needed by Milestone
+   10's status output) from a cheap *has-any-anomaly* signal (needed
+   by Milestone 11's per-row marker) — this split is exactly what
+   prevents Milestones 10 and 11 from each building their own adapter
+   over Milestone 5's raw output.
+3. **Week accounting result shape** (Milestone 6 → Milestones 9, 10,
+   11): target, carry_in, worked, fulfillment, owed, carry_out, all
+   signed integer minutes, plus an explicit "is this the actual
+   currently-ongoing week" boolean rather than each renderer
+   recomputing that comparison independently.
+4. **Per-day rollup shape for `week`'s 7-row table** (Milestones 5+6 →
+   Milestone 11): a per-date list, all 7 calendar dates of the week
+   included (empty ones at zero), each with total completed-stint
+   minutes, a has-anomaly boolean, and an is-ongoing boolean — a
+   distinct contract from Milestone 5's single-date stint list, since
+   only Milestone 11 needs the week-wide roll-up.
+5. **Shared rendering helpers** (Milestone 9's actual deliverable): the
+   current-vs-past/future week decision plus its headline wording
+   (deadline-framed vs. plain-total), and the duration formatter
+   (already centralized in Milestone 1) — Milestones 10 and 11 both
+   call the same implementation, never reimplement either.
+6. **"Now" injection convention**: every milestone from 5 onward that
+   needs "current time" (open-stint duration, EOD estimate, "is this
+   week current," the `(ongoing)` marker) takes it as a supplied
+   value, never a hidden global clock read. Agree the shape (a plain
+   parameter vs. some other convention) once, up front.
+7. **Error type/shape for hard errors**: every parsing/storage
+   function that can hard-error (Milestones 1, 2, 4) needs an agreed
+   error shape so Milestones 7 and 8's CLI wiring — plausibly built in
+   parallel against a stub — doesn't need rework once the real error
+   type lands.
 
 ---
 
@@ -285,7 +367,7 @@ accompanying note row when `NOTE` is given), or insert a standalone
 note for `note`. Surface hard errors (malformed `TIME`, empty/
 whitespace note) as a nonzero exit with a stderr message and no write.
 No output rendering beyond whatever minimal confirmation is needed —
-`status`/`week` rendering is Milestone 9.
+`status`/`week` rendering is Milestones 10/11.
 
 **Acceptance criteria**:
 - `start` with no arguments inserts a start punch at "now"; with a
@@ -313,9 +395,12 @@ No output rendering beyond whatever minimal confirmation is needed —
 `WEEK_ID`/`DURATION`, missing `DURATION`), §2.3 (`week_targets` upsert
 semantics).
 
-**Scope**: Wire the CLI surface on top of Milestones 1, 2, and 3:
-parse an optional `WEEK_ID` (defaulting to the current week) and a
-required `DURATION`, and set/replace that week's target override.
+**Scope**: Wire the CLI surface on top of Milestones 1, 2, and 3 only
+— parse an optional `WEEK_ID` (defaulting to the current week) and a
+required `DURATION`, and set/replace that week's target override. This
+milestone does **not** depend on Milestone 6's accounting logic (it
+only writes a row; Milestone 6 reads it back later) — it belongs in
+wave 2, parallel with Milestone 4, not gated behind week accounting.
 
 **Acceptance criteria**:
 - `week target 2026-07 33h30m` sets that week's override to the
@@ -334,7 +419,57 @@ required `DURATION`, and set/replace that week's target override.
 
 ---
 
-## Milestone 9 — `status` command and rendering
+## Milestone 9 — Shared rendering helpers
+
+**New in this revision**, extracted per independent review of the
+original plan, specifically to make Milestones 10 and 11 safely
+parallelizable — without it, both would need to independently
+implement the identical "is this the actual current week" decision and
+its headline wording, risking two subtly different implementations
+rather than just duplicated code.
+
+**Spec sections**: §7.1 and §7.2 (both define the same
+deadline-framed-vs-plain-total headline split), §7.3 (anomaly
+rendering conventions shared by both commands), NOTES.md decisions 18,
+25, 26 (the underlying week-framing rule these both implement).
+
+**Scope**: Implement, as a small standalone unit consumed by both
+Milestones 10 and 11: (a) given a week (from Milestone 6's result) and
+"now," decide whether that week is the actual currently-ongoing one,
+and produce the correct headline wording either way — `"<owed> left by
+end of <weekday>"` (today's weekday, always, even when the thing being
+displayed is a different date within that same current week) or the
+plain `"Total still owed <owed>"` / `"Total ahead <owed>"` form; (b)
+the anomaly-rendering conventions from §7.3 in both their forms — a
+full detail line (`status`'s "one line per anomaly") and a bare
+per-row marker (`week`'s inline `[!] `) — built over Milestone 5's
+anomaly output so Milestones 10/11 each call one implementation
+instead of building their own adapter. No CLI wiring, no full-page
+layout — just these two decision/formatting units.
+
+**Acceptance criteria**:
+- Given a week that is the actual current one, the headline decision
+  returns the deadline-framed wording keyed to today's weekday — even
+  when invoked for a non-today date that happens to fall in the same
+  week (F11's exact scenario).
+- Given a week that is not the current one (past or future), the
+  headline decision returns the plain `Total still owed`/`Total ahead`
+  wording, with no weekday reference (F10, and §7.2's second worked
+  example).
+- The full anomaly-detail form renders one line per anomaly, using the
+  exact wording from §7.3's examples (`[!] N open stints...`, `[!]
+  orphaned end at HH:MM...`), never coalescing two or more orphaned
+  ends on the same date into a single line (E8).
+- The per-row marker form returns a boolean/marker suitable for
+  appending to a `week` table row, correctly true only when the date
+  has at least one anomaly, without needing the full detail text.
+- Both forms are driven by the same underlying anomaly data (Milestone
+  5's output) — no divergent logic between what counts as "has an
+  anomaly" for the two forms.
+
+---
+
+## Milestone 10 — `status` command and rendering
 
 **Spec sections**: §3.5 (`status` behavior), §7.1 (status output
 layout), §7.3 (anomaly rendering in status), §4.2 (duration format
@@ -344,11 +479,12 @@ reuse), all of §2.4's daily-target/EOD derivations as consumed here.
 the target date (today if omitted), pull that date's punches/notes,
 run Milestone 5's pairing, run Milestone 6's week accounting for the
 week *containing* that date, and render the full layout — header,
-day-total line, week line (deadline-framed vs. plain-total framed
-depending on whether that week is the actual current one), anomaly
-lines, stint list (omitted when empty), notes list (omitted when
-empty), and — only when `DATE` is literally today — the daily-target
-pace hint and estimated-EOD line in all three of its states.
+day-total line, week line (calling Milestone 9's headline decision
+rather than reimplementing the current-vs-not check), anomaly lines
+(via Milestone 9's detail-line form), stint list (omitted when empty),
+notes list (omitted when empty), and — only when `DATE` is literally
+today — the daily-target pace hint and estimated-EOD line in all three
+of its states.
 
 **Acceptance criteria**:
 - Today with one open stint and no completed ones: day total
@@ -384,20 +520,20 @@ pace hint and estimated-EOD line in all three of its states.
 
 ---
 
-## Milestone 10 — `week` command and rendering
+## Milestone 11 — `week` command and rendering
 
 **Spec sections**: §3.6 (`week` behavior), §7.2 (week output layout),
 §7.3 (anomaly rendering in week), §4.2 (duration format reuse).
 
-**Scope**: Wire `week [WEEK_ID]` on top of Milestones 2, 5, 6:
+**Scope**: Wire `week [WEEK_ID]` on top of Milestones 2, 5, 6, and 9:
 resolve the target week (current if omitted), compute all 7 days'
 per-date totals plus that week's target/carry-in/worked/fulfillment/
 owed, and render the header (week id + Mon-Sun span), the headline
-(deadline-framed for the current week, plain-total for a past/future
-week), all 7 date rows (always all 7, `00h 00m` for empty ones,
-`(ongoing)` marker only on today's row when applicable), the anomaly
-marker appended per-row where relevant, and the trailing carry-in/
-worked/fulfillment/target block.
+(calling Milestone 9's headline decision, not reimplementing it), all
+7 date rows (always all 7, `00h 00m` for empty ones, `(ongoing)`
+marker only on today's row when applicable), the anomaly marker
+appended per-row (via Milestone 9's marker form), and the trailing
+carry-in/worked/fulfillment/target block.
 
 **Acceptance criteria**:
 - The current, ongoing week renders exactly per §7.2's first worked
@@ -433,85 +569,78 @@ one of them. Call them out explicitly in each milestone's test plan
 rather than re-deriving them per milestone:
 
 - **DST-safe per-instant conversion (§2.1)**: applies to Milestone 4
-  (storage/write path) and Milestone 9 (display path, since a `status`
-  for a date spanning or adjacent to a transition must show correct
-  local times). F12 is the direct test; it should be exercised at
-  least once at the storage layer and once end-to-end through
+  (storage/write path) and Milestone 10 (display path, since a
+  `status` for a date spanning or adjacent to a transition must show
+  correct local times). F12 is the direct test; it should be exercised
+  at least once at the storage layer and once end-to-end through
   `status`, using a real transition date for the system/test
   timezone rather than a synthetic offset.
 - **Two-tier error handling (§6)**: hard errors (§6.1, reject/no-write/
   nonzero exit) vs. anomalies (§6.2, accepted/stored/surfaced later)
   is a distinction every write-command milestone (7, 8) and every
-  read-command milestone (9, 10) needs to preserve consistently — a
+  read-command milestone (10, 11) needs to preserve consistently — a
   hard error must never partially write, and an anomaly must never
   block a write. Worth a final consistency check in the last milestone
-  rather than trusting each milestone's local tests to add up.
+  rather than trusting each milestone's local tests to add up. This
+  pass must also concretely re-test **E6 end-to-end** (a DB open/
+  migration failure surfacing as a nonzero exit with a stderr message
+  and no write) through at least one write command (e.g. `start`) and
+  one read command (e.g. `status`) — Milestone 3 only proves this at
+  the schema layer; nothing else currently re-asserts it through an
+  actual command invocation, and it should not ship unverified at that
+  level.
 - **Exit codes (§6.3)**: `0` on success including anomaly-bearing
-  output, nonzero only for §6.1 hard errors — check across all five
-  commands (start, stop, note, week target, status, week — six,
-  actually) in one pass rather than per-milestone only.
-- **Plain-ASCII output (§7)**: applies to Milestones 9 and 10's
+  output, nonzero only for §6.1 hard errors — check across all six
+  commands (start, stop, note, week target, status, week) in one pass
+  rather than per-milestone only.
+- **Plain-ASCII output (§7)**: applies to Milestones 10 and 11's
   rendering; worth one dedicated scan over all rendered output (byte
   range check or explicit char-set assertion) rather than trusting
   visual inspection of each example.
 - **Duration formatting (§4.2)**: implemented once in Milestone 1,
-  consumed by Milestones 6, 9, 10 — later milestones should reuse the
-  same formatter/tests rather than re-implementing padding/sign logic,
-  and review should flag any milestone that doesn't.
+  consumed by Milestones 6, 9, 10, 11 — later milestones should reuse
+  the same formatter/tests rather than re-implementing padding/sign
+  logic, and review should flag any milestone that doesn't.
 - **"Now" as an injectable value**: `status`'s day total, EOD estimate,
   open-stint duration, and `week`'s `(ongoing)` marker all depend on
-  "current time." Every milestone from 5 onward that touches this
-  should treat "now" as a supplied/injectable value rather than a
-  hidden global read, or its tests cannot be made deterministic.
+  "current time," as does Milestone 9's current-week decision. Every
+  milestone from 5 onward that touches this should treat "now" as a
+  supplied/injectable value rather than a hidden global read, or its
+  tests cannot be made deterministic (see contract 6 above).
 
 ## Open risks / ambiguities to resolve before the relevant milestone
 
-- **Per-week worked-minutes query shape (feeds Milestone 6)**: the
-  spec doesn't say whether "a week's worked minutes" sums *completed*
-  stints only or also counts live/open-stint time. §2.4 and §5 talk
-  about `worked_minutes` as a plain sum with no mention of in-progress
-  time, and §7.1 explicitly says day total "isn't folded in live" for
-  ongoing stints — strongly implying week/day totals used in
-  accounting exclude the open stint's live minutes too, consistent
-  with "the total silently changing mid-read" being the thing avoided.
-  This plan assumes completed-stints-only for all totals feeding
-  Milestone 6, with the open stint's live duration used *only* for its
-  own display line and the EOD estimate — but this should be confirmed
-  explicitly before Milestone 6 starts, since it's inferred rather than
-  directly stated for the week-accounting path specifically.
+- ~~Per-week worked-minutes query shape~~ — **resolved**: NOTES.md
+  decisions 37/38 confirm totals feeding Milestone 6 are
+  completed-stints-only, and an orphaned `end` contributes nothing to
+  any total. Already folded into SPEC.md §2.4 and into Milestones 5/6/
+  9's acceptance criteria above — a wave-1 worktree should treat this
+  as settled, not re-litigate it.
 - **Local timezone source in tests**: §2.1 uses the system's local
   timezone throughout, sourced how `chrono`/the OS exposes it. Milestone
-  4's and 9's DST tests need a way to pin or select a timezone with a
+  4's and 10's DST tests need a way to pin or select a timezone with a
   known transition date deterministically in a test environment (CI
   runner's system tz is not guaranteed to have a nearby, easily-dated
-  transition) — the plan flags this as a test-infrastructure decision
-  to make before Milestone 4 starts, not a spec gap, but it will block
-  writing F12 concretely if left unresolved.
-- **`week`'s per-day row totals vs. anomalies interaction**: §7.2 says
-  a date's `[!]` marker is appended to its row, but doesn't say whether
-  an orphaned end (which produces no stint of its own) still counts
-  toward that date's displayed total via any partial/zero contribution,
-  or whether the date's total is simply the sum of whatever completed
-  stints exist regardless of the orphan. This plan assumes the latter
-  (orphans contribute nothing to the total, appear only as the marker)
-  since it falls directly out of Milestone 5's stint list, but it's
-  worth confirming before Milestone 10 renders it, since it's not
-  spelled out as an explicit worked example anywhere in §7 or §8.
-- **Milestone 5/6 fixture format is an implementation-planning
-  decision, not a spec gap**: the plan deliberately keeps stint pairing
-  and week accounting testable over hand-built fixture data rather than
-  requiring a live database in their tests, to keep those two
-  trickiest-logic milestones fast and isolated. This is a testing
-  strategy choice for the TDD subagent to make concretely (what shape
-  the fixture takes), not something requiring spec clarification —
-  flagged here only so the boundary is explicit going into Milestone 5.
+  transition) — a test-infrastructure decision to make before Milestone
+  4 starts, not a spec gap, but it will block writing F12 concretely if
+  left unresolved.
+- ~~`week`'s per-day row totals vs. anomalies interaction~~ —
+  **resolved**: same NOTES.md decisions 37/38 as above cover this too
+  (orphans contribute nothing to any total); folded into interface
+  contract 2 and Milestone 9's scope.
+- **Milestone 5/6 fixture format**: now a first-class pre-work step,
+  not left to be discovered inside Milestone 5's worktree — see
+  interface contracts 1-4 above. Agree the concrete fixture/contract
+  shapes before opening the wave-1 worktrees for Milestones 5 and 6,
+  so Milestone 4's eventual real implementation doesn't turn out to
+  mismatch what 5/6 assumed.
 - **Scaffold's existing `Log` command and `entries` table**: the
   current stub CLI (`cli.rs`) defines a `Log` subcommand and `db.rs`
   defines a placeholder `entries` table, neither of which appears in
   SPEC.md (the spec's commands are `start`/`stop`/`note`/`status`/
   `week`/`week target`; the schema is `punches`/`notes`/
   `week_targets`). Milestone 3 removes the placeholder table and
-  Milestone 7/9 replace the CLI enum's shape entirely; noting this
+  Milestones 7/10 replace the CLI enum's shape entirely; noting this
   explicitly so the milestone that touches `cli.rs` doesn't try to
   preserve `Log` by mistake under an assumption it's a real
   requirement — it is leftover scaffold, not spec.
