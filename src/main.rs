@@ -1,6 +1,7 @@
 mod cli;
 mod db;
 mod time;
+mod week;
 
 use clap::Parser;
 use cli::{Cli, Command};
