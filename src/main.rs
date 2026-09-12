@@ -3,6 +3,7 @@ mod commands;
 mod date;
 mod db;
 mod render;
+mod status;
 mod stint;
 mod storage;
 mod time;
@@ -63,6 +64,7 @@ fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
             Some(WeekAction::Target(t)) => week_target::run(&conn, now.date_naive(), t),
             None => week_view::run(&conn, now, args),
         },
+        Command::Status { date } => status::run(&conn, now, date.as_deref()),
     }
 }
 
