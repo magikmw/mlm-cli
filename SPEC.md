@@ -48,10 +48,16 @@ arithmetic and lets entries land in any order.
   either, so this stays add-only-for-today until editing lands).
 - Stints spanning midnight: pairing is strictly per calendar `date`
   (§4.3), so a session like `start 23:30` / `stop 00:45` the next day
-  splits into two anomalies (a permanently-open `start` on day one, an
-  orphaned `end` on day two) rather than one clean overnight stint.
-  Accepted as a known MVP limitation — fixing it means pairing across
-  date boundaries, a real complexity jump for a rare case.
+  splits in two rather than one clean overnight stint: day one is left
+  with a permanently-open `start` (an ordinary, non-anomalous single
+  trailing start per §4.3 — indistinguishable from any other open
+  stint on its own) and day two gets a flagged orphaned-`end` anomaly.
+  In `week`'s view (§7.2) the stale day-one start is additionally
+  silent — no `(ongoing)` marker (it isn't today, or isn't in the
+  requested week) and no `[!]` (it's not an anomaly) — it just renders
+  as a plain total excluding that stint's live minutes. Accepted as a
+  known MVP limitation — fixing it means pairing across date
+  boundaries, a real complexity jump for a rare case.
 
 ### 1.3 Terminology
 
@@ -96,6 +102,17 @@ them silently displaying an hour off. `chrono`'s timezone-aware
 conversion (via the system tz database) does this correctly as long as
 every conversion call passes the specific instant, not a cached offset.
 
+Two DST edge cases this raises, both resolved explicitly rather than
+left to whatever the conversion library happens to do by default:
+
+- **Spring-forward gap**: a typed local `TIME` that doesn't correspond
+  to any real local instant on today's date (the hour skipped when
+  clocks jump forward) is a hard error (§6.1) — nothing written, same
+  treatment as the `24:00` boundary case.
+- **Fall-back ambiguity**: a typed local `TIME` that occurs *twice*
+  (the repeated hour when clocks fall back) resolves to the **earlier**
+  of the two real instants.
+
 ### 2.2 Migrations
 
 A `schema_migrations` table (or equivalent) tracks applied versions.
@@ -128,7 +145,7 @@ Index on `date` (and probably `at_utc` for ordering within a date).
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
 | `date` | `TEXT NOT NULL` | local calendar date, `YYYY-MM-DD` — a note is attached to a day, not an instant, so no `at_utc` here |
 | `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); project-name prefix stays *in* the text for MVP (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
-| `created_at_utc` | `TEXT NOT NULL` | insertion-order tiebreaker for same-day notes |
+| `created_at_utc` | `TEXT NOT NULL` | minute-granular like every other stored instant (§4.1) — not a source of sub-minute precision. Two notes inserted in the same minute are disambiguated by `id ASC` as the actual tiebreaker; this column orders coarsely, `id` breaks remaining ties |
 
 **`week_targets`** — sparse overrides only; a week with no row uses
 the default target (40h = 2400 minutes).
@@ -189,6 +206,11 @@ Insert a `start` punch for today.
 - `TIME` optional (§3.1). Defaults to now.
 - `NOTE` optional, free text — if given, also inserts a note row for
   today in the same call (convenience for "starting work on X").
+- Positional order is strict and never sniffed: `TIME`, when given, is
+  always the first positional argument. A value in that position that
+  fails to parse as `TIME` is a hard error (§6.1, E1) — it is never
+  silently reinterpreted as `NOTE` text. A note-only invocation with
+  no `TIME` is `mlm note` (§3.4), not a single positional guessed at.
 - No chronology requirement: a start punch can be inserted at any
   time value relative to existing punches for the day.
 
@@ -223,8 +245,11 @@ Today's (or `DATE`'s, `YYYY-MM-DD`) view:
 
 Current (or `WEEK_ID`) week's view:
 
+- the week's still-owed figure as headline framing (§7.1/§7.2)
 - one line per date in the week with that date's total
-- week total, carry-in, target, fulfillment, still owed
+- a trailing block, in this order: carry-in, worked, fulfillment,
+  target (§7.2) — "still owed" appears only in the headline, not
+  repeated here
 
 `WEEK_ID` accepts either a full id (`YYYY-WW`, e.g. `2026-07`) or a
 bare week number (`WW`, e.g. `7`), which defaults the year to the
@@ -281,8 +306,12 @@ decision 4 — not a plain "sort then pair sequentially by index",
 since that only agrees with nearest-matching on already-alternating
 data and gives wrong answers otherwise. Algorithm:
 
-1. Sort the date's punches by `at_utc` (ties broken by `id`, i.e.
-   insertion order).
+1. Sort the date's punches by `at_utc`; ties at an identical instant
+   are broken first by kind (`start` before `end`), then by `id`
+   (insertion order). The kind tiebreak matters for E14 below — pure
+   `id`-order would let a `stop` entered before a same-instant `start`
+   produce an orphan and a dangling open stint instead of the clean
+   zero-length pairing E14 requires.
 2. Scan in that order keeping a stack of unmatched `start`s: a
    `start` pushes; an `end` pops the *most recently pushed* unmatched
    `start` and pairs with it, forming a stint.
@@ -316,10 +345,9 @@ insert time (no editing/validation in MVP — see §1.2):
   line (§7.3) — never coalesced into one count.
 - **A `start` and its paired `end` at the identical instant**: legal,
   produces a zero-length stint (`00h 00m`), not itself an anomaly —
-  matched-parentheses pairing doesn't care about ordering *within* a
-  tie, only that one exists (§4.3 step 1's tie-break by `id` still
-  applies to the sort, but doesn't change that both punches pair up
-  cleanly).
+  this is exactly why step 1's tie-break sorts `start` before `end`
+  at a shared instant, regardless of entry order, so the pair always
+  matches cleanly rather than depending on which was typed first.
 
 ## 5. Week accounting — worked example
 
@@ -385,6 +413,8 @@ user with no way to fix it.
   negative is rejected.
 - Malformed `TIME` boundary: `24:00` is rejected, not accepted as a
   next-day-midnight alias — valid range is `00:00` through `23:59`.
+- A `TIME` that falls in a DST spring-forward gap (§2.1) — no real
+  local instant exists for it on today's date.
 - Empty `NOTE`/note `body`: whitespace-only text is rejected rather
   than stored as a blank log line (checked *before* the trim in §2.3
   — a note that's nothing but whitespace has nothing left to trim to).
@@ -548,9 +578,16 @@ to it.)
   `Total ahead` form (NOTES.md decision, this round).
 - One row per calendar date in the week, always all 7 even if some
   are empty (`00h 00m`) — consistent shape, easy to scan for gaps.
-  `(ongoing)` marks a date with a currently-open stint (only possible
-  on today's row, and only when the requested week is the current
-  one).
+  `(ongoing)` marks a date whose open stint's date equals today, and
+  only when the requested week is the current one — not just "any
+  date with an open stint." This distinction matters because of the
+  cross-midnight limitation (§1.2, E15): a session split across
+  midnight leaves a stale, permanently-open `start` on the *earlier*
+  date, which is an ordinary single-trailing-start under §4.3 (not an
+  anomaly) but is **not** what `(ongoing)` is for. That stale date
+  renders as a plain total excluding the open stint's live minutes,
+  with no `(ongoing)` and no `[!]` marker — an accepted, silent
+  consequence of §1.2's limitation, not a bug in this rule.
 - Field order below the headline is fixed: carry-in, worked,
   fulfillment, target — `still owed` isn't repeated down here since
   the headline already states it plainly.
@@ -576,6 +613,13 @@ In `week`, appended inline to the affected date's row:
 
 (detail deferred to that date's own `status` output rather than
 repeated in the week table).
+
+### 7.4 Write-command output
+
+`start`, `stop`, `note`, and `week target` print nothing on success —
+silent, Unix-conventional, exit `0` (§6.3) is the only signal. A hard
+error (§6.1) still prints its message to stderr as usual. Only
+`status` and `week` produce stdout output (§7.1, §7.2).
 
 ## 8. User flows (test basis)
 
@@ -670,9 +714,11 @@ or less directly.
 - **E14** — A `start`/`end` pair at the identical instant: legal,
   zero-length stint (`00h 00m`), not flagged as an anomaly (§4.3).
 - **E15** — A session crossing midnight (`start 23:30`, `stop 00:45`
-  the next day): produces two anomalies, not one clean stint — an
-  open `start` on day one, an orphaned `end` on day two. Accepted
-  MVP limitation (§1.2), not a bug to fix.
+  the next day): splits in two rather than one clean stint — an
+  ordinary (non-anomalous) open `start` on day one, plus a flagged
+  orphaned-`end` anomaly on day two. In `week`'s view, day one's stale
+  open stint is silent (no `(ongoing)`, no `[!]`, §7.2). Accepted MVP
+  limitation (§1.2), not a bug to fix.
 
 ---
 

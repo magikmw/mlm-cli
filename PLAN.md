@@ -107,9 +107,13 @@ themselves.
    over Milestone 5's raw output.
 3. **Week accounting result shape** (Milestone 6 → Milestones 9, 10,
    11): target, carry_in, worked, fulfillment, owed, carry_out, all
-   signed integer minutes, plus an explicit "is this the actual
-   currently-ongoing week" boolean rather than each renderer
-   recomputing that comparison independently.
+   signed integer minutes, **plus the week id itself** (so a consumer
+   can compare it against "today"). Deliberately **no** "is this the
+   current week" boolean here — that comparison is Milestone 9's sole
+   job (a pure function of the week id and "now", contract 6), not a
+   value threaded through Milestone 6. Milestone 6 has no other reason
+   to know "now"; giving it that boolean would be the one place two
+   milestones could disagree about what "current" means.
 4. **Per-day rollup shape for `week`'s 7-row table** (Milestones 5+6 →
    Milestone 11): a per-date list, all 7 calendar dates of the week
    included (empty ones at zero), each with total completed-stint
@@ -126,11 +130,73 @@ themselves.
    week current," the `(ongoing)` marker) takes it as a supplied
    value, never a hidden global clock read. Agree the shape (a plain
    parameter vs. some other convention) once, up front.
-7. **Error type/shape for hard errors**: every parsing/storage
-   function that can hard-error (Milestones 1, 2, 4) needs an agreed
-   error shape so Milestones 7 and 8's CLI wiring — plausibly built in
-   parallel against a stub — doesn't need rework once the real error
-   type lands.
+7. **Error type/shape for hard errors** — resolved after cross-plan
+   review, since the first pass through wave 1 produced four
+   incompatible guesses at this contract: **each wave-1 milestone (1,
+   2, 3, 4) owns its own local error enum**, in its own module
+   (`TimeParseError`/`DurationParseError`, a date/week-id error type,
+   `DbError`, `StorageError`), each implementing `Display` (one ASCII
+   line, no trailing newline) and `std::error::Error`. No shared error
+   file across the wave-1 worktrees — that's what caused the
+   divergence the first time. Milestone 7 (the first milestone that
+   needs a single error type across the CLI) then creates one
+   crate-wide `AppError` enum that **wraps** each wave-1 type via
+   `From` impls (`AppError::Time(TimeParseError)`, `AppError::Db
+   (DbError)`, etc.) rather than re-declaring their fields — the
+   wave-1 types stay the single source of truth for their own
+   variants. Every CLI-facing hard error (Milestones 7, 8, 10, 11)
+   matches on `AppError`, prints its `Display`, and exits nonzero
+   (§6.3) — clap's own parse errors exit with their own nonzero code,
+   which is equally fine, don't force them through `AppError` too.
+8. **`Punch`/`PunchKind`/`Note` type and UTC-text-format ownership** —
+   also resolved after cross-plan review found three independent
+   claims on the same types. **Milestone 4 (`src/storage.rs`) is the
+   sole owner** of `Punch`, `PunchKind`, `Note`, and the UTC
+   text-format helpers (parse/format against the fixed
+   `%Y-%m-%dT%H:%M:%SZ` shape §2.3's lexical sort depends on).
+   Milestone 3 does not define these as Rust types — its scope is
+   schema/migrations only. Milestone 5 imports `Punch`/`PunchKind`
+   from `storage.rs` rather than declaring its own copy; both derive
+   `Copy` (every field already is) and `PunchKind` additionally
+   derives `PartialOrd, Ord` with `Start` ordered before `End`, since
+   Milestone 5's pairing tiebreak (§4.3's kind-before-id fix) needs
+   that ordering directly.
+9. **`WeekId` is Milestone 2's type, used as-is** — Milestone 6 must
+   not hand-roll its own week-id struct (an early guess used public
+   fields and different method names than Milestone 2's actual
+   design). Consume Milestone 2's `WeekId` directly: private fields, a
+   validated constructor, `start()` (Monday date), `from_date()`,
+   `next()`, and accessors `iso_year()`/`week()` (not `year()`/
+   `iso_week()` — name it this way everywhere downstream, including
+   Milestone 9).
+10. **Two storage primitives Milestone 6 and Milestone 11 both need,
+    owned by Milestone 4**: `earliest_data_date()` (the earliest date
+    with any punch or note, across all history — `None` if the
+    database is empty) and `punches_in_range(from, to)` (same
+    ordering contract as the single-date read, extended to a date
+    span). A small wave-3 integration adapter then builds Milestone
+    6's per-week worked-minutes view and Milestone 11's per-day
+    rollup on top of the *same* range read, rather than each building
+    its own query against the database directly.
+11. **Duration values are plain `i64` minutes, not a newtype** —
+    Milestone 1's formatter signature is `format_minutes(minutes:
+    i64) -> String`. An earlier draft introduced a `Minutes` wrapper
+    type, but Milestones 6 and 9 both independently built against
+    plain `i64` (it carries no invariant worth enforcing here —
+    negative values are legal and expected throughout the accounting
+    math), so the wrapper is dropped rather than retrofitted onto two
+    milestones that never adopted it.
+
+**Consolidated dev-dependencies** (decided once, added by Milestone 3
+since it lands first and touches `Cargo.toml` anyway — later
+milestones shouldn't each add their own and collide on `Cargo.lock`):
+`tempfile` (temp DB files) and `chrono-tz` (fixed, known-transition
+timezones for DST tests, e.g. Europe/Warsaw's 2026 transitions).
+Binary-level/integration tests use hand-rolled `std::process::Command`
++ `env!("CARGO_BIN_EXE_mlm")` — **`assert_cmd`/`predicates` are
+explicitly declined**, since the plain std approach needs no new
+dependency and several milestones independently proposed it as their
+preferred fallback anyway.
 
 ---
 
@@ -206,12 +272,33 @@ first-run bootstrap is not an error).
 
 **Scope**: Replace `db.rs`'s placeholder `entries` table with the real
 schema (`punches`, `notes`, `week_targets`, plus whatever
-`rusqlite_migration` needs to track applied versions) as an ordered,
+`rusqlite_migration` needs to track applied versions — `PRAGMA
+user_version`, not a hand-rolled tracking table) as an ordered,
 embedded migration set applied on connect. No punch-pairing or
 accounting logic here — this milestone only proves the schema exists,
 applies cleanly from empty, and enforces its own constraints (the
 `kind IN ('start','end')` check, `target_minutes >= 0` check, indexing
-intent on `date`/`at_utc`).
+intent on `date`/`at_utc`). **Schema and migrations only** — no Rust
+value types: `Punch`/`PunchKind`/`Note` belong solely to Milestone 4
+(contract 8), not here.
+
+The current scaffold's `db::connect()` hardcodes the real app-data
+path and panics (`.expect(...)`) on failure — both violate what every
+other DB-touching milestone needs. This milestone fixes both:
+- A testable core, `connect_at(path: &Path) -> Result<Connection,
+  DbError>`, with `connect()` as a thin wrapper resolving the real
+  path. First-run (missing dir/file) is not specially detected or
+  branched on — `create_dir_all` is idempotent, `open` creates, and
+  migrating from schema version 0 just works; a failure is defined
+  purely as any of those steps returning `Err`, never a panic.
+- An `MLM_DB_PATH` environment variable override on the real-path
+  resolution, so integration tests in Milestones 7, 8, 10, and 11 can
+  redirect the compiled binary at a temp file instead of writing to
+  the developer's real database.
+- A separate `apply_migrations(conn: &mut Connection) -> Result<(),
+  DbError>` (just the migration step, no path/directory logic) so
+  Milestone 4's tests can migrate an in-memory `Connection` directly
+  without going through a file path at all.
 
 **Acceptance criteria**:
 - Connecting against a fresh/missing app-data directory creates the
@@ -225,9 +312,11 @@ intent on `date`/`at_utc`).
   rejected by the schema itself; a zero value is accepted.
 - A connection failure against a path that cannot be opened/created
   (e.g. a file where a directory is expected, or a permissions
-  failure) surfaces as an error rather than panicking silently or
-  succeeding (feeds E6, fully wired to command behavior in a later
-  milestone).
+  failure) surfaces as an `Err`, never a panic (feeds E6, fully wired
+  to command behavior in a later milestone).
+- `MLM_DB_PATH`, when set, is honored by the real-path resolution.
+- `apply_migrations` succeeds against a fresh `Connection::open_in_
+  memory()` with no filesystem path involved at all.
 
 ---
 
@@ -237,14 +326,19 @@ intent on `date`/`at_utc`).
 write), §2.3 (`punches`/`notes` column semantics, note trimming),
 §6.1 (empty/whitespace-only note rejection, checked pre-trim).
 
-**Scope**: Implement inserting a punch (given a `kind` and a local
-wall-clock time already parsed by Milestone 1, converted to UTC and to
-a local calendar `date` at write time per §2.1) and inserting a note
-(given free text, rejecting empty/whitespace-only before trimming,
-storing it trimmed with an insertion-order timestamp). Implement the
-corresponding reads: all punches for a date, all notes for a date in
-insertion order. No stint pairing, no CLI wiring, no accounting yet —
-just correct persistence and read-back.
+**Scope**: Define and own `Punch`, `PunchKind`, and `Note` (contract
+8) in `src/storage.rs`. Implement inserting a punch (given a `kind`
+and a local wall-clock time already parsed by Milestone 1, converted
+to UTC and to a local calendar `date` at write time per §2.1,
+including the two DST edge cases — a spring-forward gap is a hard
+error, a fall-back-ambiguous time resolves to its earlier instant) and
+inserting a note (given free text, rejecting empty/whitespace-only
+before trimming, storing it trimmed with an insertion-order
+timestamp). Implement the corresponding reads: all punches for a
+date, all notes for a date in insertion order, plus two primitives
+Milestones 6 and 11 both need (contract 10): `earliest_data_date()`
+and `punches_in_range(from, to)`. No stint pairing, no CLI wiring, no
+accounting yet — just correct persistence and read-back.
 
 **Acceptance criteria**:
 - A `start` or `end` punch inserted with a given local time is
@@ -256,17 +350,27 @@ just correct persistence and read-back.
   and nothing is written (E5); a body that is only *padded* (not
   empty after trimming) is accepted (E5's negative case).
 - Notes for a date are returned in insertion order (using the
-  insertion-order tiebreaker column, not just `id` incidentally).
-- Punches for a date are returned in a stable, deterministic order
-  suitable for feeding directly into Milestone 5's sort step (sorted
-  by instant, ties broken by insertion order) — either the read
+  insertion-order tiebreaker column plus `id` as the actual
+  disambiguator, per §2.3's minute-granularity note — not sub-minute
+  precision on the timestamp column itself).
+- Punches for a date, and `punches_in_range`, are returned in a
+  stable, deterministic order suitable for feeding directly into
+  Milestone 5's sort step (sorted by instant, ties broken by kind
+  then insertion order, per §4.3 step 1's fix — either the read
   itself sorts this way, or the milestone documents that the caller
   must, but the contract is pinned down here rather than left
-  implicit.
+  implicit).
 - A conversion made just before and just after a DST transition (two
   separate inserts, two separate instants) each records the correct
   local `date`/instant for its own moment — first concrete check
   toward F12/§2.1's per-instant conversion rule, at the storage layer.
+- A `TIME` that falls in a spring-forward gap is rejected as an error
+  at this layer, not silently normalized; a fall-back-ambiguous `TIME`
+  resolves to its earlier real instant.
+- `earliest_data_date()` returns `None` against an empty database and
+  the correct minimum date once punches/notes exist across several
+  dates; `punches_in_range` matches `punches_for_date`'s ordering
+  contract extended across the span.
 
 ---
 
@@ -275,15 +379,19 @@ just correct persistence and read-back.
 **Spec sections**: §4.3 (nearest-match/LIFO pairing algorithm and all
 its named edge cases), §1.3 (stint, open stint definitions).
 
-**Scope**: Implement the pairing algorithm over a date's punches
-(already sorted per Milestone 4's contract): sort by instant with
-insertion-order tie-break, LIFO-match starts to ends, and classify the
-result into completed stints, at most one legitimate open stint, a
-multi-open anomaly when more than one trailing start remains, and one
-flagged anomaly per orphaned end. Operates over plain in-memory punch
-data (real rows from Milestone 4 or hand-built fixtures) — no
-rendering, no "now" formatting beyond exposing that a stint is open
-and computing its live duration against a supplied current-time value.
+**Scope**: Implement the pairing algorithm over a date's punches,
+using Milestone 4's `Punch`/`PunchKind` types directly (contract 8 —
+this milestone does not declare its own copy): sort by instant with
+a kind-then-insertion-order tie-break (§4.3 step 1's fix — `start`
+before `end` at an identical instant, so E14 holds regardless of
+entry order), LIFO-match starts to ends, and classify the result into
+completed stints, at most one legitimate open stint, a multi-open
+anomaly when more than one trailing start remains, and one flagged
+anomaly per orphaned end. Operates over plain in-memory punch data
+(real rows from Milestone 4 or hand-built fixtures using the same
+type) — no rendering, no "now" formatting beyond exposing that a
+stint is open and computing its live duration against a supplied
+current-time value.
 
 **Acceptance criteria**:
 - F3's worked example (starts at `09:00`/`14:00`, ends at
@@ -317,21 +425,27 @@ computed at read time by walking every week from the earliest data
 week forward, including idle gap weeks; daily-target derivation), §5
 (worked example and formulas).
 
-**Scope**: Implement the full week-walk: given a target week id, a
-source of per-week worked-minute totals (fed by whatever queries
-Milestone 4's storage supports — total minutes per date summed per
-week), and a source of target overrides, compute that week's target,
-carry-in, fulfillment, owed, and carry-out by walking every ISO week
-in sequence from the earliest week with any data through the requested
-week — including weeks with zero data in between. Also implement the
-daily-target derivation (`week target ÷ 5`, floored). No CLI, no
-rendering.
+**Scope**: Implement the full week-walk using Milestone 2's `WeekId`
+type directly (contract 9 — no hand-rolled week-id struct): given a
+target week id, a source of per-week worked-minute totals (fed by a
+wave-3 adapter over Milestone 4's `earliest_data_date`/
+`punches_in_range`, contract 10), and a source of target overrides,
+compute that week's target, carry-in, fulfillment, owed, and carry-out
+by walking every ISO week in sequence from the earliest week with any
+data through the requested week — including weeks with zero data in
+between. Also implement the daily-target derivation (`week target ÷
+5`, floored). The result carries the week id itself but **no**
+"is this the current week" boolean (contract 3 — that's Milestone 9's
+job alone). No CLI, no rendering.
 
 **Acceptance criteria**:
 - §5's worked table reproduces exactly: given the four weeks' worked
   minutes and `2026-03`'s override, the computed target/carry_in/
   fulfillment/owed/carry_out for each week match the spec's table
   values.
+- `next()`/week-sequence stepping is computed via the underlying date
+  (`WeekId::from_date(week.start() + 7 days)`), never `week + 1` — a
+  naive increment corrupts every year with 53 ISO weeks.
 - The first tracked week (no prior week to walk from) has
   `carry_in = 0` (E12).
 - A week with no `week_targets` row uses the default 2400-minute
@@ -361,13 +475,21 @@ rendering.
 codes).
 
 **Scope**: Wire the CLI surface for the three write commands on top of
-Milestones 1 and 4: parse `TIME`/`NOTE` arguments, always target
-today's local date, insert the punch (and, for `start`/`stop`, an
-accompanying note row when `NOTE` is given), or insert a standalone
-note for `note`. Surface hard errors (malformed `TIME`, empty/
-whitespace note) as a nonzero exit with a stderr message and no write.
-No output rendering beyond whatever minimal confirmation is needed —
-`status`/`week` rendering is Milestones 10/11.
+Milestones 1 and 4, plus define the crate-wide `AppError` in
+`src/error.rs` that wraps each wave-1 milestone's own error type
+(contract 7 — this is the milestone that needs one unified error type
+across the CLI for the first time). Also removes the scaffold's
+`Command::Log` variant outright — it has no corresponding spec command
+and no schema backing it. Parse `TIME`/`NOTE` arguments with strict
+positional order (§3.2/§3.3's fix — `TIME` is always the first
+positional; a value there that fails `TIME`'s grammar is a hard error,
+never reinterpreted as `NOTE`), always target today's local date,
+insert the punch (and, for `start`/`stop`, an accompanying note row
+when `NOTE` is given), or insert a standalone note for `note`. Surface
+hard errors (malformed `TIME`, empty/whitespace note, a DST
+spring-forward gap) as a nonzero exit with a stderr message and no
+write — per §7.4, successful commands print nothing at all. No output
+rendering beyond that — `status`/`week` rendering is Milestones 10/11.
 
 **Acceptance criteria**:
 - `start` with no arguments inserts a start punch at "now"; with a
@@ -395,12 +517,21 @@ No output rendering beyond whatever minimal confirmation is needed —
 `WEEK_ID`/`DURATION`, missing `DURATION`), §2.3 (`week_targets` upsert
 semantics).
 
-**Scope**: Wire the CLI surface on top of Milestones 1, 2, and 3 only
-— parse an optional `WEEK_ID` (defaulting to the current week) and a
-required `DURATION`, and set/replace that week's target override. This
-milestone does **not** depend on Milestone 6's accounting logic (it
-only writes a row; Milestone 6 reads it back later) — it belongs in
-wave 2, parallel with Milestone 4, not gated behind week accounting.
+**Scope**: Wire the CLI surface on top of Milestones 1 (`DURATION`
+parsing), 2 (`WEEK_ID` parsing), and 3 (schema) — parse an optional
+`WEEK_ID` (defaulting to the current week) and a required `DURATION`,
+and set/replace that week's target override. This milestone does
+**not** depend on Milestone 6's accounting logic (it only writes a
+row; Milestone 6 reads it back later) — it belongs in wave 2, parallel
+with Milestone 4, not gated behind week accounting.
+
+Defines `Command::Week(WeekArgs)` with `WeekArgs`/`WeekAction` — this
+becomes the **canonical shape** for the whole `week` subtree. Since
+`src/cli.rs` is a merge point touched by Milestones 7, 8, 10, and 11,
+land them in this order: **7 → 8 → 10 → 11**. Milestone 11 must reuse
+`WeekArgs`/`WeekAction` exactly as this milestone defines them
+(filling in the "no action, just render" arm) rather than declaring a
+separate, differently-named struct for the same shape.
 
 **Acceptance criteria**:
 - `week target 2026-07 33h30m` sets that week's override to the
@@ -434,12 +565,16 @@ rendering conventions shared by both commands), NOTES.md decisions 18,
 25, 26 (the underlying week-framing rule these both implement).
 
 **Scope**: Implement, as a small standalone unit consumed by both
-Milestones 10 and 11: (a) given a week (from Milestone 6's result) and
-"now," decide whether that week is the actual currently-ongoing one,
-and produce the correct headline wording either way — `"<owed> left by
-end of <weekday>"` (today's weekday, always, even when the thing being
-displayed is a different date within that same current week) or the
-plain `"Total still owed <owed>"` / `"Total ahead <owed>"` form; (b)
+Milestones 10 and 11: (a) given a week (from Milestone 6's result,
+contract 3 — this milestone owns the "is it current" decision itself,
+computed from the week id and "now," not consumed as a boolean from
+Milestone 6) decide whether that week is the actual currently-ongoing
+one, and produce the correct headline wording either way — `"<owed>
+left by end of <weekday>"` (today's weekday, always, even when the
+thing being displayed is a different date within that same current
+week) or the plain `"Total still owed: <owed>"` / `"Total ahead:
+<owed>"` form — **colon included**, matching SPEC.md §7.1/§7.2's
+worked examples literally; (b)
 the anomaly-rendering conventions from §7.3 in both their forms — a
 full detail line (`status`'s "one line per anomaly") and a bare
 per-row marker (`week`'s inline `[!] `) — built over Milestone 5's
@@ -453,9 +588,9 @@ layout — just these two decision/formatting units.
   when invoked for a non-today date that happens to fall in the same
   week (F11's exact scenario).
 - Given a week that is not the current one (past or future), the
-  headline decision returns the plain `Total still owed`/`Total ahead`
-  wording, with no weekday reference (F10, and §7.2's second worked
-  example).
+  headline decision returns the plain `Total still owed:`/`Total
+  ahead:` wording (colon included), with no weekday reference (F10,
+  and §7.2's second worked example).
 - The full anomaly-detail form renders one line per anomaly, using the
   exact wording from §7.3's examples (`[!] N open stints...`, `[!]
   orphaned end at HH:MM...`), never coalescing two or more orphaned
@@ -500,9 +635,9 @@ of its states.
   met` when the gap is already zero or negative, and is omitted
   entirely when there is no open stint (F9).
 - `status` for a past date in an already-closed week: no daily-target/
-  EOD lines, and the week line uses the plain `Total still owed`/
-  `Total ahead` form for *that* week (F10, matches §7.1's second
-  worked example exactly).
+  EOD lines, and the week line uses the plain `Total still owed:`/
+  `Total ahead:` form for *that* week (F10, matches §7.1's second
+  worked example exactly, colon included).
 - `status` for a different day within the current, still-open week:
   the week line still uses the weekday-deadline framing, keyed to
   today's actual weekday, not `DATE`'s (F11).
@@ -525,25 +660,35 @@ of its states.
 **Spec sections**: §3.6 (`week` behavior), §7.2 (week output layout),
 §7.3 (anomaly rendering in week), §4.2 (duration format reuse).
 
-**Scope**: Wire `week [WEEK_ID]` on top of Milestones 2, 5, 6, and 9:
-resolve the target week (current if omitted), compute all 7 days'
-per-date totals plus that week's target/carry-in/worked/fulfillment/
-owed, and render the header (week id + Mon-Sun span), the headline
-(calling Milestone 9's headline decision, not reimplementing it), all
-7 date rows (always all 7, `00h 00m` for empty ones, `(ongoing)`
-marker only on today's row when applicable), the anomaly marker
-appended per-row (via Milestone 9's marker form), and the trailing
-carry-in/worked/fulfillment/target block.
+**Scope**: Wire `week [WEEK_ID]` on top of Milestones 2, 4, 5, 6, 8,
+and 9. Reuses Milestone 8's `WeekArgs`/`WeekAction` types verbatim
+(merge-order guidance, Milestone 8) rather than declaring a separate
+struct. Builds the per-date rollup (contract 4) via a small wave-3
+adapter over Milestone 4's `earliest_data_date`/`punches_in_range`
+(contract 10) plus Milestone 5's per-date pairing — called once per
+date in the week's span, seven times, including empty ones, never
+handed a whole week's punches at once (that would silently implement
+cross-midnight pairing and break E15). Resolves the target week
+(current if omitted), computes all 7 days' per-date totals plus that
+week's target/carry-in/worked/fulfillment/owed, and renders the
+header (week id + Mon-Sun span), the headline (calling Milestone 9's
+headline decision, not reimplementing it), all 7 date rows (always
+all 7, `00h 00m` for empty ones, `(ongoing)` marker only on today's
+row and only when the requested week is the current one, per §7.2's
+corrected wording), the anomaly marker appended per-row (via
+Milestone 9's marker form), and the trailing carry-in/worked/
+fulfillment/target block — present for every week, current or not
+(§7.2's closed-week fix; only the headline differs).
 
 **Acceptance criteria**:
 - The current, ongoing week renders exactly per §7.2's first worked
   example: correct per-day totals, `(ongoing)` on today's row only,
   weekday-deadline-framed headline, correct trailing block values.
 - A past, closed week renders the same full 7-row table and trailing
-  block, but with the plain `Total still owed`/`Total ahead` headline
-  instead (matches §7.2's second worked example, resolving the
-  blocker noted in NOTES.md decision 25 — a closed week is not a
-  bare one-liner).
+  block, but with the plain `Total still owed:`/`Total ahead:`
+  headline instead (colon included, matches §7.2's second worked
+  example, resolving the blocker noted in NOTES.md decision 25 — a
+  closed week is not a bare one-liner).
 - A never-touched week (no data anywhere in it, past or future)
   renders all 7 dates at `00h 00m`, default target, and carry computed
   by walking the full sequence from the earliest data week (E13).
@@ -610,37 +755,36 @@ rather than re-deriving them per milestone:
 
 ## Open risks / ambiguities to resolve before the relevant milestone
 
+All items originally listed here are now resolved, following the
+11-milestone detailed-planning pass and its cross-plan adversarial
+review (see `plans/*.md` and this doc's contracts 1-11 above). Kept
+as a record of what was settled and where:
+
 - ~~Per-week worked-minutes query shape~~ — **resolved**: NOTES.md
   decisions 37/38 confirm totals feeding Milestone 6 are
   completed-stints-only, and an orphaned `end` contributes nothing to
-  any total. Already folded into SPEC.md §2.4 and into Milestones 5/6/
-  9's acceptance criteria above — a wave-1 worktree should treat this
-  as settled, not re-litigate it.
-- **Local timezone source in tests**: §2.1 uses the system's local
-  timezone throughout, sourced how `chrono`/the OS exposes it. Milestone
-  4's and 10's DST tests need a way to pin or select a timezone with a
-  known transition date deterministically in a test environment (CI
-  runner's system tz is not guaranteed to have a nearby, easily-dated
-  transition) — a test-infrastructure decision to make before Milestone
-  4 starts, not a spec gap, but it will block writing F12 concretely if
-  left unresolved.
+  any total. Folded into SPEC.md §2.4 and Milestones 5/6/9's
+  acceptance criteria.
 - ~~`week`'s per-day row totals vs. anomalies interaction~~ —
-  **resolved**: same NOTES.md decisions 37/38 as above cover this too
-  (orphans contribute nothing to any total); folded into interface
-  contract 2 and Milestone 9's scope.
-- **Milestone 5/6 fixture format**: now a first-class pre-work step,
-  not left to be discovered inside Milestone 5's worktree — see
-  interface contracts 1-4 above. Agree the concrete fixture/contract
-  shapes before opening the wave-1 worktrees for Milestones 5 and 6,
-  so Milestone 4's eventual real implementation doesn't turn out to
-  mismatch what 5/6 assumed.
-- **Scaffold's existing `Log` command and `entries` table**: the
-  current stub CLI (`cli.rs`) defines a `Log` subcommand and `db.rs`
-  defines a placeholder `entries` table, neither of which appears in
-  SPEC.md (the spec's commands are `start`/`stop`/`note`/`status`/
-  `week`/`week target`; the schema is `punches`/`notes`/
-  `week_targets`). Milestone 3 removes the placeholder table and
-  Milestones 7/10 replace the CLI enum's shape entirely; noting this
-  explicitly so the milestone that touches `cli.rs` doesn't try to
-  preserve `Log` by mistake under an assumption it's a real
-  requirement — it is leftover scaffold, not spec.
+  **resolved**: same decisions 37/38; folded into contract 2 and
+  Milestone 9's scope.
+- ~~Local timezone source in tests~~ — **resolved**: `chrono-tz` added
+  as a dev-dependency (consolidated dev-dependency list above)
+  specifically so Milestone 4's and 10's DST tests (F12) can target a
+  fixed, known-transition timezone deterministically, independent of
+  the CI runner's actual system tz.
+- ~~Milestone 5/6 fixture format~~ — **resolved**: pinned as concrete
+  interface contracts (1, 2, 3, 4, 8, 9, 10 above) rather than left
+  for each worktree to discover independently — which is exactly what
+  happened on the first pass (see the type-ownership and `WeekId`
+  conflicts contracts 8/9 now correct).
+- ~~Scaffold's existing `Log` command and `entries` table~~ —
+  **resolved**: neither appears in SPEC.md. Milestone 3 drops the
+  `entries` table (and doesn't add `Log`'s equivalent); Milestone 7
+  explicitly removes `Command::Log` with a regression test.
+- ~~`db::connect()` hardcoded path + panic-on-failure~~ — **resolved**:
+  Milestone 3 now specifies a testable `connect_at(&Path)` core, an
+  `MLM_DB_PATH` override, and a path-free `apply_migrations` helper
+  (see Milestone 3's scope above) — this was independently hit by
+  Milestones 4, 8, and 10 during detailed planning before being fixed
+  once, upstream, here.

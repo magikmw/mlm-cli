@@ -226,9 +226,64 @@ confirmed:
     `start`), so it never adds to a day/week sum, only ever surfacing
     as its own flagged anomaly line.
 
+## More decisions (from 11-milestone detailed planning + cross-plan review, round 7)
+
+Per the workflow note at the top of this file, PLAN.md's 11 milestones
+each got a detailed dev-agent implementation plan (`plans/*.md`),
+followed by an independent adversarial review across all 11 together.
+That review surfaced real spec gaps (not just implementation
+ambiguity) and cross-plan contract divergences, now fixed in both
+SPEC.md and PLAN.md:
+
+40. **§4.3 tie-break fix**: identical-instant punches now break ties
+    by kind (`start` before `end`) before `id` — the old `id`-only
+    rule contradicted E14's stated zero-length-stint outcome whenever
+    `stop` was entered before a same-instant `start`.
+41. **DST edge cases added**: a spring-forward gap (a typed local time
+    with no real instant) is a hard error; a fall-back-ambiguous time
+    resolves to its earlier occurrence. Previously unaddressed in
+    SPEC.md despite §2.1's per-instant conversion rule implying they
+    exist.
+42. **Strict TIME/NOTE positional order**: `start`/`stop`'s `TIME`,
+    when given, is always the first positional; a value there that
+    fails `TIME`'s grammar is a hard error, never silently
+    reinterpreted as `NOTE` text (no shape-sniffing — any rule
+    permissive enough to accept free text there also swallows E1's
+    required hard-error case).
+43. **Write commands are silent on success**: `start`, `stop`, `note`,
+    `week target` print nothing; exit `0` is the only success signal
+    (new §7.4). Previously unspecified, and two independent milestone
+    plans had proposed two different confirmation-line wordings.
+44. **`created_at_utc` is minute-granular, not real-seconds**: fixes a
+    genuine §4.1/§2.3 tension ("no seconds precision anywhere" vs. a
+    tiebreaker column that needs sub-minute precision to do its job).
+    `id ASC` is the actual tiebreaker; the timestamp column orders
+    coarsely.
+45. **§7.2's `(ongoing)` wording corrected**: it's gated on "this
+    date's open stint's date is today, and the week is current," not
+    just "any open stint" — a cross-midnight session (E15) can leave
+    a stale open start on a past date, which is not what the marker
+    means. That stale stint renders silently (no marker, not an
+    anomaly either).
+46. **§3.6 field order fixed** to match §7.2's actual layout
+    (carry-in, worked, fulfillment, target — "still owed" only in the
+    headline).
+47. **Interface contract cleanup** (PLAN.md): the first planning pass
+    produced real divergence the pinning step was meant to prevent —
+    four different completions of the error-shape contract, three
+    different owners claimed for the same `Punch`/`PunchKind` type,
+    two incompatible `WeekId` designs, and a `Minutes` newtype two of
+    its three intended consumers had already independently rejected.
+    All reconciled to one answer each in PLAN.md's contracts 7-11.
+48. **`db::connect()` blocker fixed**: three independent milestone
+    plans (4, 8, 10) hit the scaffold's hardcoded path + panic-on-
+    failure before writing a single test. Milestone 3 now owns a
+    testable `connect_at`, an `MLM_DB_PATH` override, and a
+    path-free `apply_migrations` helper.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
 
-39. **Multi-week-format stretch**: deferred entirely. Not designing
+49. **Multi-week-format stretch**: deferred entirely. Not designing
     for it now; revisit only if it becomes a real ask.
