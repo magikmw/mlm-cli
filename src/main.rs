@@ -1,5 +1,6 @@
 mod cli;
 mod db;
+mod stint;
 mod time;
 mod week;
 
