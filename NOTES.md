@@ -210,9 +210,25 @@ into SPEC.md; logged here for the record.
     §7's plain-ASCII commitment is about rendered layout characters,
     not what a user can type into a note body.
 
+## More decisions (from implementation-plan review, round 6)
+
+The tech-lead planning subagent (PLAN.md) flagged two accounting
+questions it had to infer rather than found explicitly stated —
+confirmed:
+
+37. **Totals exclude open-stint live time**: any total feeding
+    target/carry/fulfillment/owed math counts completed stints only.
+    A currently-open stint's live minutes never enter that math — they
+    only ever appear on the stint's own display line and the
+    estimated-EOD figure (§2.4, §7.1).
+38. **Orphaned `end`s contribute nothing to totals**: same treatment —
+    an orphaned `end` has no duration to contribute (no paired
+    `start`), so it never adds to a day/week sum, only ever surfacing
+    as its own flagged anomaly line.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
 
-36. **Multi-week-format stretch**: deferred entirely. Not designing
+39. **Multi-week-format stretch**: deferred entirely. Not designing
     for it now; revisit only if it becomes a real ask.

@@ -151,7 +151,15 @@ the default target (40h = 2400 minutes).
   still accrues a deficit against its target and has to carry forward
   like any other week; skipping zero-data weeks would silently break
   the chain across any gap. Cost scales with total week count,
-  negligible at personal-use scale.
+  negligible at personal-use scale. `worked_minutes` is the sum of
+  **completed stints only** — a currently-open stint's live minutes
+  are never folded into any total/carry/owed computation (consistent
+  with §7.1's day-total rule); the open stint contributes only to its
+  own displayed line and the estimated-EOD figure, nowhere else. An
+  **orphaned `end`** (§4.3) contributes nothing to any total either —
+  it has no paired `start` to derive a duration from, so it shows up
+  only as its own flagged anomaly line, never as time in a day/week
+  sum.
 - **Daily target**: `status`-only pace hint, `today's week target ÷
   5` (floor to the minute). Purely derived from the week's target —
   no override, no storage, no interaction with carry. Used for the
