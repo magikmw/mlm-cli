@@ -26,6 +26,12 @@ pub enum Command {
 
     /// Show a week's totals, or set its target.
     Week(WeekArgs),
+
+    /// Show a date's stints, notes and totals (defaults to today).
+    Status {
+        /// Date to show, YYYY-MM-DD. Defaults to today.
+        date: Option<String>,
+    },
 }
 
 /// Shared argument shape for `start` and `stop` (SPEC §3.2/§3.3 — "same

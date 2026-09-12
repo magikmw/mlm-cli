@@ -3,6 +3,7 @@ mod commands;
 mod date;
 mod db;
 mod render;
+mod status;
 mod stint;
 mod storage;
 mod time;
@@ -63,6 +64,7 @@ fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
         Command::Week(_args) => {
             todo!("`week`/`week target` dispatch is wired by a later milestone")
         }
+        Command::Status { date } => status::run(&conn, now, date.as_deref()),
     }
 }
 
