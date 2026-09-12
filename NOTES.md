@@ -61,13 +61,19 @@ incremental resumming through the day. Motivating the tool.
    number) tuple**, not by a start date. Robust across year boundaries
    (ISO week 1 of a year can include late-December dates and vice
    versa — `chrono` gives us `iso_week()` for this).
-3. **Deficit carry**: shortfall (worked <40h in a week) *does*
-   compound into the next week's target by default. But a week's
-   target must be **adjustable** (sick day, half day, planned time
-   off) — so target-hours is a per-week, overridable value, not always
-   a derived constant. Default target = 40h minus any carried
-   deficit/surplus-cap-at-zero rule; user can override a given week's
-   target explicitly.
+3. **Surplus/deficit carry**: the **target stays fixed at 40h by
+   default** (or an explicit override, decision 7) — carry does not
+   shift the target. Instead, carry-in is folded into the week's
+   *fulfillment* sum, like an extra virtual day that itself worked a
+   (possibly negative) number of minutes: `fulfillment = sum(this
+   week's stints) + carry_in`. Owed = `target - fulfillment` (can
+   already be negative, i.e. ahead of target from minute one of the
+   week if carry-in is a surplus). Carry-out for the next week =
+   `fulfillment - target` at week's end (signed: positive surplus
+   *and* negative deficit both propagate). "No overtime" just means
+   surplus is never paid out specially in the current week beyond
+   being counted plainly toward fulfillment — it's not a bonus, just
+   arithmetic.
 4. **Stints from point-in-time punches, not stored ranges**: stints
    are *derived* like matched parentheses from a sequence of
    start/end time points, not stored as a single row with two
