@@ -8,6 +8,7 @@
 
 use std::process::Command;
 
+use rusqlite::Connection;
 use tempfile::TempDir;
 
 fn mlm(db_path: &std::path::Path, args: &[&str]) -> std::process::Output {
@@ -16,6 +17,33 @@ fn mlm(db_path: &std::path::Path, args: &[&str]) -> std::process::Output {
         .env("MLM_DB_PATH", db_path)
         .output()
         .expect("failed to run mlm binary")
+}
+
+/// Same as [`mlm`] but with the child process's `TZ` pinned, so
+/// `chrono::Local` (read exactly once per process, cached thereafter)
+/// resolves against a specific IANA zone instead of the host's.
+fn mlm_tz(db_path: &std::path::Path, tz: &str, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_mlm"))
+        .args(args)
+        .env("MLM_DB_PATH", db_path)
+        .env("TZ", tz)
+        .output()
+        .expect("failed to run mlm binary")
+}
+
+/// Seed a punch row directly via SQL, bypassing the CLI (which only ever
+/// writes punches for "today"). `at_utc` and `date` are given pre-
+/// formatted so the test can pin exact historical instants around a real
+/// DST transition. Mirrors the frozen schema in `src/db.rs`.
+fn seed_punch(db_path: &std::path::Path, at_utc: &str, date: &str, kind: &str) {
+    // Running `mlm` first (any command) creates the DB file and applies
+    // migrations, so the schema exists before this raw insert runs.
+    let conn = Connection::open(db_path).expect("open seeded db");
+    conn.execute(
+        "INSERT INTO punches (at_utc, \"date\", kind) VALUES (?1, ?2, ?3)",
+        (at_utc, date, kind),
+    )
+    .expect("seed punch insert");
 }
 
 fn stdout(output: &std::process::Output) -> String {
@@ -85,6 +113,58 @@ fn t15_malformed_date_exits_nonzero_with_stderr_message() {
             "an error message should be printed to stderr for {bad_date:?}"
         );
     }
+}
+
+/// Cross-cutting: DST-safe per-instant conversion (§2.1, F12) end-to-end
+/// through `status`'s rendering path, not just the storage layer
+/// (Milestone 4 already covers storage in `src/storage.rs`'s D1/D2
+/// tests). Two completed stints straddle Europe/Warsaw's real 2026
+/// spring-forward (2026-03-29 02:00 -> 03:00 CET->CEST): one on
+/// 2026-03-28 (still UTC+1) and one on 2026-03-30 (already UTC+2). Both
+/// are the *same* local wall-clock stint (12:00-13:00), stored as
+/// different UTC instants an hour apart in offset, and `status` must
+/// render both back as "12:00-13:00" for their respective dates —
+/// proving the UTC-to-local conversion is per-instant, not a single
+/// cached offset.
+#[test]
+fn dst_transition_is_shown_correctly_end_to_end_via_status() {
+    let dir = TempDir::new().expect("temp dir");
+    let db_path = dir.path().join("mlm.db");
+
+    // Any invocation bootstraps the schema (migrations run on connect).
+    let boot = mlm_tz(&db_path, "Europe/Warsaw", &["status"]);
+    assert!(boot.status.success(), "bootstrap status: {:?}", boot);
+
+    // Before the transition: 2026-03-28 12:00-13:00 Warsaw (CET, UTC+1).
+    seed_punch(&db_path, "2026-03-28T11:00:00Z", "2026-03-28", "start");
+    seed_punch(&db_path, "2026-03-28T12:00:00Z", "2026-03-28", "end");
+    // After the transition: 2026-03-30 12:00-13:00 Warsaw (CEST, UTC+2).
+    seed_punch(&db_path, "2026-03-30T10:00:00Z", "2026-03-30", "start");
+    seed_punch(&db_path, "2026-03-30T11:00:00Z", "2026-03-30", "end");
+
+    let before = mlm_tz(&db_path, "Europe/Warsaw", &["status", "2026-03-28"]);
+    assert!(before.status.success(), "{:?}", before);
+    let before_out = stdout(&before);
+    assert!(
+        before_out.contains("12:00-13:00"),
+        "pre-transition stint not shown in local wall-clock time: {before_out:?}"
+    );
+    assert!(
+        before_out.contains("01h 00m"),
+        "pre-transition duration wrong: {before_out:?}"
+    );
+
+    let after = mlm_tz(&db_path, "Europe/Warsaw", &["status", "2026-03-30"]);
+    assert!(after.status.success(), "{:?}", after);
+    let after_out = stdout(&after);
+    assert!(
+        after_out.contains("12:00-13:00"),
+        "post-transition stint not shown in local wall-clock time: {after_out:?}"
+    );
+    assert!(
+        after_out.contains("01h 00m"),
+        "post-transition duration wrong: {after_out:?}"
+    );
 }
 
 /// Sanity check on the happy path: a fresh, empty day still exits 0 and
