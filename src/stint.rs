@@ -9,35 +9,9 @@
 // public surface here has no in-crate caller yet outside the tests.
 #![allow(dead_code)]
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 
-// TODO(integration): replace with `use crate::storage::{Punch, PunchKind};`
-// once Milestone 4 lands. Milestone 4 (`src/storage.rs`) is the sole owner of
-// these two types per PLAN.md contract 8; the declarations below are a
-// stand-in of the exact agreed shape so this milestone builds and tests in
-// isolation. Deleting them plus adding that one `use` line is the whole
-// integration step — no other change in this module.
-
-/// Which side of a stint a punch is.
-///
-/// `Ord` is load-bearing: `Start` must order before `End` so the §4.3 step 1
-/// tie-break at an identical instant pairs cleanly (E14).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PunchKind {
-    Start,
-    End,
-}
-
-/// A single timestamped start/end event on a date (SPEC.md §1.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Punch {
-    /// Insertion order; the last tie-break of §4.3 step 1.
-    pub id: i64,
-    pub at_utc: DateTime<Utc>,
-    /// The local calendar date the punch belongs to.
-    pub date: NaiveDate,
-    pub kind: PunchKind,
-}
+use crate::storage::{Punch, PunchKind};
 
 /// A completed (start, end) pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,7 +171,7 @@ pub fn classify(punches: &[Punch], now: DateTime<Utc>) -> DayStints {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Datelike, TimeZone};
+    use chrono::{Datelike, NaiveDate, TimeZone};
 
     /// All fixtures live on one date, at a fixed UTC offset of zero, so a
     /// wall-clock `HH:MM` in a test name is also the UTC instant.
