@@ -8,7 +8,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    /// Enable debug-level logging (PLAN.md interface contract 12).
+    /// Enable debug-level logging.
     #[arg(short, long, global = true)]
     pub verbose: bool,
 }
