@@ -5,6 +5,17 @@ _Pronounced "mlem"._
 Simple CLI time tracker. Quickly log start/stop points for the current
 date plus a short note of what you did, stored in SQLite.
 
+## Install
+
+```sh
+cargo install mlm
+```
+
+Needs a Rust toolchain (1.85+, edition 2024) — install one via
+[rustup](https://rustup.rs) if you don't have one. No other system
+dependency: `rusqlite`'s `bundled` feature compiles SQLite from
+source, so this works the same on Linux and Windows (MSVC).
+
 ## Stack
 
 - [`clap`](https://docs.rs/clap) — argument parsing (derive API)
@@ -173,3 +184,7 @@ Target:        45h 00m
 cargo build
 cargo run -- start "working on mlm"
 ```
+
+## License
+
+Licensed under the [EUPL v1.2](LICENSE).

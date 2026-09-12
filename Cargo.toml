@@ -2,6 +2,24 @@
 name = "mlm"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+authors = ["Michał Walczak <mw@michalwalczak.eu>"]
+description = "A quick CLI time tracker: log start/stop punches and notes, see your day/week status."
+license = "EUPL-1.2"
+readme = "README.md"
+keywords = ["time-tracking", "cli", "productivity", "timesheet"]
+categories = ["command-line-utilities"]
+# Internal planning/process artifacts — not useful to someone
+# `cargo install`-ing the tool, just noise in the published package.
+exclude = [
+    "AGENTS.md",
+    "NOTES.md",
+    "PLAN.md",
+    "plans/",
+    ".githooks/",
+    "clippy.toml",
+    "coverage-baseline.json",
+]
 
 [dependencies]
 anyhow = "1.0.104"
