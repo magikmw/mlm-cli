@@ -8,10 +8,11 @@ mod storage;
 mod time;
 mod week;
 mod week_target;
+mod week_view;
 
 use chrono::{DateTime, Local, Timelike};
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::{Cli, Command, WeekAction};
 
 fn main() {
     std::process::exit(run());
@@ -55,14 +56,13 @@ fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
         Command::Start(a) => commands::start(&mut conn, now, a),
         Command::Stop(a) => commands::stop(&mut conn, now, a),
         Command::Note(a) => commands::note(&mut conn, now, a),
-        // `week`/`week target` full dispatch (including the `action:
-        // None` render arm) is Milestone 11's wiring pass; `week_target`
-        // itself is already unit-tested standalone (Milestone 8 scope).
-        // Left as a stub here per Milestone 8's report — not in scope
-        // for Milestone 7 (start/stop/note only).
-        Command::Week(_args) => {
-            todo!("`week`/`week target` dispatch is wired by a later milestone")
-        }
+        // `week`/`week target` full dispatch (Milestone 11's wiring
+        // pass): `action: Some(Target(..))` routes to Milestone 8's
+        // `week_target::run`; `action: None` renders the week view.
+        Command::Week(args) => match &args.action {
+            Some(WeekAction::Target(t)) => week_target::run(&conn, now.date_naive(), t),
+            None => week_view::run(&conn, now, args),
+        },
     }
 }
 
