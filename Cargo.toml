@@ -1,0 +1,12 @@
+[package]
+name = "mlm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.45"
+clap = { version = "4.6.6", features = ["derive"] }
+crossterm = "0.29.0"
+directories = "6.0.0"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
