@@ -4,6 +4,7 @@ mod db;
 mod stint;
 mod time;
 mod week;
+mod week_target;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -21,6 +22,12 @@ fn main() {
         }
         Command::Log { date } => {
             println!("TODO: show log for {date:?}");
+        }
+        // Full dispatch (including the `action: None` render arm) is
+        // Milestone 7/11's wiring pass; `week_target::run` is unit-tested
+        // standalone in the meantime (Milestone 8 scope).
+        Command::Week(_args) => {
+            todo!("`week`/`week target` dispatch is wired by a later milestone")
         }
     }
 }
