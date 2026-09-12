@@ -24,7 +24,7 @@ indirectly F6, F10, F11, F8b.
 | D4 | `DATE` parsing is **strict** about zero-padding (`2026-2-12` rejected) | **ambiguity — see §7.1** |
 | D5 | Bare `WW` defaults to *today's ISO year*, not today's calendar year | **ambiguity — see §7.2** |
 | D6 | ISO week count derived from the Dec-28 rule, not `from_isoywd_opt`'s `None` | proposed |
-| D7 | Shared `src/error.rs` with `InputError` — a concrete completion of PLAN contract 7 | **completion of an underspecified contract — see §3** |
+| D7 | Local `DateWeekError` in `src/date.rs` (not shared with Milestone 1) — a concrete completion of PLAN contract 7, later reconciled to wave-1-local error types | **resolved — see §3** |
 | D8 | Week *iteration* (`next`/`prev`/`week_range`) is owned by this milestone, not Milestone 6 | **scope addition — see §7.4** |
 | D9 | `format_date_with_weekday` lives here, not in Milestone 9/10/11 | **scope addition — see §7.5** |
 | D10 | "current year" is injected as a `today: NaiveDate` parameter (extends contract 6 backwards to M2) | proposed |
@@ -34,17 +34,17 @@ indirectly F6, F10, F11, F8b.
 ## 1. Module layout
 
 ```
-src/date.rs    — NEW. Everything this milestone owns.
-src/error.rs   — NEW (shared with Milestone 1). See §3.
+src/date.rs    — NEW. Everything this milestone owns, including its
+                 own local DateWeekError (§3) — no shared error file.
 ```
 
 Rationale for a separate `date.rs` rather than extending `time.rs`:
 Milestone 1 and Milestone 2 are both wave-1 and are expected to run in
 **parallel worktrees**. `time.rs` is rewritten wholesale by Milestone 1;
-touching it here guarantees a merge conflict for zero benefit. The only
-shared file is `error.rs`, whose contents are fully specified in §3 so both
-worktrees can create byte-identical versions (or one creates it and the
-other merges additively).
+touching it here guarantees a merge conflict for zero benefit. No file is
+shared between the two milestones — each owns its own error type in its
+own module (contract 7, final form), which is exactly what keeps the two
+worktrees from needing any coordination beyond `main.rs`'s `mod` list.
 
 `src/main.rs` needs `mod date;` added. This is a one-line edit that **every**
 wave-1 milestone also makes to the same `mod` block — expect a trivial
@@ -145,19 +145,26 @@ Milestone 6 can count then re-walk.
 PLAN.md contract 7 says only: *"every parsing/storage function that can
 hard-error (Milestones 1, 2, 4) needs an agreed error shape so Milestones 7
 and 8's CLI wiring … doesn't need rework."* It does **not** specify the
-shape. **I am proposing a concrete completion and flagging it as such** —
-this must be mirrored verbatim into Milestone 1's plan before either
-worktree opens, or the two will diverge and contract 7 will have failed at
-exactly the point it exists to prevent.
+shape. **Superseded by cross-plan reconciliation**: contract 7 was later
+settled as "each wave-1 milestone owns its own local error enum, in its
+own module — no shared error file across wave-1 worktrees" (the shared
+`src/error.rs` proposed below is exactly the kind of cross-worktree
+coupling that caused divergence when tried literally). This milestone's
+error type moves entirely into `src/date.rs`, local to Milestone 2, not
+shared with Milestone 1's `TimeParseError`/`DurationParseError`. The
+struct-with-enum-cause *design* below is otherwise unchanged and still a
+good fit — only its module location and its `ArgKind` variant set change
+(no `Time`/`Duration` variants here; those belong to Milestone 1's own
+type). At the CLI boundary (Milestone 7 onward), `anyhow::Result<()>`
+unifies every wave-1 error type via `?` — no shared enum needed for that
+either (PLAN.md contract 7, final form).
 
 ```rust
-// src/error.rs — shared by Milestones 1, 2 (and available to 4).
+// src/date.rs — local to Milestone 2, not shared with any other module.
 
-/// Which CLI argument kind failed to parse. All four variants exist from the
-/// start so Milestones 1 and 2 can create this file independently and
-/// identically.
+/// Which of this milestone's two argument kinds failed to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArgKind { Time, Duration, Date, WeekId }
+pub enum ArgKind { Date, WeekId }
 
 /// Machine-inspectable cause. Tests assert on this, not on message text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,7 +172,7 @@ pub enum Cause {
     /// Did not match the argument's grammar at all.
     Shape,
     /// Matched the grammar but a component is outside its legal range
-    /// (`25:00`, `9:75`, `24:00`, week `0`, a negative duration).
+    /// (week `0`).
     OutOfRange,
     /// Well-shaped `YYYY-MM-DD` that is not a real calendar date
     /// (`2026-02-30`).
@@ -175,25 +182,27 @@ pub enum Cause {
     NoSuchIsoWeek { weeks_in_year: u32 },
 }
 
-/// A §6.1 hard error originating at the input edge.
+/// A §6.1 hard error originating at the input edge, for this milestone's
+/// two argument kinds only.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputError {
+pub struct DateWeekError {
     pub arg: ArgKind,
     /// The user's input, verbatim and untruncated, for the stderr message.
     pub input: String,
     pub cause: Cause,
 }
 
-impl InputError {
+impl DateWeekError {
     pub fn new(arg: ArgKind, input: &str, cause: Cause) -> Self;
 }
 
-impl std::fmt::Display for InputError { /* see wording below */ }
-impl std::error::Error for InputError {}
+impl std::fmt::Display for DateWeekError { /* see wording below */ }
+impl std::error::Error for DateWeekError {}
 ```
 
 **Display wording** (single line, plain ASCII per §7, no trailing period —
-Milestones 7/8/10/11 print it to stderr as-is and exit nonzero per §6.3):
+Milestones 7/8/10/11 propagate it via `anyhow` and print it to stderr as-is,
+exit nonzero per §6.3):
 
 | cause | rendered |
 |---|---|
@@ -204,15 +213,16 @@ Milestones 7/8/10/11 print it to stderr as-is and exit nonzero per §6.3):
 | `WeekId` + `NoSuchIsoWeek{52}` | `invalid WEEK_ID "2027-53": 2027 has only 52 ISO weeks` |
 
 **Why a struct-with-enum-cause rather than a flat enum per argument kind.**
-The CLI layer (M7/M8/M10/M11) wants one uniform thing to print and one exit
-path; tests want to assert *why* it failed without string-matching. A flat
-`enum DateError { BadShape, BadDate, ... }` per module would force
-Milestones 7/8 to write a conversion arm per module — the exact rework
-contract 7 exists to avoid.
+Tests want to assert *why* it failed without string-matching, and one
+struct covering both of this milestone's argument kinds avoids two nearly
+identical types. A flat `enum DateError { BadShape, BadDate, ... }` plus a
+separate `WeekIdError` would just duplicate the `Display`/`Error` boilerplate
+for no benefit, since both stay internal to this one module either way.
 
-**No `thiserror`/`anyhow` dependency.** `Cargo.toml` has neither, and this
-plan adds no dependencies. Hand-written `Display`/`Error` impls are ~15
-lines.
+**No `thiserror` dependency for this type.** `DateWeekError`'s hand-written
+`Display`/`Error` impls are ~15 lines; `anyhow` (now a project dependency,
+per PLAN.md contract 7) is for the CLI boundary, not for replacing this
+milestone's own precise error type.
 
 **Explicitly not in scope here**: DB errors (Milestone 3/4 own those) and
 the `main()` error→exit-code plumbing (Milestones 7/8/10/11).
@@ -228,7 +238,7 @@ All in `src/date.rs` unless noted.
 ```rust
 /// Parse a `DATE` argument (§3.5): strictly `YYYY-MM-DD`, zero-padded.
 /// Rejects wrong shape and non-existent calendar dates (§6.1, E2).
-pub fn parse_date(s: &str) -> Result<NaiveDate, InputError>;
+pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError>;
 
 /// Canonical storage/display form: `YYYY-MM-DD`.
 /// Used by Milestone 4 for `punches.date`/`notes.date`.
@@ -270,8 +280,8 @@ impl WeekId {
     /// Validated constructor. `Cause::OutOfRange` for `week == 0`;
     /// `Cause::NoSuchIsoWeek` for a week above the year's real count;
     /// `Cause::OutOfRange` for a year outside `1000..=9999`.
-    /// `input` is threaded through only to populate `InputError::input`.
-    pub fn new(iso_year: i32, week: u32, input: &str) -> Result<Self, InputError>;
+    /// `input` is threaded through only to populate `DateWeekError::input`.
+    pub fn new(iso_year: i32, week: u32, input: &str) -> Result<Self, DateWeekError>;
 
     /// Infallible: every real date belongs to exactly one ISO week.
     pub fn from_date(date: NaiveDate) -> Self;
@@ -293,7 +303,7 @@ impl WeekId {
 /// `today` is an injected parameter, never a hidden `Local::now()` read —
 /// extending PLAN contract 6's convention back to this milestone (D10) so
 /// the bare-`WW` tests are deterministic.
-pub fn parse_week_id(s: &str, today: NaiveDate) -> Result<WeekId, InputError>;
+pub fn parse_week_id(s: &str, today: NaiveDate) -> Result<WeekId, DateWeekError>;
 ```
 
 ### 4.3 WEEK_ID formatting & storage round-trip
@@ -314,7 +324,7 @@ impl WeekId {
     /// Accepts **only** zero-padded `YYYY-WW` — no bare `WW`, no unpadded
     /// form, no `today` dependency. Anything else is a corrupt/foreign row,
     /// not lenient user input.
-    pub fn from_key(s: &str) -> Result<Self, InputError>;
+    pub fn from_key(s: &str) -> Result<Self, DateWeekError>;
 }
 ```
 
@@ -561,7 +571,7 @@ system calendar rather than assumed:
 | T121 | every `parse_week_id` / `from_key` rejection carries `arg == ArgKind::WeekId` and the verbatim input |
 | T122 | `Display` of the `2027-53` error contains `"2027"`, `"52"`, and the verbatim input; is a single line; is ASCII-only (§7) |
 | T123 | `Display` of the `13/02/2026` error contains the verbatim input and no `\n` |
-| T124 | `InputError` implements `std::error::Error` (compile-time assertion, e.g. a `fn assert_err<E: std::error::Error>()` call) |
+| T124 | `DateWeekError` implements `std::error::Error` (compile-time assertion, e.g. a `fn assert_err<E: std::error::Error>()` call) |
 | T125 | no parse entry point panics for a junk corpus: `["", " ", "\0", "-", "--", "999999999999", "2026-99999999999", "🙂", "2026-02-12\n", "𝟚𝟘𝟚𝟞-𝟘𝟚-𝟙𝟚"]` — each returns `Err`, none panics or overflows |
 
 **Deliberately not tested here** (owned elsewhere, per PLAN): exit codes and
@@ -580,7 +590,7 @@ stderr plumbing (Milestones 7/8/10/11), the `Local::now()` read that supplies
 | **M6** | map a punch/note `date` to its week to bucket worked minutes | `WeekId::from_date(date)` | yes — infallible, so no error branch in the accounting loop |
 | **M6** | find the earliest data week | `Ord` (`.min()` over the derived weeks) | yes |
 | **M8** (`week target`) | parse optional `WEEK_ID`, default to current week; write the row | `parse_week_id(s, today)`, `WeekId::current(today)`, `to_key()` | yes. Upsert correctness depends on M8 writing `to_key()` and never the raw user string — **call this out in M8's plan** |
-| **M8** | reject invalid week ids (E3) | `InputError` + §3's Display | yes — M8 prints `{e}` and exits nonzero, no per-module conversion |
+| **M8** | reject invalid week ids (E3) | `DateWeekError` + §3's Display, propagated via `anyhow` | yes — M8 prints `{e}` and exits nonzero, no per-module conversion |
 | **M9** (shared rendering) | "is this the actual currently-ongoing week?" (contract 3/5) | `WeekId::current(now.date_naive()) == week` | yes — one expression, exactly the "don't reinvent it twice" goal |
 | **M9** | `"<owed> left by end of <weekday>"` using **today's** weekday (F11) | `format_weekday_full(today)` | yes — takes `today`, structurally cannot accidentally use `DATE`'s weekday |
 | **M10** (`status`) | header `Thu 2026-02-12` | `format_date_with_weekday` | yes |

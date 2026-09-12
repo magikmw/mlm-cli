@@ -26,7 +26,7 @@ adapter at the top of `cmd_week_target` changes.
 ```rust
 /// Parses the DURATION input grammar (§4.2): `20h`, `33h30m`, `45m`, `0h`.
 /// Returns whole minutes. Rejects `10` (no unit), `10x`, `-5h`, empty.
-pub fn parse_duration(s: &str) -> Result<i64, AppError>;
+pub fn parse_duration(s: &str) -> anyhow::Result<i64>;
 ```
 
 Milestone 8 assumes the returned value is **already guaranteed
@@ -45,7 +45,7 @@ pub struct WeekId { /* iso_year: i32, iso_week: u32 */ }
 /// `current_year` supplies the year for the bare form.
 /// Rejects `0`, `abcd`, and a week number that is not a valid ISO week
 /// for its year (`2027-53` when 2027 has 52).
-pub fn parse_week_id(s: &str, current_year: i32) -> Result<WeekId, AppError>;
+pub fn parse_week_id(s: &str, current_year: i32) -> anyhow::Result<WeekId>;
 
 /// The ISO week containing the given local date.
 pub fn week_of(date: NaiveDate) -> WeekId;
@@ -73,26 +73,24 @@ connect** — see §7 Risk R1.
 passes `Local::now().date_naive()`. This is what makes the
 "omitted WEEK_ID defaults to current week" test deterministic.
 
-### 1.5 Contract 7 — error shape
+### 1.5 Contract 7 — error shape — resolved: `anyhow`, no shared enum
 
-Assume a single crate-wide error enum (name it `AppError`, in
-`src/error.rs`), with at least:
+**Superseded.** This section originally proposed a shared crate-wide
+`AppError` enum. The project has since settled on `anyhow` (PLAN.md
+contract 7, and `anyhow` is now a real dependency — the "do not add
+`thiserror` unilaterally" concern below is moot, the dependency
+decision was made at the project level, just with `anyhow` instead).
 
-```rust
-pub enum AppError {
-    InvalidWeekId  { input: String, reason: String },
-    InvalidDuration{ input: String, reason: String },
-    Db(rusqlite::Error),
-    // ...other milestones' variants
-}
-```
-
-- Implements `Display` (the stderr message) and `std::error::Error`.
-  `Cargo.toml` has no `thiserror` — **do not add a dependency
-  unilaterally** (see Risk R3); hand-write `Display`/`From` impls.
-- `main` returns/propagates `Result<(), AppError>`, prints
-  `mlm: {err}` to **stderr**, and exits **nonzero** (§6.3). Use exit
-  code `1` for all §6.1 hard errors.
+- Milestone 2's `WeekIdParseError` and Milestone 1's
+  `DurationParseError` remain concrete, precise `std::error::Error`
+  types — this milestone does not touch or wrap them.
+- This milestone's own command handler returns `anyhow::Result<()>`.
+  `?` on either parse error, or on a `rusqlite`/`DbError` failure,
+  auto-converts via `anyhow`'s blanket `From` impl — no manual
+  `From`/`Display` plumbing to write here.
+- `main` prints the propagated `anyhow::Error`'s `Display` to
+  **stderr** and exits **nonzero** (§6.3). Use exit code `1` for all
+  §6.1 hard errors, consistent with Milestone 7.
 - clap's own errors (missing/unknown argument) are emitted by clap and
   exit with clap's code `2`. Tests must assert **nonzero**, not a
   specific code, unless the project pins one (see Ambiguity A3).
@@ -241,7 +239,7 @@ pub fn run(
     conn: &Connection,
     today: NaiveDate,          // injected "now" (contract 6)
     args: &WeekTargetArgs,
-) -> Result<(), AppError>;
+) -> anyhow::Result<()>;
 ```
 
 Returning `Result` rather than printing/exiting inline keeps the whole
@@ -252,16 +250,20 @@ the stderr print + exit-code mapping once for every command.
 
 1. `let (week_tok, dur_tok) = args.split();`
 2. **Resolve the week id** (first, see §3.4):
-   - `Some(tok)` ⇒ `parse_week_id(tok, today.year_ce_iso())` — pass the
-     **ISO** year of `today` for the bare-`WW` default, not the
+   - `Some(tok)` ⇒ `parse_week_id(tok, today.iso_week().year())` — pass
+     the **ISO** year of `today` for the bare-`WW` default, not the
      Gregorian calendar year, so a `mlm week target 2 …` run on
-     2026-12-31 (ISO year 2027) resolves the way §3.6 intends. If
-     Milestone 2's parser takes `today: NaiveDate` directly, hand it
-     that and let Milestone 2 own the rule.
+     2026-12-31 (ISO year 2027) resolves the way §3.6 intends
+     (`NaiveDate::iso_week()` is the real `chrono` API for this — not
+     `year_ce_iso()`, which doesn't exist). If Milestone 2's parser
+     takes `today: NaiveDate` directly, hand it that and let Milestone
+     2 own the rule.
    - `None` ⇒ `week_of(today)`.
-   - `?` on error ⇒ `AppError::InvalidWeekId`, nothing written.
+   - `?` on error propagates as `anyhow::Error` (wrapping Milestone 2's
+     `WeekIdParseError`), nothing written.
 3. **Parse the duration**: `let minutes = parse_duration(dur_tok)?;`
-   ⇒ `AppError::InvalidDuration` on failure, nothing written.
+   ⇒ propagates Milestone 1's `DurationParseError` on failure via
+   `anyhow`, nothing written.
 4. Defensive `debug_assert!(minutes >= 0)` plus a real guard returning
    `InvalidDuration` if a future Milestone-1 change ever lets a
    negative through — the schema `CHECK` is the last backstop, not the
@@ -336,7 +338,7 @@ pub fn set_week_target(
     conn: &Connection,
     week_id: &WeekId,
     target_minutes: i64,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     conn.execute(
         "INSERT INTO week_targets (week_id, target_minutes)
          VALUES (?1, ?2)
@@ -353,14 +355,14 @@ pub fn set_week_target(
 pub fn get_week_target(
     conn: &Connection,
     week_id: &WeekId,
-) -> Result<Option<i64>, AppError> {
+) -> anyhow::Result<Option<i64>> {
     conn.query_row(
         "SELECT target_minutes FROM week_targets WHERE week_id = ?1",
         rusqlite::params![week_id.as_str()],
         |row| row.get(0),
     )
     .optional()          // rusqlite::OptionalExtension
-    .map_err(AppError::from)
+    .map_err(anyhow::Error::from)
 }
 ```
 
@@ -396,7 +398,7 @@ application against an arbitrary `Connection` — Risk R1.)
 | U2 | `set_week_target_zero_is_accepted` | setting `2026-07` to `0` succeeds; read-back is `Some(0)` (F7b) |
 | U3 | `set_week_target_replaces_existing` | set `2026-07`→2400, then →2010; read-back is `Some(2010)` **and** `SELECT COUNT(*) FROM week_targets` is `1` (upsert, not a duplicate, not an error) |
 | U4 | `set_week_target_absent_week_reads_none` | `get_week_target` for a never-set week returns `Ok(None)`, not an error (§6.2) |
-| U5 | `set_week_target_negative_is_rejected_by_schema` | calling with `-1` returns `Err(AppError::Db(..))` and leaves zero rows — proves the CHECK backstop exists, distinct from the parser-level rejection in C4 |
+| U5 | `set_week_target_negative_is_rejected_by_schema` | calling with `-1` returns `Err` downcasting to `DbError` and leaves zero rows — proves the CHECK backstop exists, distinct from the parser-level rejection in C4 |
 | U6 | `set_week_target_keys_on_normalized_id` | build the `WeekId` from `"2026-7"` and from `"2026-07"`, set both, assert exactly **one** row keyed `"2026-07"` (guards §4.1's normalization bug) |
 
 ### 5.2 Unit tests — arg splitting (`src/cli.rs`)
@@ -419,8 +421,8 @@ Parse via `Cli::try_parse_from([...])`, no process spawn.
 | R1 | `explicit_week_id_writes_that_week` | `run` with `["2026-07","33h30m"]`, `today` far away ⇒ row `("2026-07", 2010)` (F7) |
 | R2 | `omitted_week_id_defaults_to_current_week` | `today = 2026-02-12` (a Thursday in ISO week 2026-07), args `["33h30m"]` ⇒ the single row is keyed `"2026-07"` and `get_week_target(week_of(today))` is `Some(2010)`. Repeat with a **year-boundary** `today` (e.g. `2026-12-28`, ISO `2027-01`) to prove the ISO year, not the Gregorian one, is used |
 | R3 | `zero_duration_accepted` | args `["2026-07","0h"]` ⇒ `Ok`, row `("2026-07", 0)` (F7b). Also `"0m"` |
-| R4 | `negative_duration_rejected_no_write` | args `["2026-07","-5h"]` ⇒ `Err(AppError::InvalidDuration{..})` and `SELECT COUNT(*) FROM week_targets` is `0` (E9) |
-| R5 | `malformed_week_id_rejected_no_write` | for each of `"0"`, `"abcd"`, `"2027-53"` (a 52-week year — use whichever year Milestone 2's tests establish as 52-week, do not hardcode a guess) ⇒ `Err(AppError::InvalidWeekId{..})`, zero rows (E3) |
+| R4 | `negative_duration_rejected_no_write` | args `["2026-07","-5h"]` ⇒ `Err` downcasting to Milestone 1's `DurationParseError` and `SELECT COUNT(*) FROM week_targets` is `0` (E9) |
+| R5 | `malformed_week_id_rejected_no_write` | for each of `"0"`, `"abcd"`, `"2027-53"` (a 52-week year — use whichever year Milestone 2's tests establish as 52-week, do not hardcode a guess) ⇒ `Err` downcasting to Milestone 2's `WeekIdParseError`, zero rows (E3) |
 | R6 | `unpadded_week_id_normalized` | args `["2026-7","33h30m"]` ⇒ row keyed `"2026-07"` (E3's positive half) |
 | R7 | `malformed_duration_rejected_no_write` | `"10"` (no unit), `"10x"`, `""` ⇒ `Err(InvalidDuration)`, zero rows (E4 applied here) |
 | R8 | `week_id_validated_before_duration` | args `["2027-53","-5h"]` (both bad) ⇒ the error is `InvalidWeekId`, not `InvalidDuration` (pins §3.4's order) |
@@ -479,7 +481,7 @@ always the duration, so this produces a *malformed DURATION* error
 (`2026-07` is not a duration) rather than clap's "missing DURATION".
 E10 is satisfied by the genuinely-zero-argument case (C2), which is
 what SPEC.md E10 literally describes ("missing the `DURATION` argument
-entirely"). Mitigation: `AppError::InvalidDuration`'s message should
+entirely"). Mitigation: the propagated `DurationParseError`'s message should
 name the expected forms, e.g.
 `invalid duration '2026-07': expected a duration like 20h, 33h30m or 45m`.
 Accepting this is the price of §3.7's `[WEEK_ID] DURATION` ordering; the

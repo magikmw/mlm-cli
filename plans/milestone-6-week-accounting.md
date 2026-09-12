@@ -47,55 +47,36 @@ edge in Milestone 1's formatter, not here.
 
 ## 2. Types this milestone needs as *input* (contracts)
 
-### 2.1 `WeekId` — the week-id type (Milestone 2's contract)
+### 2.1 `WeekId` — Milestone 2's actual type, used as-is (contract 9)
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WeekId {
-    pub year: i32,   // ISO year (chrono's IsoWeek::year), NOT calendar year
-    pub week: u32,   // ISO week number, 1..=52 or 1..=53 depending on year
-}
-```
+**Cross-plan fix**: this milestone originally hand-rolled its own
+`WeekId { pub year: i32, pub week: u32 }` with public fields and its
+own `monday()`/`from_date()`/`next()` methods, flagged as tentative
+pending Milestone 2's real design. Milestone 2 has since landed with a
+materially different, validated design (private fields, a checked
+constructor, methods named `start()` not `monday()`, and accessors
+`iso_year()`/`week()`). Per PLAN.md contract 9, **this milestone
+consumes Milestone 2's `WeekId` directly — no local re-declaration.**
 
-Rationale / notes for the implementer:
+Adjust every reference below accordingly:
+- `WeekId { year, week }` literal construction in tests → use
+  Milestone 2's validated constructor instead (test fixtures cannot
+  build an invalid `WeekId` by construction, which is a strict
+  improvement over the original plan's unchecked public fields).
+- `.monday()` → `.start()`.
+- `.year` / `.week` field access → `.iso_year()` / `.week()` accessor
+  calls.
+- `from_date()` and `next()` are unchanged in name and behavior.
+- The derived-`Ord`-gives-chronological-order property, and `next()`'s
+  date-based implementation (next paragraph), both still hold — they
+  were correct calls, just attached to the wrong type before.
 
-- Field order matters: the derived `Ord` compares `year` then `week`,
-  which is exactly ISO week chronological order. The walk and every
-  `while current <= target` loop depend on this. Do not reorder.
-- `Copy` matters: it is used as a `BTreeMap` key and passed by value
-  through a tight loop.
-- This is the shape Milestone 2 is expected to produce. **If Milestone 2
-  lands a different internal representation (e.g. a newtype wrapping
-  `chrono::IsoWeek`, or a `NaiveDate` week-start), this milestone should
-  adopt Milestone 2's type at integration time** — but nothing here
-  depends on anything beyond "ordered (iso_year, iso_week) pair plus the
-  three helpers below". See §8.1.
-- Parsing (`YYYY-WW`, bare `WW`, per-year 52/53 validity) and formatting
-  (`YYYY-WW` zero-padded) are **Milestone 2's**, not this milestone's.
-  This milestone must not reimplement them. Until Milestone 2 lands,
-  tests construct `WeekId { year, week }` literally — no string parsing
-  in this milestone's tests at all.
+Three helpers this milestone needs, now **Milestone 2's**, not
+reimplemented here: `start()` (Monday of the week, a `NaiveDate`),
+`from_date(date: NaiveDate) -> WeekId` (the ISO week containing a
+date), and `next(self) -> WeekId` (the next ISO week in sequence).
 
-Three small helpers this milestone *does* need. Prefer taking them from
-Milestone 2 if they exist there by integration time; implement them here
-(as `pub(crate)`, clearly marked `// TODO(M2): move to Milestone 2's
-module if it provides these`) if not, since this milestone cannot wait:
-
-```rust
-impl WeekId {
-    /// Monday of this ISO week, as a local calendar date.
-    pub fn monday(self) -> NaiveDate;
-
-    /// The ISO week containing a given local calendar date.
-    pub fn from_date(date: NaiveDate) -> WeekId;
-
-    /// The next ISO week in sequence. Crosses 52/53-week year
-    /// boundaries correctly by construction.
-    pub fn next(self) -> WeekId;
-}
-```
-
-`next()` must be implemented as **`WeekId::from_date(self.monday() + Duration::days(7))`**,
+`next()` must be implemented as **`WeekId::from_date(self.start() + Duration::days(7))`**,
 never as "week + 1, and if week > 52 then year + 1, week = 1". The
 naive arithmetic version silently corrupts every 53-week year (2020,
 2026, 2032, …). This is the single most likely correctness bug in the

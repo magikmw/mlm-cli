@@ -46,3 +46,41 @@ cargo build
 cargo run -- start "note"
 cargo run -- log
 ```
+
+## Pre-commit quality gate (CRAP-ish: complexity + coverage)
+
+There's a git hook that blocks commits on two things:
+
+- **Complexity**: any function whose cognitive complexity (via
+  `cargo clippy`'s `clippy::cognitive_complexity` lint) exceeds the
+  threshold in `clippy.toml` (`cognitive-complexity-threshold`,
+  currently **15** — clippy's own default is 25; tune it there, not in
+  the hook script).
+- **Coverage regression**: overall line coverage (via `cargo llvm-cov`)
+  is compared against `coverage-baseline.json`. Equal or improved
+  coverage passes and — when it improves — the baseline is ratcheted
+  up automatically. A drop fails the commit. The baseline is never
+  lowered automatically.
+
+Both checks degrade to a clean pass (not an error) when there's
+nothing to measure yet — an empty/near-empty codebase, or missing
+optional tooling (`cargo-llvm-cov`, `jq`) just produces a `SKIP` line
+for that check rather than blocking the commit.
+
+One-time setup per clone (hooks live in `.githooks/`, not `.git/hooks`,
+so this has to be opted into explicitly):
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Coverage requires `cargo-llvm-cov` and the `llvm-tools-preview`
+rustup component:
+
+```sh
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
+```
+
+In a genuine emergency the gate can be skipped with
+`git commit --no-verify` — use sparingly.

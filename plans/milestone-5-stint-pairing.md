@@ -8,71 +8,44 @@ F3, F9 (open-stint half), E7, E8, E11, E14.
 
 **PLAN.md basis**: wave-1, fixture-driven. Interface contracts 1
 (punch value shape), 2 (stint classification result shape), 6 ("now"
-injection). This milestone MUST NOT depend on Milestone 4's code —
-only on the punch value shape pinned below, which Milestone 4's plan
-must be checked against (see §7 "Ambiguities and risks").
+injection), 8 (`Punch`/`PunchKind` ownership — resolved to Milestone
+4, see §1/§7.2 below). This milestone's *logic* must not depend on
+Milestone 4's behavior (fixtures stand in for real reads), but it does
+have a **compile-time** dependency on `storage.rs`'s `Punch`/
+`PunchKind` type definitions existing (even as an early, functionally
+empty stub) — genuine wave-1 concurrency means both worktrees agree on
+those two type declarations before either starts, not that Milestone
+5 can build in total isolation from Milestone 4's crate module.
 
 **Deliverable**: a new module `src/stint.rs` (declared `mod stint;` in
-`src/main.rs`), containing the types in §1/§2, the algorithm in §3, and
-the unit tests in §6. No rendering, no DB, no clock reads, no CLI.
-Nothing outside `src/stint.rs` + the one `mod` line in `src/main.rs`
-changes.
+`src/main.rs`), containing the algorithm in §3 and the unit tests in
+§6 (the punch/result types themselves now live in `src/storage.rs`
+and `src/render.rs`'s consumers respectively, per §1/contract 8 and
+contract 2). No rendering, no DB, no clock reads, no CLI. Nothing
+outside `src/stint.rs` + the one `mod` line in `src/main.rs` changes.
 
 ---
 
-## 1. The punch value shape (interface contract 1)
+## 1. The punch value shape (interface contract 1) — resolved: import, don't redeclare
 
-This is the *fixture contract*: Milestone 5 consumes it, Milestone 4
-must eventually produce it. It is deliberately a lightweight value
-type, not a DB row handle, so fixtures are plain literals.
+**Cross-plan fix**: this milestone originally declared its own
+`Punch`/`PunchKind` here as a *fixture contract* for Milestone 4 to be
+checked against. Cross-plan review found Milestone 4 independently
+designed the field-for-field identical shape (including the same
+kind-then-id tiebreak ordering) in `src/storage.rs` — so per PLAN.md
+contract 8, **Milestone 4 is the sole owner**. This milestone imports
+`Punch`/`PunchKind` from `storage.rs` (`use crate::storage::{Punch,
+PunchKind};`) rather than declaring its own copy.
 
-```rust
-/// Which side of a stint a punch is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PunchKind {
-    /// Ordering rank 0 — sorts before `End` at an identical instant (§3.1).
-    Start,
-    /// Ordering rank 1.
-    End,
-}
-
-/// One stored start/end event, as consumed by pairing.
-/// Mirrors `punches` (SPEC.md §2.3) one-to-one: `id`, `at_utc`, `date`, `kind`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Punch {
-    /// `punches.id` — surrogate AUTOINCREMENT key (SPEC.md §2.3,
-    /// NOTES.md decision 9). Sole insertion-order tiebreaker; strictly
-    /// increasing with insertion order. Used ONLY for sort tie-breaking
-    /// here — never for identity comparisons in this milestone's logic.
-    pub id: i64,
-    /// `punches.at_utc` — the UTC instant. Minute-granular in practice
-    /// (SPEC.md §4.1) but the type carries full precision; pairing never
-    /// truncates or rounds.
-    pub at_utc: chrono::DateTime<chrono::Utc>,
-    /// `punches.date` — the LOCAL calendar date this punch belongs to,
-    /// computed app-side at insert (SPEC.md §2.1/§2.3). Carried through
-    /// so callers/tests can assert single-date input and so Milestone 10
-    /// can group without a second lookup. Pairing itself NEVER reads this
-    /// field except in a `debug_assert!` (see §3.0).
-    pub date: chrono::NaiveDate,
-    pub kind: PunchKind,
-}
-```
-
-Field-by-field rationale, so Milestone 4 can be checked against it:
-
-| field | type | why this exact shape |
-|---|---|---|
-| `id` | `i64` | SQLite `INTEGER PRIMARY KEY AUTOINCREMENT` reads back as `i64` in `rusqlite`. Not `u32`/`usize`. |
-| `at_utc` | `DateTime<Utc>` | §2.1 stores RFC 3339 UTC. Parsing to a typed instant belongs to Milestone 4's read; Milestone 5 will not accept a `String`. |
-| `date` | `NaiveDate` | §2.1's local calendar date, an app-computed column, NOT derivable from `at_utc`. Must be handed across, not recomputed. |
-| `kind` | `PunchKind` | the `CHECK (kind IN ('start','end'))` column, already validated/parsed by Milestone 4. Milestone 5 never sees the raw string. |
-
-`Punch` is `Copy` (all four fields are `Copy`), which lets the algorithm
-push/pop punches onto a stack and embed them in stints without cloning
-or lifetime plumbing. **Milestone 4 must not add a non-`Copy` field
-(e.g. a `String`) to this type**; if it needs one, it should keep it on
-a separate richer row type and project down to `Punch` at the boundary.
+The shape (now defined in Milestone 4's plan, reproduced here only for
+reference since this milestone's algorithm depends on it directly):
+`Punch { id: i64, at_utc: DateTime<Utc>, date: NaiveDate, kind:
+PunchKind }`, `Punch: Copy`, `PunchKind: Copy + Ord` with `Start`
+ordered before `End`. Every design point below this milestone
+originally argued for (full row not a lighter value, `Copy` for
+stack-friendly pairing, `date` carried rather than re-derived,
+`PunchKind` as a validated enum not a raw string) held up unchanged —
+only the ownership/location moved.
 
 **Fixture helper** (test-only, in `#[cfg(test)]`), so every test case in
 §6 is one readable line:
@@ -476,43 +449,23 @@ anomalies, not a clean zero-length stint.
 
 Decision taken here: sort by `(at_utc, kind_rank, id)` with
 `Start` < `End`, honoring E14's *stated outcome* over step 1's literal
-key. This is a **spec clarification, not a deviation from intent** —
-but it is a unilateral call and should be confirmed by whoever owns
-SPEC.md; §4.3 step 1 arguably wants a one-clause amendment. T7b is the
-test that encodes it, and the decision is reversible in exactly one
-line of `classify` if the spec owner rules the other way (in which case
-T7b's expectation flips to "orphan + open, `has_anomaly()` true" and
-E14 needs rewording).
+key. **Resolved, not just a unilateral call**: cross-plan adversarial
+review confirmed this was a genuine SPEC.md defect and patched §4.3
+step 1 directly to specify the kind-then-id tiebreak. T7b's expectation
+(zero-length stint, no anomaly) is now the spec-correct one, not a
+guess pending sign-off.
 
-### 7.2 RISK — punch-shape contract items Milestone 4 must confirm
+### 7.2 RESOLVED — punch-shape contract, per PLAN.md contract 8
 
-Milestone 4 has not been designed yet, so every one of these was
-decided unilaterally here and must be diffed against its plan:
-
-- **`id: i64`** — assumes `rusqlite` reads `INTEGER PRIMARY KEY` as
-  `i64` and that it is exposed, not hidden. If Milestone 4 returns a
-  row type without `id`, pairing loses its tiebreaker entirely.
-- **`at_utc: DateTime<Utc>`, already parsed** — if Milestone 4 hands
-  back the raw RFC 3339 `String` from the column, someone must own the
-  parse and its failure mode. Milestone 5 will not; parsing belongs on
-  the storage side of the boundary.
-- **`date: NaiveDate` carried on every punch** — §2.1 forbids deriving
-  it from `at_utc`, so it must come from the column. If Milestone 4
-  instead returns `(NaiveDate, Vec<PunchWithoutDate>)`, `Punch` shrinks
-  and §3.0's debug_assert disappears. Either is workable; it must be
-  agreed, not discovered at merge.
-- **`kind` as a parsed enum, not the raw `'start'`/`'end'` string** —
-  and the enum must be named/owned in one place. Proposal: `PunchKind`
-  is **defined in `src/stint.rs`** and Milestone 4 imports it, since
-  pairing is the only consumer that reasons about it. If Milestone 4
-  prefers to own it in a storage module, Milestone 5 imports instead;
-  the type must not be defined twice.
-- **`Punch: Copy`** — depends on Milestone 4 not adding a `String`
-  field. If it needs one, project down to a `Punch` at the boundary.
-- **Where the type physically lives** — proposed `src/stint.rs` for
-  wave-1 independence. If Milestone 4's plan puts a punch row type in
-  `src/db.rs`, wave 3's integration should collapse the two into one
-  definition rather than maintaining a conversion.
+Milestone 4 has since been designed and independently converged on the
+identical field-for-field shape proposed here (including the same
+`kind`-then-`id` tie-break). Per cross-plan review, **Milestone 4
+(`src/storage.rs`) is the sole owner** of `Punch`/`PunchKind` — see §1
+above, which now reflects this as an import rather than a local
+declaration. The specific concerns originally raised here are all
+settled: `id: i64` ✓, `at_utc` pre-parsed to `DateTime<Utc>` ✓, `date`
+carried rather than re-derived ✓, `kind` as a validated enum ✓,
+`Punch: Copy` ✓ (Milestone 4's plan was patched to add the derive).
 
 ### 7.3 AMBIGUITY — `now` earlier than an open start
 

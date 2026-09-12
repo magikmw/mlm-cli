@@ -627,11 +627,12 @@ cross-midnight case exactly). This plan proposes
 suffix, so the ordering decision must be written into **Milestone 11's**
 brief explicitly rather than left for it to invent.
 
-**R7 — Contract 3's `is_current_week` boolean is redundant and mildly
-harmful.** See §3. Recommend Milestone 6 drop it; if it stays, Milestone
-9 must still not branch on it. **Cross-check when Milestone 6's plan
-lands** — this is the one genuine cross-milestone action item from this
-plan.
+**R7 — RESOLVED.** Contract 3 has been amended: `WeekAccounting`
+carries no `is_current_week` field. Milestone 6's plan has been
+updated accordingly. This milestone's `week_framing`/`week_headline`
+computing "is current" themselves from `(WeekId, today)` — never
+consuming a boolean from elsewhere — is exactly the design that
+prevailed; no further action needed.
 
 **R8 — Weekday name locale.** `chrono`'s `%A` is English-only by
 default (no `unstable-locales` feature enabled in Cargo.toml), which

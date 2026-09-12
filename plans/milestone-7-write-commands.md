@@ -102,7 +102,7 @@ Notes on the shape:
   commands share a single handler parameterised by punch kind.
 - **`TIME` stays a `String` at the clap layer**, not a
   `value_parser`-converted type. Reason: the parse failure must surface
-  through *our* `AppError`/exit-code path with our own stderr wording
+  through *our* `anyhow`-based exit-code path with our own stderr wording
   (§3), not through clap's `ErrorKind::ValueValidation` formatting and
   clap's exit code 2. A `value_parser` would work but would make E1's
   message and exit code clap's business rather than ours, and would
@@ -228,71 +228,75 @@ it.
 
 ## 3. Error surfacing: hard error → nonzero exit + stderr + no write
 
-### 3.1 Shared error type (PLAN interface contract 7)
+### 3.1 Error convention (PLAN interface contract 7) — resolved: `anyhow`, no shared enum
 
-A single crate-wide error enum lives in a new `src/error.rs`, owned by
-whichever milestone lands first and shared verbatim by M1, M2, M4, M7,
-M8. Proposed shape:
+**Superseded by cross-plan reconciliation.** This section originally
+proposed a hand-rolled crate-wide `AppError` enum in a shared
+`src/error.rs`. The project has since settled on **`anyhow`** as its
+error-handling convention (PLAN.md contract 7): each wave-1 milestone
+keeps its own concrete local error type (`TimeParseError`,
+`DurationParseError`, `DbError`, `StorageError`, etc.), and this
+milestone is where the CLI boundary switches to `anyhow::Result<()>`
+instead of matching/wrapping those types by hand.
+
+This milestone still needs one small local error type of its own for
+the one thing that doesn't already live in a wave-1 module: NOTE
+validation.
 
 ```rust
-//! src/error.rs
+//! src/commands.rs (or wherever punch/note validation lives)
 
+/// §6.1 — empty/whitespace-only NOTE body. This milestone's own
+/// error type (not part of any wave-1 module) since note-emptiness
+/// validation belongs to command wiring, not parsing or storage.
 #[derive(Debug)]
-pub enum AppError {
-    /// §6.1 — malformed TIME: bad shape, out-of-range, or 24:00.
-    InvalidTime { input: String, reason: TimeErrorKind },
-    /// §6.1 — malformed DATE (Milestone 2/10).
-    InvalidDate { input: String },
-    /// §6.1 — malformed WEEK_ID (Milestone 2/8).
-    InvalidWeekId { input: String },
-    /// §6.1 — malformed or negative DURATION (Milestone 1/8).
-    InvalidDuration { input: String },
-    /// §6.1 — empty/whitespace-only NOTE body.
-    EmptyNote,
-    /// §6.1 — DB open/migration failure, or any query failure (E6).
-    Db(rusqlite::Error),
-    /// §6.1 — app-data dir could not be determined/created (E6).
-    Storage { context: String, source: std::io::Error },
-}
+pub struct EmptyNoteError;
 
-impl std::fmt::Display for AppError { /* one-line, plain ASCII, no trailing newline */ }
-impl std::error::Error for AppError { /* source() forwards Db/Storage */ }
-impl From<rusqlite::Error> for AppError { /* -> AppError::Db */ }
+impl std::fmt::Display for EmptyNoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NOTE is empty")
+    }
+}
+impl std::error::Error for EmptyNoteError {}
 ```
 
-Requirements on this type that Milestone 7 depends on:
+Requirements this milestone depends on, now satisfied by `anyhow`
+rather than a hand-rolled enum:
 
-- `Display` produces **one plain-ASCII line, no trailing newline, no
-  `error:` prefix** (the prefix is added once at the top level, §3.3),
-  so the same value can be embedded in other contexts later.
-- It is a plain enum, not a boxed `dyn Error` — handler tests need to
-  match on variants (`assert!(matches!(err, AppError::EmptyNote))`)
-  without string-matching.
-- It carries the offending input where there is one, so messages can
-  quote it back.
-
-If M1/M4 land a different error type first, Milestone 7 adapts via
-`From` impls rather than re-litigating; the only hard requirement is
-that M7 can distinguish "invalid time" from "empty note" from "db
-failure" by pattern match.
+- Every wave-1 error type (and `EmptyNoteError` above) already
+  implements `Display` as **one plain-ASCII line, no trailing
+  newline**; `anyhow::Error`'s own `Display` just forwards that,
+  optionally prefixed with context added via `.context("...")` at a
+  call site that needs more framing.
+- Tests that need to distinguish "invalid time" from "empty note" from
+  "db failure" **downcast** rather than pattern-match a shared enum:
+  `result.unwrap_err().downcast_ref::<EmptyNoteError>().is_some()`, or
+  simply assert the `Display`/`to_string()` contains the expected
+  substring (both are used across this milestone's test table below —
+  downcast where the concrete type matters, substring where only the
+  message matters).
+- No `From` impls to write or keep in sync — `anyhow`'s blanket
+  `impl<E: std::error::Error + Send + Sync + 'static> From<E> for
+  anyhow::Error` makes `?` work directly on every wave-1 error type
+  and on `EmptyNoteError`.
 
 ### 3.2 Handler signatures
 
-Each command handler is a plain function returning `Result<(), AppError>`
+Each command handler is a plain function returning `anyhow::Result<()>`
 — no printing of errors inside, no `process::exit` inside, no panics.
 
 ```rust
 //! src/commands.rs  (new module)
 
-pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> Result<(), AppError>;
-pub fn stop (conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> Result<(), AppError>;
-pub fn note (conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs)  -> Result<(), AppError>;
+pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()>;
+pub fn stop (conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()>;
+pub fn note (conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs)  -> anyhow::Result<()>;
 ```
 
 `start`/`stop` are one-line wrappers over a shared
 
 ```rust
-fn punch(conn: &mut Connection, now: DateTime<Local>, kind: PunchKind, args: &PunchArgs) -> Result<(), AppError>;
+fn punch(conn: &mut Connection, now: DateTime<Local>, kind: PunchKind, args: &PunchArgs) -> anyhow::Result<()>;
 ```
 
 `&mut Connection` (not `&Connection`) because the punch+note pair runs
@@ -310,6 +314,11 @@ fn run() -> i32 {
     // clap handles --help/--version/missing-arg itself and exits(2) on error.
     let cli = Cli::parse();
 
+    // PLAN.md contract 12: --verbose raises the log level; env_logger
+    // is initialized here, once, before anything else runs.
+    let level = if cli.verbose { log::LevelFilter::Debug } else { log::LevelFilter::Info };
+    env_logger::Builder::new().filter_level(level).init();
+
     let now = Local::now().with_second(0).unwrap().with_nanosecond(0).unwrap();
 
     match dispatch(&cli, now) {
@@ -320,9 +329,19 @@ fn run() -> i32 {
         }
     }
 }
+```
 
-fn dispatch(cli: &Cli, now: DateTime<Local>) -> Result<(), AppError> {
+`Cli` (§1.2) gains one more field for this: `#[arg(short, long, global
+= true)] pub verbose: bool`. Not exhaustively instrumented yet (PLAN.md
+contract 12 — "not exhaustive... populate properly when we need to
+debug later") — this milestone adds the pattern with a couple of
+representative call sites, e.g.:
+
+```rust
+
+fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
     let mut conn = db::connect()?;          // E6: returns Err, never panics
+    log::debug!("db path: {:?}", db::default_db_path());
     match &cli.command {
         Command::Start(a) => commands::start(&mut conn, now, a),
         Command::Stop(a)  => commands::stop(&mut conn, now, a),
@@ -453,15 +472,15 @@ before implementing** — see §7.2.
 
 §6.1: "whitespace-only text is rejected rather than stored as a blank
 log line (checked *before* the trim in §2.3)". Concretely:
-`body.trim().is_empty()` → `Err(AppError::EmptyNote)`; otherwise store
-`body.trim()`.
+`body.trim().is_empty()` → `Err(EmptyNoteError)` (§3.1); otherwise
+store `body.trim()`.
 
 M4 already owns this rule (its acceptance criteria include rejecting an
 empty/whitespace body). M7 needs the check *before* any write, so M4
 must expose the predicate separately from the insert:
 
 ```rust
-pub fn validate_note_body(body: &str) -> Result<&str /* trimmed */, AppError>;
+pub fn validate_note_body(body: &str) -> anyhow::Result<&str /* trimmed */>;
 ```
 
 `insert_note` calls it internally too (idempotent, defense in depth).
@@ -506,7 +525,7 @@ Exit-code assertions use a thin, separately-testable mapping function
 rather than spawning the binary:
 
 ```rust
-pub fn exit_code(result: &Result<(), AppError>) -> i32 { if result.is_ok() { 0 } else { 1 } }
+pub fn exit_code(result: &anyhow::Result<()>) -> i32 { if result.is_ok() { 0 } else { 1 } }
 ```
 
 `run()` calls it; tests call it too.
@@ -560,17 +579,17 @@ for today".
 
 | # | name | invocation | assert |
 |---|---|---|---|
-| T13 | `malformed_time_rejected` — table-driven over `25:00`, `24:00`, `9:75`, `abc`, `9:5:5`, `""` | `start <X>` and `stop <X>` | `Err(AppError::InvalidTime { .. })`; **0 punches and 0 notes**; `exit_code != 0`; stderr message (via `Display`) contains `invalid TIME`. |
+| T13 | `malformed_time_rejected` — table-driven over `25:00`, `24:00`, `9:75`, `abc`, `9:5:5`, `""` | `start <X>` and `stop <X>` | `Err` downcasting to Milestone 1's `TimeParseError`; **0 punches and 0 notes**; `exit_code != 0`; stderr message (via `Display`) contains `invalid TIME`. |
 | T14 | `malformed_time_with_note_writes_nothing` | `start 25:00 "some note"` | Err; **0 punches AND 0 notes** — the note must not sneak in either. |
-| T15 | `time_error_precedes_note_error` | `start 25:00 "   "` | Err is `InvalidTime`, not `EmptyNote` (documents §4.1's fixed validation order); 0 punches, 0 notes. |
+| T15 | `time_error_precedes_note_error` | `start 25:00 "   "` | Err downcasts to `TimeParseError`, not `EmptyNoteError` (documents §4.1's fixed validation order); 0 punches, 0 notes. |
 | T16 | `note_positional_after_time_is_never_reparsed_as_time` | `start 9:05 25:00` | Ok; punch at 09:05, note body `25:00`. The second positional is note text, full stop. |
 
 **Hard errors — E5, empty/whitespace NOTE**
 
 | # | name | invocation | assert |
 |---|---|---|---|
-| T17 | `standalone_empty_note_rejected` — table over `""`, `"   "`, `"\t"`, `"\n"`, `" \t \n "` | `note <X>` | `Err(AppError::EmptyNote)`; 0 notes; exit != 0; message contains `NOTE is empty`. |
-| T18 | **E5 core** `start_with_empty_note_leaves_no_punch` — same table | `start 9:05 <X>` | Err(`EmptyNote`); **0 notes AND 0 punches**. This is the orphaned-punch guard; it is the single most important assertion in this milestone. |
+| T17 | `standalone_empty_note_rejected` — table over `""`, `"   "`, `"\t"`, `"\n"`, `" \t \n "` | `note <X>` | `Err` downcasting to `EmptyNoteError` (§3.1); 0 notes; exit != 0; message contains `NOTE is empty`. |
+| T18 | **E5 core** `start_with_empty_note_leaves_no_punch` — same table | `start 9:05 <X>` | Err downcasts to `EmptyNoteError`; **0 notes AND 0 punches**. This is the orphaned-punch guard; it is the single most important assertion in this milestone. |
 | T19 | `stop_with_empty_note_leaves_no_punch` | `stop 17:30 "   "` | same as T18 with kind `end`. |
 | T20 | `empty_note_does_not_disturb_existing_rows` | seed `start 09:00` (Ok), then `start 10:00 "   "` (Err) | after the failure the DB still holds exactly the 1 seeded punch and 0 notes — the rollback undoes only the failed command's write, and does not touch prior data. |
 | T21 | `bare_note_command_is_clap_error` | `Cli::try_parse_from(["mlm","note"])` | `Err`, `ErrorKind::MissingRequiredArgument`; nothing reaches a handler (E10's class, applied to §3.4). |
@@ -594,18 +613,20 @@ for today".
 
 ## 6. Implementation checklist (suggested order)
 
-1. `src/error.rs` — `AppError` (or adopt M1/M4's, per §7).
+1. `src/commands.rs` — new module: `start`, `stop`, `note`, shared
+   `punch`, plus `EmptyNoteError` (§3.1) — no `src/error.rs` needed for
+   this milestone; `anyhow` is a dependency, not a type to declare.
 2. `src/cli.rs` — replace `Command` wholesale; delete `Log`.
-3. `src/commands.rs` — new module: `start`, `stop`, `note`, shared `punch`.
-4. `src/main.rs` — `run() -> i32` + `process::exit`, remove all
-   `.expect`, remove the `Log` arm, add `mod commands; mod error;`.
-5. Tests per §5.
+3. `src/main.rs` — `run() -> i32` + `process::exit`, remove all
+   `.expect`, remove the `Log` arm, add `mod commands;`. Also
+   initializes `env_logger` from the new global `--verbose` flag
+   (PLAN.md contract 12) before dispatching to a command.
+4. Tests per §5.
 
 Files touched: `src/cli.rs`, `src/main.rs`, new `src/commands.rs`, new
-`src/error.rs` (if not already landed), new `tests/write_commands.rs`.
-`src/db.rs` and `src/time.rs` are **not** this milestone's to rewrite
-(M3 and M1 own them) — except that `main.rs` must stop calling
-`db::connect().expect(...)`.
+`tests/write_commands.rs`. `src/db.rs` and `src/time.rs` are **not**
+this milestone's to rewrite (M3 and M1 own them) — except that
+`main.rs` must stop calling `db::connect().expect(...)`.
 
 ---
 
@@ -614,7 +635,8 @@ Files touched: `src/cli.rs`, `src/main.rs`, new `src/commands.rs`, new
 ### 7.1 From Milestone 1
 
 - A `TIME` parser taking `&str` and returning `Result<NaiveTime,
-  AppError>` (or a type convertible into `AppError::InvalidTime`),
+  TimeParseError>` (a concrete local error type — `?` converts it to
+  `anyhow::Error` automatically at the call site, contract 7),
   implementing the full §3.1 grammar including the `24:00` rejection.
   M7 calls it once and does nothing else with time strings.
 - That the returned value has seconds == 0.
@@ -630,8 +652,10 @@ Files touched: `src/cli.rs`, `src/main.rs`, new `src/commands.rs`, new
   supplied by the caller, not read from a global clock (contract 6).
 - `validate_note_body` (or equivalent) is exposed separately from
   `insert_note` (§4.3).
-- Errors surface as the shared `AppError`, distinguishable between
-  "empty note" and "db failure" (contract 7).
+- Errors are each milestone's own concrete `std::error::Error` type
+  (contract 7) — `anyhow::Error` (via `?`) is what unifies them at
+  this milestone's boundary, not a shared enum Milestone 4 needs to
+  return directly.
 
 ---
 

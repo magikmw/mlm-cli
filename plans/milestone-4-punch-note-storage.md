@@ -119,11 +119,20 @@ parallel worktrees. If the eventual preference is one file, the split is a
 ### 2.1 `PunchKind`
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PunchKind {
     Start,
     End,
 }
+```
+
+**Cross-plan fix**: additionally derives `PartialOrd, Ord` (declaration
+order `Start` before `End`) beyond this milestone's original design —
+Milestone 5's pairing tie-break (§4.3 step 1's fix: identical-instant
+punches sort `start` before `end`, then by `id`) needs this ordering
+directly, per PLAN.md contract 8.
+
+```rust
 
 impl PunchKind {
     /// The exact text stored in `punches.kind` (matches §2.3's CHECK).
@@ -154,7 +163,10 @@ completely and exhaustively; no field is implicit.
 ///
 /// Contract (PLAN.md interface contract 1): an ordered instant (UTC + local
 /// calendar date), a start/end kind, and an insertion-order tiebreaker.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Additionally derives `Copy` (cross-plan fix, contract 8) — every field
+/// already is, and Milestone 5's stack-based scan wants to move these
+/// around freely without cloning/lifetime bookkeeping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Punch {
     /// `punches.id`. Surrogate key (NOTES.md decision 9), monotonically
     /// increasing with insertion (AUTOINCREMENT). This is the **insertion-order

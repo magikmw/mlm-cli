@@ -3,9 +3,10 @@
 **Status**: ready to hand to a TDD subagent.
 **Spec basis**: SPEC.md §2.1, §2.2, §2.3, §6.1, §6.2, §8.2 (E6).
 **Plan basis**: PLAN.md "Milestone 3", interface contracts 1 and 7.
-**Files this milestone touches**: `src/db.rs` (rewrite), optionally
-`src/model.rs` (new, see §3.4), `Cargo.toml` (`[dev-dependencies]` only,
-see §6.1). Nothing else. `src/cli.rs` / `src/main.rs` keep their
+**Files this milestone touches**: `src/db.rs` (rewrite), `Cargo.toml`
+(`[dev-dependencies]` only, see §6.1). Nothing else — schema and
+migrations only; `Punch`/`PunchKind`/`Note` belong solely to Milestone
+4 (contract 8, §3.4 below). `src/cli.rs` / `src/main.rs` keep their
 scaffold shape here — Milestones 7/10 replace those.
 
 Unlike PLAN.md, this document deliberately names concrete SQL, types,
@@ -260,24 +261,15 @@ Rules the implementer must follow:
   assert on the *variant* via `matches!(err, DbError::Open { .. })`, or
   on the `Display` string, never on equality.
 
-**Composition with the eventual app-wide error** (proposed here, owned
-by whichever milestone first needs it — Milestone 7 most likely; listed
-so wave-2 CLI work can build against a stable shape):
-
-```rust
-// src/error.rs — NOT created by Milestone 3. Proposed shape only.
-pub enum AppError {
-    Parse(ParseError),      // Milestones 1 & 2
-    Validation(String),     // e.g. empty note body (§6.1)
-    Db(DbError),            // this milestone
-}
-pub type Result<T> = std::result::Result<T, AppError>;
-```
-with `impl From<DbError> for AppError`. Every §6.1 hard error therefore
-reaches `main` as one `AppError`, printed via `Display` to stderr and
-mapped to a nonzero exit (§6.3). Milestone 3's only obligation to this
-is that `DbError` be a well-behaved `std::error::Error` that can be
-wrapped — which the shape above satisfies.
+**Composition with the eventual app-wide error — resolved, no shared
+enum needed**: cross-plan review settled on `anyhow` as the project's
+CLI-boundary error convention (PLAN.md contract 7) rather than a
+hand-rolled `AppError` enum. Command handlers (Milestone 7 onward)
+return `anyhow::Result<()>`; `?` on a `DbError` auto-converts via
+`anyhow`'s blanket `From<E: std::error::Error>` impl, no manual
+wrapper or `From` impl needed anywhere. Milestone 3's only obligation
+is unchanged: `DbError` must be a well-behaved `std::error::Error`
+(`Display` + `source()`), which §3.2 already satisfies.
 
 ### 3.3 Connection / bootstrap functions
 
@@ -338,66 +330,37 @@ operations returning `Err`*. Consequences the implementer must respect:
   permission-denied `create_dir_all` looks nothing like success and
   must not be treated as one.
 
-### 3.4 Punch value shape — PLAN.md interface contract 1
+### 3.4 Punch value shape — superseded by cross-plan reconciliation
 
-Contract 1 asks for the punch shape to be pinned "now" (wave 1) so
-Milestone 5's fixtures and Milestone 4's real reads agree, and
-explicitly leaves "a full row vs. a lighter intermediate value"
-undecided. **Resolution: the full row.** Four fields, and `id` is
-needed anyway as §4.3 step 1's tie-break, so a lighter value would save
-nothing while creating a second type to convert between.
+**This section's original plan (landing `Punch`/`PunchKind`/`Note` and
+the UTC-text helpers in a new `src/model.rs` owned by Milestone 3) is
+superseded.** Cross-plan review found three milestones independently
+claiming ownership of this same type (this plan's `src/model.rs`,
+Milestone 4's `src/storage.rs`, and Milestone 5's own `src/stint.rs`
+copy) — exactly the divergence contract-pinning was meant to prevent.
 
-```rust
-// src/model.rs (new, ~30 lines, plain data types only — no queries)
-use chrono::{DateTime, NaiveDate, Utc};
+**Resolved (PLAN.md contract 8): Milestone 4 (`src/storage.rs`) is the
+sole owner** of `Punch`, `PunchKind`, `Note`, and the UTC text-format
+helpers described below. **Milestone 3's scope is schema/migrations
+only — no Rust value types, no `src/model.rs`.** The DDL, `CHECK`
+constraints, and indexes in §§2-3 of this plan are unaffected by this
+change; only the "define the row types here" portion is removed.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PunchKind { Start, End }
+The design content below is preserved as input for whoever implements
+Milestone 4, since it's still correct — just relocated:
 
-impl PunchKind {
-    /// THE single source of truth for the strings the `kind` CHECK
-    /// accepts. Storage writes this; storage reads parse it.
-    pub fn as_str(self) -> &'static str {
-        match self { PunchKind::Start => "start", PunchKind::End => "end" }
-    }
-    pub fn parse(s: &str) -> Option<Self>;  // exact, case-sensitive
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PunchRow {
-    pub id: i64,
-    pub at_utc: DateTime<Utc>,  // parsed from the TEXT column
-    pub date: NaiveDate,        // local calendar date (§2.1)
-    pub kind: PunchKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NoteRow {
-    pub id: i64,
-    pub date: NaiveDate,
-    pub body: String,           // already trimmed
-    pub created_at_utc: DateTime<Utc>,
-}
-
-/// Canonical, fixed-width, lexically sortable UTC text form.
-pub const UTC_TEXT_FORMAT: &str = "%Y-%m-%dT%H:%M:%SZ";
-```
-
-**Serialization trap to state loudly in the code:** do **not** use
-`DateTime::to_rfc3339()` — it emits `+00:00` rather than `Z`, and
-`to_rfc3339_opts` can emit sub-second digits. Either breaks the fixed
-width that `at_utc`'s lexical sortability (§2.3) depends on. Always
-`dt.format(UTC_TEXT_FORMAT).to_string()` on write, and
-`NaiveDateTime::parse_from_str(s, UTC_TEXT_FORMAT)?.and_utc()` on read.
-Milestone 3 owns the constant and the two tiny helpers (`fn to_utc_text`
-/ `fn parse_utc_text`); Milestone 4 owns the queries that use them.
-
-Scope note: landing `src/model.rs` in Milestone 3 is a small, deliberate
-widening of PLAN.md's "schema only" boundary, justified by contract 1's
-wave-1 deadline — Milestone 5 starts on day one and needs this type to
-write fixtures against. It adds no behavior: no SQL, no I/O. If the
-reviewer disagrees, the fallback is to put these types in `src/db.rs`;
-what must not happen is Milestone 5 inventing its own punch struct.
+- Full row (not a lighter intermediate value): four fields on `Punch`,
+  `id` included since §4.3 step 1's tie-break needs it directly.
+- `PunchKind` as a two-variant enum with `as_str()`/`parse()` as the
+  single source of truth for the strings the `kind` CHECK accepts,
+  additionally deriving `PartialOrd, Ord` with `Start` before `End`
+  (contract 8 — Milestone 5's pairing tie-break needs this ordering).
+- The canonical UTC text constant, `"%Y-%m-%dT%H:%M:%SZ"`, with the
+  serialization trap called out loudly: **never** use
+  `DateTime::to_rfc3339()` (emits `+00:00`, breaks the fixed-width
+  lexical sort §2.3 depends on) or `to_rfc3339_opts` (can emit
+  sub-second digits) — always format/parse against the literal
+  constant.
 
 ---
 
@@ -412,7 +375,9 @@ what must not happen is Milestone 5 inventing its own punch struct.
    against the now-existing schema. Adjust DDL until green.
 5. Write `DbError` + T16, then T11–T13 (failure paths). Remove the last
    `.expect()`s.
-6. `src/model.rs` + its two round-trip tests (T17–T18).
+6. `Punch`/`PunchKind`/`Note` and their round-trip tests (formerly
+   T17-T18 here) now belong to Milestone 4 — nothing to do for them
+   in this milestone.
 7. `main.rs` currently calls `db::connect().expect(...)`. Minimal
    adaptation only: keep it compiling (`match`/`eprintln!`+`exit(1)` is
    fine); the real wiring is Milestone 7's. Do not touch `cli.rs`.
@@ -423,7 +388,9 @@ what must not happen is Milestone 5 inventing its own punch struct.
 
 Location: `#[cfg(test)] mod tests` inside `src/db.rs` (these assert on
 private DDL details and private error mapping, so unit tests, not
-`tests/`). `src/model.rs`'s two tests live in that file.
+`tests/`). T17/T18 (the UTC-text round-trip and `PunchKind` parse
+tests) have moved to Milestone 4's plan along with the types they
+test (§3.4, contract 8).
 
 Mapping column: SPEC.md §8 flow / §6 clause each test discharges.
 
@@ -445,8 +412,9 @@ Mapping column: SPEC.md §8 flow / §6 clause each test discharges.
 | **T14** | after a fresh connect, `PRAGMA index_list(punches)` / `index_list(notes)` | `idx_punches_date_at_utc_id` and `idx_notes_date_created_at_utc_id` are present; `PRAGMA index_info` on the punches index reports columns `date, at_utc, id` in that order | PLAN AC "indexing intent on `date`/`at_utc`"; §2.3 |
 | **T15** | insert three punches, read their `id`s; assert strictly increasing. Assert a table named `sqlite_sequence` exists | documents that `AUTOINCREMENT` materializes `sqlite_sequence`, so **no test may assert "sqlite_master contains exactly three tables"** | NOTES.md decision 9; guards a likely test-authoring mistake |
 | **T16** | construct one of each `DbError` variant; call `Display` and `source()` | every `Display` is a single line, non-empty, with no trailing newline; every wrapping variant's `source()` is `Some` | contract 7; §6.1's "message on stderr" requirement |
-| **T17** | `model`: `to_utc_text` on a known `DateTime<Utc>` | produces exactly `2026-09-12T13:05:00Z` — 20 chars, `Z` suffix, no offset, no sub-second digits | §2.3 "RFC 3339, sortable lexically"; contract 1 |
-| **T18** | `model`: round-trip `parse_utc_text(to_utc_text(dt)) == dt`; and `PunchKind::parse(k.as_str()) == Some(k)` for both variants; `PunchKind::parse("START")` is `None` | keeps the CHECK clause and the Rust enum from drifting apart | §2.3; contract 1 |
+
+(T17/T18 — the UTC-text round-trip and `PunchKind::parse` tests —
+moved to Milestone 4's plan with the types they test, per §3.4 above.)
 
 Explicitly **out of scope for this milestone's tests** (they belong to
 later milestones, listed so the TDD agent doesn't over-reach): note
@@ -519,19 +487,16 @@ already exists". Nothing to do about it now; do not build backup
 tooling in this milestone. Just don't document `.dump` as a supported
 backup path.
 
-### 7.2 Contract 7 (error shape) was underspecified — completed here
-PLAN.md lists contract 7 as needing agreement and gives no shape.
-§3.2 above invents: the `DbError` enum and its five variants, the
-`Display`/`source` conventions, the no-blanket-`From` rule, and the
-proposed `AppError` wrapper. **Milestone 3 only implements `DbError`;
-`AppError` is a proposal for whoever lands `src/error.rs` first.** The
-risk if the reviewer disagrees is confined — `DbError` remains a valid
-inner type under any reasonable outer error.
-
-Sub-decision worth an explicit yes/no: **no `thiserror`/`anyhow`.**
-Hand-written impls are ~40 lines here. Adding either is a runtime
-dependency decision for the whole project, not Milestone 3's to make
-unilaterally.
+### 7.2 Contract 7 (error shape) — resolved
+`DbError` (§3.2's enum, `Display`/`source` conventions, no-blanket-
+`From` rule) stands as designed and needed no change. The project-wide
+question this section originally deferred — hand-rolled wrapper vs.
+`thiserror`/`anyhow` — is now decided at the project level (not
+Milestone 3's call, correctly deferred here): **`anyhow`**, adopted as
+a real dependency, used at the CLI boundary from Milestone 7 onward.
+`DbError` itself is unaffected — it stays a hand-written, precise
+`std::error::Error` type; `anyhow` only removes the need for a
+hand-rolled `AppError` wrapper around it and the other wave-1 types.
 
 ### 7.3 No way to point the binary at a test database — blocks end-to-end E6
 PLAN.md's cross-cutting section requires E6 re-tested "end-to-end
@@ -591,9 +556,9 @@ depth. Declined: SPEC.md §2.3 enumerates exactly two CHECK clauses,
 PLAN.md's acceptance criteria test exactly those two, and extra
 constraints would make the schema reject data the spec considers valid
 if any app-side format ever legitimately shifts. The invariant is
-instead enforced at the single serialization chokepoint (§3.4's
-`UTC_TEXT_FORMAT` + T17/T18). Recorded because it is a real fork, not
-an oversight.
+instead enforced at the single serialization chokepoint (Milestone
+4's `UTC_TEXT_FORMAT` constant and its round-trip tests, §3.4).
+Recorded because it is a real fork, not an oversight.
 
 ### 7.8 [DECISION-C] `notes.created_at_utc` keeps real seconds — a genuine spec tension
 SPEC.md §4.1 says "There is no seconds precision anywhere — everything
@@ -678,5 +643,6 @@ a busy-timeout to make a flaky test pass — fix the test instead.
       (+ **T16** for the message shape)
 - [ ] Indexing intent on `date`/`at_utc` is realized. → **T14**
 - [ ] No `.unwrap()`/`.expect()`/`panic!` remains in `src/db.rs`.
-- [ ] Contract 1 (punch value shape) and contract 7 (error shape) are
-      concretely landed for wave-1 consumers. → **T17, T18, T16**
+- [ ] Contract 7 (error shape) is concretely landed for wave-1
+      consumers. → **T16**. (Contract 8 — punch/note value shape — is
+      Milestone 4's responsibility now, not this milestone's.)

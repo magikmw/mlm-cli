@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# CRAP-ish quality gate: blocks a commit when a function's cognitive
+# complexity exceeds the configured threshold, or when overall test-line
+# coverage would regress relative to the recorded baseline.
+#
+# One-time setup (per clone):
+#   git config core.hooksPath .githooks
+#
+# Tuning:
+#   - complexity threshold: clippy.toml -> cognitive-complexity-threshold
+#   - coverage baseline:    coverage-baseline.json (updated automatically
+#     by this hook whenever coverage improves; never lowered automatically)
+#
+# Emergency bypass (use sparingly, and explain why in the commit message):
+#   git commit --no-verify
+#
+# Requires: cargo, the clippy component, cargo-llvm-cov, and jq.
+# Missing optional tooling degrades to a SKIP for that check rather than
+# a hard failure, so this never blocks commits on machines that haven't
+# installed the coverage tooling yet -- it just won't ratchet coverage
+# there. The complexity check only needs clippy, which ships by default.
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 1
+cd "$REPO_ROOT" || exit 1
+
+BASELINE_FILE="$REPO_ROOT/coverage-baseline.json"
+STATUS=0
+
+# ---------------------------------------------------------------------------
+# 1. Complexity gate
+# ---------------------------------------------------------------------------
+echo "==> quality gate: cognitive complexity"
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "    SKIP (cargo not found)"
+elif ! command -v jq >/dev/null 2>&1; then
+    echo "    SKIP (jq not found -- install jq to enable this check)"
+else
+    CLIPPY_JSON="$(cargo clippy --all-targets --quiet --message-format=json \
+        -- -W clippy::cognitive_complexity 2>/dev/null)"
+
+    if [ -z "$CLIPPY_JSON" ]; then
+        echo "    OK (nothing to check yet)"
+    else
+        HITS="$(printf '%s\n' "$CLIPPY_JSON" | jq -s '
+            [ .[] | select(.reason == "compiler-message"
+                            and .message.code.code == "clippy::cognitive_complexity")
+                  | .message.rendered ]
+            | unique
+        ')"
+        COUNT="$(printf '%s' "$HITS" | jq 'length')"
+
+        if [ "$COUNT" -gt 0 ]; then
+            echo "    FAIL: $COUNT function(s) exceed the cognitive complexity"
+            echo "    threshold set in clippy.toml (cognitive-complexity-threshold):"
+            echo ""
+            printf '%s' "$HITS" | jq -r '.[]' | sed 's/^/    /'
+            STATUS=1
+        else
+            echo "    OK (no functions exceed the complexity threshold)"
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Coverage-regression gate
+# ---------------------------------------------------------------------------
+echo "==> quality gate: test coverage (vs. baseline)"
+
+if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
+    echo "    SKIP (cargo-llvm-cov not installed -- 'cargo install cargo-llvm-cov'"
+    echo "    and 'rustup component add llvm-tools-preview' to enable this check)"
+elif ! command -v jq >/dev/null 2>&1; then
+    echo "    SKIP (jq not found -- install jq to enable this check)"
+else
+    COV_JSON="$(cargo llvm-cov --summary-only --json --quiet 2>/dev/null)"
+
+    LINES_COUNT="$(printf '%s' "$COV_JSON" | jq -r '.data[0].totals.lines.count // 0' 2>/dev/null)"
+    LINES_PCT="$(printf '%s' "$COV_JSON" | jq -r '.data[0].totals.lines.percent // 0' 2>/dev/null)"
+
+    if [ -z "$LINES_COUNT" ] || [ "$LINES_COUNT" = "0" ] || [ "$LINES_COUNT" = "null" ]; then
+        echo "    SKIP (no instrumented lines yet -- nothing to measure)"
+    else
+        if [ ! -f "$BASELINE_FILE" ]; then
+            # Bootstrap: nothing recorded yet, so there is nothing to
+            # regress against. Record the current value and pass.
+            jq -n --arg pct "$LINES_PCT" \
+                '{line_coverage_percent: ($pct | tonumber)}' > "$BASELINE_FILE"
+            git add "$BASELINE_FILE"
+            echo "    BOOTSTRAP: recorded initial baseline (${LINES_PCT}%)"
+        else
+            BASELINE_PCT="$(jq -r '.line_coverage_percent // 0' "$BASELINE_FILE" 2>/dev/null)"
+
+            CMP="$(awk -v cur="$LINES_PCT" -v base="$BASELINE_PCT" \
+                'BEGIN { if (cur + 0.0001 < base) print "worse"; else if (cur > base + 0.0001) print "better"; else print "same" }')"
+
+            case "$CMP" in
+                worse)
+                    echo "    FAIL: coverage would drop from ${BASELINE_PCT}% to ${LINES_PCT}%"
+                    STATUS=1
+                    ;;
+                better)
+                    jq -n --arg pct "$LINES_PCT" \
+                        '{line_coverage_percent: ($pct | tonumber)}' > "$BASELINE_FILE"
+                    git add "$BASELINE_FILE"
+                    echo "    OK: coverage improved (${BASELINE_PCT}% -> ${LINES_PCT}%), baseline updated"
+                    ;;
+                same)
+                    echo "    OK: coverage unchanged (${LINES_PCT}%)"
+                    ;;
+            esac
+        fi
+    fi
+fi
+
+echo ""
+if [ "$STATUS" -ne 0 ]; then
+    echo "Quality gate failed. Fix the issue(s) above, or in a genuine emergency:"
+    echo "  git commit --no-verify"
+fi
+
+exit "$STATUS"

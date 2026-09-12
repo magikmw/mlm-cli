@@ -37,34 +37,30 @@ duration itself, and never composes headline wording itself.
 
 ## 1. Clap shape for `week [WEEK_ID]`
 
-### 1.1 The subcommand collision with Milestone 8
+### 1.1 The subcommand collision with Milestone 8 — resolved: reuse Milestone 8's shape verbatim
 
 `mlm week [WEEK_ID]` (§3.6, this milestone) and `mlm week target [WEEK_ID]
-DURATION` (§3.7, Milestone 8) share the `week` command word. The `Week`
-variant therefore carries **both** an optional positional and an optional
-nested subcommand:
+DURATION` (§3.7, Milestone 8) share the `week` command word. Per
+PLAN.md's merge-order guidance, **Milestone 8 lands first and defines
+the canonical shape** — `Command::Week(WeekArgs)` with `WeekArgs {
+action: Option<WeekAction>, week_id: Option<String> }` and
+`WeekAction::Target(WeekTargetArgs)`. This milestone does **not**
+declare its own `WeekSubcommand` (an earlier draft of this plan did —
+superseded); it reuses `WeekArgs`/`WeekAction` exactly as Milestone 8
+defines them and fills in the `action: None` rendering arm.
 
-```
-Command::Week {
-    // optional nested subcommand: currently only `target` (Milestone 8)
-    subcommand: Option<WeekSubcommand>,   // #[command(subcommand)]
-    // optional positional week id, used when no subcommand is given
-    week_id: Option<String>,
-}
-```
-
-with `#[command(args_conflicts_with_subcommands = true)]` on the `Week`
-variant so clap does not try to satisfy the positional and the subcommand
-at once.
+`#[command(args_conflicts_with_subcommands = true)]` on `WeekArgs`
+(already part of Milestone 8's definition) stops clap from trying to
+satisfy the positional and the subcommand at once.
 
 Resolution behaviour required (assert these in clap-level tests):
 
 | invocation | outcome |
 |---|---|
-| `mlm week` | `subcommand: None, week_id: None` -> current week |
-| `mlm week 7` | `subcommand: None, week_id: Some("7")` |
-| `mlm week 2026-07` | `subcommand: None, week_id: Some("2026-07")` |
-| `mlm week 2026-7` | `subcommand: None, week_id: Some("2026-7")` |
+| `mlm week` | `action: None, week_id: None` -> current week |
+| `mlm week 7` | `action: None, week_id: Some("7")` |
+| `mlm week 2026-07` | `action: None, week_id: Some("2026-07")` |
+| `mlm week 2026-7` | `action: None, week_id: Some("2026-7")` |
 | `mlm week target ...` | routes to Milestone 8, never to this milestone |
 | `mlm week 7 8` | clap error (unexpected extra positional), nonzero exit |
 
@@ -73,13 +69,8 @@ clap value parser. Parsing (and its hard-error message) is Milestone 2's
 job and happens in the resolver, so that E3's error text is owned in one
 place rather than by clap's value-parser wrapper.
 
-**Coordination point**: Milestone 8 and Milestone 11 both edit the same
-`Command::Week` variant in `cli.rs`. Milestone 11 owns the parent variant's
-shape (positional + `args_conflicts_with_subcommands`); Milestone 8 owns
-the `WeekSubcommand::Target { .. }` variant's contents. Whoever lands
-second rebases onto the other's variant rather than replacing it. Note
-also PLAN.md's closing risk: the scaffold's `Command::Log` is leftover and
-must be deleted, not preserved.
+Note also PLAN.md's closing risk: the scaffold's `Command::Log` is
+leftover and must be deleted (Milestone 7's job), not preserved.
 
 ### 1.2 Also delete the scaffold placeholders touched here
 
@@ -109,10 +100,11 @@ read), and a DB handle.
    `[Mon, Tue, Wed, Thu, Fri, Sat, Sun]`. This array is the row order and
    is never re-sorted or filtered.
 3. **Build the 7-date rollup** (contract 4) — see §3 below.
-4. **Run Milestone 6's week accounting** for the resolved week id, with
-   `now`. Returns contract 3: `target`, `carry_in`, `worked`,
-   `fulfillment`, `owed`, `carry_out` (all signed integer minutes) and the
-   explicit `is_current_week` boolean.
+4. **Run Milestone 6's week accounting** for the resolved week id.
+   Returns contract 3: the week id, `target`, `carry_in`, `worked`,
+   `fulfillment`, `owed`, `carry_out` (all signed integer minutes) — no
+   "is current" boolean; that comparison belongs to Milestone 9 alone
+   (step 5), computed from the week id and `today`.
 5. **Build the headline** by handing Milestone 9 the accounting result and
    `now`. Milestone 9 returns the **finished headline string** (contract
    5) — deadline-framed for the current week, plain `Total still
@@ -337,8 +329,9 @@ Target:        40h 00m
 Arithmetic: 450+480+465+490+325 = 2210; carry_in 0; fulfillment 2210;
 owed 190 = `03h 10m`. No `(ongoing)` on any row (no row is today).
 
-A **future** week renders by the same closed-week path — `is_current_week`
-is false, so Milestone 9 gives the plain form, all 7 rows are `00h 00m`
+A **future** week renders by the same closed-week path — Milestone 9
+determines it isn't the current week (comparing the week id against
+`today` itself), so it gives the plain form; all 7 rows are `00h 00m`
 (unless a target override exists, which only changes `Target:`).
 
 ---

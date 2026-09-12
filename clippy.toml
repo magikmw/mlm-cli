@@ -1,0 +1,8 @@
+# Threshold for the cognitive-complexity check used by the pre-commit
+# quality gate (see .githooks/pre-commit and AGENTS.md).
+#
+# clippy's own default is 25; that's generous for a small CLI, so we set
+# a stricter default here in the ~10-15 range that's typical for
+# "one function should do one thing" style linting. Raise it if a
+# specific function has a good reason to be more complex than this.
+cognitive-complexity-threshold = 15

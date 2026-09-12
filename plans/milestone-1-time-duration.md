@@ -17,40 +17,21 @@ raw `chrono::ParseError` and unpadded output go away).
 
 ## 1. Types and signatures
 
-### 1.1 `Minutes` — the canonical signed minute unit
+### 1.1 Minute unit — plain `i64`, no newtype
 
-```rust
-/// Canonical minute-granular signed quantity used everywhere in mlm:
-/// parsed DURATION input, `week_targets.target_minutes` storage, and
-/// every Milestone 6 accounting value (target, carry_in, worked,
-/// fulfillment, owed, carry_out — SPEC §5, PLAN.md interface contract 3).
-/// A thin i64 newtype rather than a bare integer so every function
-/// signature that deals in "minutes" is self-documenting and so the
-/// duration formatter can't accidentally be called with, say, seconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Minutes(pub i64);
-
-impl Minutes {
-    pub const ZERO: Minutes = Minutes(0);
-    pub fn from_i64(v: i64) -> Self { Minutes(v) }
-    pub fn as_i64(self) -> i64 { self.0 }
-}
-
-impl std::ops::Add for Minutes { type Output = Minutes; /* wraps i64 add */ }
-impl std::ops::Sub for Minutes { type Output = Minutes; /* wraps i64 sub */ }
-impl std::ops::Neg for Minutes { type Output = Minutes; /* wraps i64 neg */ }
-impl std::iter::Sum for Minutes { /* folds via Add, for summing per-day/per-week totals */ }
-```
-
-Justification: contract 3 requires target/carry_in/worked/fulfillment/
-owed/carry_out to be "signed integer minutes" — a shared newtype (not a
-bare `i64` scattered across six milestones) is the concrete completion
-of that contract. `Add`/`Sub`/`Neg`/`Sum` are included because
-Milestone 6 needs to fold per-day totals into a week total and combine
-target/carry/worked via plain arithmetic without unwrapping `.0`
-everywhere. This type has no non-negativity invariant — negative values
-are legal and expected (owed/carry can go either way, §5) — the DURATION
-*parser* enforces non-negativity itself, not the type.
+**Superseded by cross-plan reconciliation (PLAN.md interface contract
+11):** this milestone originally proposed a `Minutes(i64)` newtype for
+every minute-granular value in the project. Milestones 6 and 9 were
+built independently in parallel and both used plain `i64` throughout
+— it carries no invariant worth enforcing (negative values are legal
+and expected everywhere in the accounting math, §5), so retrofitting
+a wrapper onto two milestones that never adopted it isn't worth the
+churn. **The newtype is dropped.** Every minute-granular value in this
+project, including `week_targets.target_minutes` and all of Milestone
+6's accounting fields, is a plain `i64`. The formatter and parser
+signatures below reflect this (`i64` in, `i64` out) — read any
+`Minutes(N)` appearing later in this file's test tables as shorthand
+for the plain integer `N`, not a real type.
 
 ### 1.2 Time-of-day parsing
 
@@ -113,9 +94,9 @@ leaving them to whoever implements):
 ```rust
 /// Parses a `DURATION` argument (§3.7/§4.2 input grammar): "Hh",
 /// "HhMMm", or "MMm" — unpadded, hours-only and minutes-only both
-/// legal standalone. Converts straight to a `Minutes` count. Zero is
-/// legal; negative is rejected.
-pub fn parse_duration(input: &str) -> Result<Minutes, DurationParseError>;
+/// legal standalone. Converts straight to a plain minute count (i64,
+/// no newtype — contract 11). Zero is legal; negative is rejected.
+pub fn parse_duration(input: &str) -> Result<i64, DurationParseError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DurationParseError {
@@ -164,8 +145,9 @@ change.
 /// Always `HHh MMm`, both sides zero-padded to 2 digits, hour part
 /// never dropped even at zero. Negative values keep the same padding
 /// with a single `-` in front of the whole thing (not a `-` per side):
-/// `-00h 50m`, `-03h 20m`.
-pub fn format_duration(minutes: Minutes) -> String;
+/// `-00h 50m`, `-03h 20m`. Plain `i64` in, no newtype (contract 11) —
+/// named `format_minutes` to match what Milestones 6/9 already call it.
+pub fn format_minutes(minutes: i64) -> String;
 ```
 
 No error case — every `i64` is representable; this function is total.
@@ -209,12 +191,13 @@ No error case — every `i64` is representable; this function is total.
   - This satisfies "CLI wiring doesn't need rework" (it codes against
     the trait bound, not against a specific enum's variant list) while
     letting Milestones 1, 2, 4 land independently with zero shared
-    file. **Flagging this as a deviation from a literal reading of
-    contract 7** (which could be read as implying one shared error
-    type) — if whoever owns Milestone 2/4 disagrees and wants one
-    unified `AppError` enum instead, that's a cheap follow-up
-    refactor at the CLI layer, not a rewrite of this milestone's
-    parsers.
+    file. **Resolved**: cross-plan review settled contract 7 on
+    exactly this shape, then Milestone 7 adopted `anyhow` for the CLI
+    boundary specifically — `anyhow::Result<()>` command handlers,
+    `?` auto-converting any `std::error::Error` type via `anyhow`'s
+    blanket `From` impl. This milestone's parsers need no further
+    change either way; the error-type choice at the CLI layer was
+    always someone else's decision.
 
 ---
 

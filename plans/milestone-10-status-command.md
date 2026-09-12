@@ -112,10 +112,13 @@ Status {
    NOTES 37, 38). Open stints and orphaned ends contribute nothing.
 8. Derive the ISO week containing `target_date` via **M2**, then run
    **M6's accounting** for that week id. This yields target, carry_in,
-   worked, fulfillment, owed, carry_out and the contract-3
-   `is_current_week` boolean.
-9. Call **M9's headline helper** with the M6 result + `now` → the
-   headline string (§4).
+   worked, fulfillment, owed, carry_out — no "is current" boolean;
+   contract 3 was amended to drop it, since that comparison is M9's
+   job alone (see step 9).
+9. Call **M9's headline helper** with the M6 result + `today` (not the
+   M6 result's week id compared against anything precomputed) — M9
+   itself decides whether that week is current, from the week id and
+   `today`, per contract 3/9 → the headline string (§4).
 10. Call **M9's anomaly-detail helper** with M5's classification →
     `Vec<String>` of `[!] `-prefixed lines.
 11. If `is_today`: compute the daily-target hint and EOD state (§3).
@@ -310,27 +313,32 @@ insertion order. Bodies render **verbatim** — already trimmed at storage
 
 **Rule: Milestone 10 never decides this itself.**
 
-- M6's accounting result carries the explicit `is_current_week` boolean
-  (PLAN.md contract 3, added specifically "rather than each renderer
-  recomputing that comparison independently").
-- M9 consumes that boolean plus `now` and returns the finished headline
-  string — deadline-framed (`"{owed} left by end of {Weekday}"`, keyed
-  to **today's** weekday) or plain (`"Total still owed: {owed}"` /
-  `"Total ahead: {owed}"`).
+**Corrected from an earlier draft of this plan**: M6's accounting
+result does **not** carry an `is_current_week` boolean — contract 3
+was amended to drop it after cross-plan review. M9 computes "is this
+the current week" itself, directly from the week id (M6's result
+carries the week id) and `today` — it is never handed a precomputed
+boolean from M6 or anywhere else. Milestone 10's job is unchanged
+either way:
+
+- M9 consumes the M6 result (week id + owed figures) plus `today` and
+  returns the finished headline string — deadline-framed (`"{owed}
+  left by end of {Weekday}"`, keyed to **today's** weekday) or plain
+  (`"Total still owed: {owed}"` / `"Total ahead: {owed}"`).
 - Milestone 10 stores that string in `week_headline` and prints it after
   the label. It must not contain a `Weekday` reference of its own, must
   not compare week ids, and must not branch on `is_today` for this.
 
 The F11 case falls out for free: `status 2026-02-09` (Monday) run on
-Thursday 2026-02-12 has `is_today == false` (so no daily-target/EOD) but
-`is_current_week == true`, so M9 returns `"... left by end of Thursday"`
-— Thursday from `now`, not Monday from `target_date`. **Cross-check
-against M9's landed plan**: confirm (a) the weekday is derived from
-`now` and not from any date passed alongside, and (b) the exact colon
-punctuation of the plain form (SPEC §7.1/§7.2 show `Total still owed:
-01h 40m` *with* a colon; PLAN.md §Milestone 9 writes it without — see
-§6 ambiguity A1). If M9 returns the colon-less form, that is an M9 bug
-to file, not something to patch around in `render`.
+Thursday 2026-02-12 has `is_today == false` (so no daily-target/EOD),
+but M9 independently determines that `2026-02-09`'s week (`2026-07`)
+is the actual current week (comparing it against `today`, not against
+`target_date`), so M9 returns `"... left by end of Thursday"` —
+Thursday from `today`, not Monday from `target_date`. **Confirmed
+against M9's landed plan**: the weekday is derived from `today`, and
+the plain form's colon punctuation matches SPEC §7.1/§7.2 exactly
+(`Total still owed: 01h 40m`) — both PLAN.md and M9's own plan were
+corrected to match; no outstanding bug.
 
 ---
 
@@ -356,7 +364,7 @@ Baseline fixture for the "today" family: `now = 2026-02-12 18:00 local`
 | **T6b** | F9 state 2 | Open stint, gap `<= 0`: segment reads `, target already met` and contains no `est. EOD`. Test **both** gap `== 0` and gap `< 0` (boundary: zero must take the met branch, per §7.1's "already zero or negative"). Also assert the daily-target segment still renders, with a signed negative gap in the `< 0` case. |
 | **T6c** | F9 state 3 | No open stint: neither `est. EOD` nor `target already met` appears anywhere; `(+ ongoing)` absent; daily-target segment still present. |
 | **T7** | F10 | `status 2026-01-05` with `now = 2026-02-12 18:00`. **Golden-match §7.1's second example verbatim**, all five lines. Asserts: no `daily target` substring, no `est. EOD`, no `target already met`, week label reads `Week 2026-02:` (DATE's week, not today's), headline is the plain `Total still owed: 01h 40m` form, no `(fulfillment ... / target ...)` suffix. |
-| **T8** | F11 | `status 2026-02-09` (Monday) with `now = Thursday 2026-02-12`. Week line keeps the deadline framing and names **Thursday**; the string contains no `Monday`. Day-total line has **no** daily-target segment and no EOD segment (is_today false). Separately assert at the `resolve` level that `is_today == false` while the M6 result's `is_current_week == true` — the two booleans are independent and must not be conflated. |
+| **T8** | F11 | `status 2026-02-09` (Monday) with `now = Thursday 2026-02-12`. Week line keeps the deadline framing and names **Thursday**; the string contains no `Monday`. Day-total line has **no** daily-target segment and no EOD segment (is_today false). Separately assert at the `resolve` level that `is_today == false` while M9's own current-week check (computed independently from the week id and `today`, not from any M6 field) returns `true` — the two are independent and must not be conflated. |
 | **T9** | E7 | Three unmatched `start`s on one date. Three separate stint lines each ending `-now  (..., ongoing)` in start order; exactly one anomaly line `[!] 3 open stints for this date (unmatched starts)`; day total unaffected by the open time. |
 | **T10** | E8 | Two orphaned `end`s (e.g. `18:00`, `19:30`) plus one clean pair. **Two** anomaly lines, one per orphan, naming each timestamp — never coalesced into a count; the orphans produce **no** stint lines; day total counts only the clean pair. |
 | **T11** | golden, full | Reconstruct §7.1's **first** example exactly (day total `07h 25m`, ongoing, daily target `08h 00m`, EOD `18:35`, week `2026-07` owed `10h 45m`, fulfillment `29h 15m`, target `40h 00m`, three stints, two notes) and assert byte-equality with the spec block. The single highest-value test in this milestone. |
@@ -370,13 +378,13 @@ Test-infrastructure notes for the implementing agent:
 
 - `render`'s golden tests need **no** DB and no `cargo` test harness
   beyond `#[test]` — build `StatusView` literals directly.
-- T14/T15 need to invoke the binary. `assert_cmd` / `predicates` are
-  **not currently in `Cargo.toml`**; adding them as `[dev-dependencies]`
-  is part of this milestone's setup (or drive the binary via
-  `std::process::Command` against `env!("CARGO_BIN_EXE_mlm")`, which
-  needs no new deps and is the lighter option). Either way, the DB path
-  must be redirectable for tests — if `db.rs` still hardcodes
-  `ProjectDirs`, that is a blocker to raise against M3/M4 rather than
+- T14/T15 need to invoke the binary. Per PLAN.md's consolidated
+  dev-dependency decision, `assert_cmd`/`predicates` are **explicitly
+  declined** — drive the binary via `std::process::Command` against
+  `env!("CARGO_BIN_EXE_mlm")` instead, which needs no new deps. The DB
+  path must be redirectable for tests via `MLM_DB_PATH` (Milestone 3's
+  fix) — if `db.rs` still hardcodes `ProjectDirs` with no override,
+  that is a blocker to raise against M3/M4 rather than
   work around here.
 - Where a test depends on M9's exact headline wording, assert on the
   full rendered line anyway (not a substring) — if M9's wording differs

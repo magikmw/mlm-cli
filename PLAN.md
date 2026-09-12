@@ -62,10 +62,11 @@ scaffold and the pinned contracts:**
 - Milestone 10 (`status` command + rendering)
 - Milestone 11 (`week` command + rendering)
 
-**Wave 5 — final verification, no new behavior:**
+**Wave 5 — final verification and documentation, no new command behavior:**
 - Cross-cutting polish pass (error-tier consistency, exit codes, DST
   spot-check, plain-ASCII audit) — re-reads across everything already
   built rather than adding anything new
+- Milestone 12 (documentation — README, CLI reference, `--help` text)
 
 **Critical path** (the longest genuinely-sequential chain, which sets
 the minimum wall-clock time regardless of worker count): Milestone 3
@@ -131,23 +132,29 @@ themselves.
    value, never a hidden global clock read. Agree the shape (a plain
    parameter vs. some other convention) once, up front.
 7. **Error type/shape for hard errors** — resolved after cross-plan
-   review, since the first pass through wave 1 produced four
-   incompatible guesses at this contract: **each wave-1 milestone (1,
-   2, 3, 4) owns its own local error enum**, in its own module
+   review found four incompatible guesses at this contract on the
+   first pass, then revised again to adopt `anyhow` as the project's
+   error-handling convention: **each wave-1 milestone (1, 2, 3, 4)
+   still owns its own concrete local error enum**, in its own module
    (`TimeParseError`/`DurationParseError`, a date/week-id error type,
    `DbError`, `StorageError`), each implementing `Display` (one ASCII
-   line, no trailing newline) and `std::error::Error`. No shared error
-   file across the wave-1 worktrees — that's what caused the
-   divergence the first time. Milestone 7 (the first milestone that
-   needs a single error type across the CLI) then creates one
-   crate-wide `AppError` enum that **wraps** each wave-1 type via
-   `From` impls (`AppError::Time(TimeParseError)`, `AppError::Db
-   (DbError)`, etc.) rather than re-declaring their fields — the
-   wave-1 types stay the single source of truth for their own
-   variants. Every CLI-facing hard error (Milestones 7, 8, 10, 11)
-   matches on `AppError`, prints its `Display`, and exits nonzero
-   (§6.3) — clap's own parse errors exit with their own nonzero code,
-   which is equally fine, don't force them through `AppError` too.
+   line, no trailing newline) and `std::error::Error` — this part is
+   unchanged, since precise, matchable error types at the library
+   layer are still worth having (and some of Milestone 5/9's logic
+   matches on specific variants). What changes: **no hand-rolled
+   crate-wide `AppError` wrapper.** Milestone 7 (the first milestone
+   that needs one error type across the CLI) uses `anyhow::Result<()>`
+   as every command handler's return type instead. `?` on a wave-1
+   error auto-converts via `anyhow`'s blanket `From<E: std::error::
+   Error>` impl — no manual `From` impls to write or keep in sync —
+   and `.context("...")` adds human-readable framing at call sites
+   where the bare error message needs more surrounding detail. `main`
+   prints the final `anyhow::Error`'s `Display` (or `{:#}` for the
+   full context chain, if that reads better once real messages exist)
+   to stderr and exits nonzero (§6.3); clap's own parse errors exit
+   with their own nonzero code, equally fine, never forced through
+   `anyhow` too. Add `anyhow` as a real dependency (not dev-only) —
+   already done in `Cargo.toml`.
 8. **`Punch`/`PunchKind`/`Note` type and UTC-text-format ownership** —
    also resolved after cross-plan review found three independent
    claims on the same types. **Milestone 4 (`src/storage.rs`) is the
@@ -186,6 +193,21 @@ themselves.
     negative values are legal and expected throughout the accounting
     math), so the wrapper is dropped rather than retrofitted onto two
     milestones that never adopted it.
+12. **`--verbose`/`-v` flag and a logging pattern** — a global clap
+    flag on the top-level `Cli` struct (`#[arg(short, long, global =
+    true)]`), owned by Milestone 7 alongside the rest of the CLI
+    wiring it introduces. Uses `log` + `env_logger`: `main` initializes
+    `env_logger` at startup with the filter level set from the flag
+    (`Info` normally, `Debug` when `--verbose` is passed — no `RUST_LOG`
+    env-var dependency needed for this to work out of the box). Not
+    exhaustive at this stage — Milestone 7 adds the pattern with a
+    couple of representative `log::debug!` call sites (e.g. around the
+    DB path being used and the parsed punch about to be inserted), not
+    full instrumentation across every milestone. Later milestones add
+    their own `log::debug!` calls as needed when actual debugging work
+    calls for it, following this same pattern rather than reinventing
+    it. `log`/`env_logger` are already added to `Cargo.toml` as real
+    dependencies.
 
 **Consolidated dev-dependencies** (decided once, added by Milestone 3
 since it lands first and touches `Cargo.toml` anyway — later
@@ -475,10 +497,12 @@ job alone). No CLI, no rendering.
 codes).
 
 **Scope**: Wire the CLI surface for the three write commands on top of
-Milestones 1 and 4, plus define the crate-wide `AppError` in
-`src/error.rs` that wraps each wave-1 milestone's own error type
-(contract 7 — this is the milestone that needs one unified error type
-across the CLI for the first time). Also removes the scaffold's
+Milestones 1 and 4, using `anyhow::Result<()>` as every command
+handler's return type (contract 7 — this is the milestone that needs
+one unified error-handling convention across the CLI for the first
+time; wave-1 errors auto-convert via `?`, no wrapper type to
+maintain). Also adds the global `--verbose`/`-v` flag and initializes
+`env_logger` from it (contract 12), and removes the scaffold's
 `Command::Log` variant outright — it has no corresponding spec command
 and no schema backing it. Parse `TIME`/`NOTE` arguments with strict
 positional order (§3.2/§3.3's fix — `TIME` is always the first
@@ -704,6 +728,54 @@ fulfillment/target block — present for every week, current or not
   (F6).
 - All duration values use the exact `HHh MMm` format; plain ASCII
   throughout, no unicode/box-drawing.
+
+---
+
+## Milestone 12 — Documentation (README, CLI reference, `--help`)
+
+**New milestone**, added because no earlier one covered it. Wave 5,
+alongside the cross-cutting pass — it needs the real commands (7, 8,
+10, 11) finished to document their actual behavior accurately, not
+the scaffold's placeholder `README.md`/`AGENTS.md` text.
+
+**Spec sections**: §3 (full CLI surface — the source for both the
+README reference and clap's own help text), §7 (rendered output
+examples, reused as README usage examples verbatim rather than
+paraphrased).
+
+**Scope**: Replace `README.md`'s "Usage (planned)" section (currently
+three placeholder lines for `start`/`stop`/`log` — `log` doesn't even
+exist) with real, accurate documentation once Milestones 7/8/10/11
+have landed: every command's exact syntax, its arguments and their
+accepted forms (§3.1's TIME grammar, §4.2's DURATION grammar, WEEK_ID
+forms), a short usage-model paragraph (the daily start/stop/note loop,
+checking `status`, adjusting a week's target), and at least one
+realistic worked example per command reusing §7's actual rendered
+output rather than inventing new sample output that could drift from
+what the tool really prints. Also audits every clap `#[arg]`/`#[command]`
+doc comment introduced across Milestones 7/8/10/11 for accuracy and
+consistency (so `mlm --help` and `mlm <command> --help` read as a
+coherent reference, not four independently-worded fragments from four
+different worktrees) — this is a review-and-polish pass over existing
+doc comments, not new command logic.
+
+**Acceptance criteria**:
+- `README.md`'s usage section lists all six commands (`start`, `stop`,
+  `note`, `status`, `week`, `week target`) with accurate syntax —
+  `log` is gone, matching Milestone 7's removal.
+- Each command's README example output is byte-identical to what the
+  real binary prints for that invocation (verified by actually running
+  it, not transcribed from SPEC.md by hand — SPEC.md examples are
+  illustrative, not necessarily run against final code).
+- `mlm --help` and every `mlm <command> --help` output reads
+  consistently — no leftover scaffold wording (e.g. anything
+  mentioning `log`), no contradictions between one subcommand's
+  argument description and another's for the same concept (e.g. TIME's
+  accepted forms worded the same way under `start` and `stop`).
+- README's "Data location" and "Build" sections (already accurate)
+  are left alone; only "Usage" changes.
+- AGENTS.md's "Verifying changes" block (currently `cargo run --
+  log`, stale scaffold) is corrected to a real command.
 
 ---
 
