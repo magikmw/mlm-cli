@@ -7,27 +7,61 @@ use clap::{Args, Parser, Subcommand};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
+
+    /// Enable debug-level logging (PLAN.md interface contract 12).
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Log a start point for today.
-    Start {
-        /// Optional note about what you're starting.
-        note: Option<String>,
-    },
-    /// Log a stop point for today.
-    Stop {
-        /// Optional note about what you finished.
-        note: Option<String>,
-    },
-    /// Show today's (or a given date's) log.
-    Log {
-        /// Date to show, defaults to today. Format: YYYY-MM-DD.
-        date: Option<String>,
-    },
+    /// Record a start punch for today.
+    Start(PunchArgs),
+
+    /// Record an end punch for today.
+    Stop(PunchArgs),
+
+    /// Record a work-log note for today.
+    Note(NoteArgs),
+
     /// Show a week's totals, or set its target.
     Week(WeekArgs),
+}
+
+/// Shared argument shape for `start` and `stop` (SPEC §3.2/§3.3 — "same
+/// shape as start"). `TIME` stays a plain `String` at the clap layer:
+/// parse failures surface through our own `anyhow`-based error path
+/// (§3), not through clap's formatting/exit code. `NOTE` is a `Vec` of
+/// trailing tokens joined with single spaces by the handler; an empty
+/// `Vec` means "no note given" (§1.2/§1.3).
+#[derive(Args, Debug)]
+pub struct PunchArgs {
+    /// Time of day (HH:MM, HHMM or HH, 24h). Defaults to now.
+    #[arg(value_name = "TIME")]
+    pub time: Option<String>,
+
+    /// Optional work-log note recorded for today alongside the punch.
+    #[arg(
+        value_name = "NOTE",
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
+    pub note: Vec<String>,
+}
+
+/// `mlm note NOTE...` (SPEC §3.4 — `NOTE` is mandatory here, unlike
+/// `start`/`stop`).
+#[derive(Args, Debug)]
+pub struct NoteArgs {
+    /// Work-log note text for today.
+    #[arg(
+        value_name = "NOTE",
+        required = true,
+        num_args = 1..,
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
+    pub body: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -158,5 +192,58 @@ mod tests {
             }) => assert_eq!(id, "2026-07"),
             _ => panic!("expected Command::Week with no action and week_id set"),
         }
+    }
+
+    // --- Milestone 7: start/stop/note parse shape -----------------------
+
+    fn start_args(cli: Cli) -> PunchArgs {
+        match cli.command {
+            Command::Start(a) => a,
+            other => panic!("expected Command::Start, got {other:?}"),
+        }
+    }
+
+    // T23
+    #[test]
+    fn parse_start_variants() {
+        let a = start_args(parse(&["mlm", "start"]).unwrap());
+        assert_eq!(a.time, None);
+        assert!(a.note.is_empty());
+
+        let a = start_args(parse(&["mlm", "start", "9:05"]).unwrap());
+        assert_eq!(a.time.as_deref(), Some("9:05"));
+        assert!(a.note.is_empty());
+
+        let a = start_args(parse(&["mlm", "start", "9:05", "a", "b"]).unwrap());
+        assert_eq!(a.time.as_deref(), Some("9:05"));
+        assert_eq!(a.note, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    // T24
+    #[test]
+    fn parse_note_joins_tokens() {
+        let cli = parse(&["mlm", "note", "a", "b"]).unwrap();
+        match cli.command {
+            Command::Note(a) => assert_eq!(a.body, vec!["a".to_string(), "b".to_string()]),
+            other => panic!("expected Command::Note, got {other:?}"),
+        }
+    }
+
+    // T25
+    #[test]
+    fn note_can_start_with_hyphen() {
+        let cli = parse(&["mlm", "note", "-ish", "progress"]).unwrap();
+        match cli.command {
+            Command::Note(a) => {
+                assert_eq!(a.body, vec!["-ish".to_string(), "progress".to_string()])
+            }
+            other => panic!("expected Command::Note, got {other:?}"),
+        }
+    }
+
+    // T26
+    #[test]
+    fn log_subcommand_is_gone() {
+        assert!(parse(&["mlm", "log"]).is_err());
     }
 }
