@@ -58,6 +58,20 @@ arithmetic and lets entries land in any order.
   as a plain total excluding that stint's live minutes. Accepted as a
   known MVP limitation — fixing it means pairing across date
   boundaries, a real complexity jump for a rare case.
+- **Same-instant `end`/`start` boundary between two real stints** —
+  known defect in the current §4.3 tie-break, deferred rather than
+  fixed at implementation time (Milestone 5, see its review). Typing
+  `stop 09:00` then `start 09:00` back-to-back (no gap between two
+  genuine stints) currently mis-pairs: the tie-break added for E14
+  (kind before id at an identical instant) pairs the boundary's
+  `start` with the coincident `end` into a zero-length stint instead
+  of closing the *preceding* open stint, silently dropping that
+  stint's worked minutes with no anomaly raised. A correct fix needs
+  per-instant-group handling (close an already-open start before
+  pairing any remaining tied `end`/`start` as an isolated E14 pair) —
+  more than a tie-break tweak, so it's deferred rather than patched
+  in place. §4.3 below still documents the current (defective for
+  this case) behavior as implemented.
 
 ### 1.3 Terminology
 
@@ -312,6 +326,16 @@ data and gives wrong answers otherwise. Algorithm:
    `id`-order would let a `stop` entered before a same-instant `start`
    produce an orphan and a dangling open stint instead of the clean
    zero-length pairing E14 requires.
+
+   **Known defect (§1.2 non-goals), deferred, documented here as
+   currently implemented, not as correct**: this same tiebreak
+   mis-pairs a same-instant `end`/`start` that's actually a boundary
+   between two real stints (e.g. `stop 09:00` then `start 09:00` back
+   to back) — it zero-pairs the boundary instead of closing the
+   stint that was already open, silently dropping that stint's time
+   with no anomaly. A correct fix requires per-instant-group handling
+   (close an already-open `start` before pairing any remaining tied
+   `end`/`start` as an isolated E14 case), not a tiebreak change.
 2. Scan in that order keeping a stack of unmatched `start`s: a
    `start` pushes; an `end` pops the *most recently pushed* unmatched
    `start` and pairs with it, forming a stint.

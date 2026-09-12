@@ -281,9 +281,25 @@ SPEC.md and PLAN.md:
     testable `connect_at`, an `MLM_DB_PATH` override, and a
     path-free `apply_migrations` helper.
 
+## More decisions (from wave-1 implementation + review, round 8)
+
+50. **Same-instant end/start boundary defect — deferred, not fixed**:
+    Milestone 5's implementation review found that §4.3's kind-before-
+    id tiebreak (added for E14) mis-pairs an ordinary back-to-back
+    boundary (`stop 09:00` then `start 09:00`, no gap between two real
+    stints) — zero-pairs the boundary instead of closing the
+    already-open stint, silently dropping its worked time with no
+    anomaly. A correct fix needs per-instant-group handling (close an
+    already-open start first, only then pair remaining tied end/start
+    as an isolated E14 case) — a real algorithm change, not a tiebreak
+    tweak. User decision: merge Milestone 5 as-is, fix later. Marked
+    directly in SPEC.md §1.2 (non-goals) and §4.3 (inline note on the
+    tiebreak step) so it's visible without digging through review
+    files.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
 
-49. **Multi-week-format stretch**: deferred entirely. Not designing
+51. **Multi-week-format stretch**: deferred entirely. Not designing
     for it now; revisit only if it becomes a real ask.
