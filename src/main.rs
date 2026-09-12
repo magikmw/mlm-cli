@@ -1,4 +1,5 @@
 mod cli;
+mod date;
 mod db;
 mod stint;
 mod time;
