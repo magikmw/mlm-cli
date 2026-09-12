@@ -4,23 +4,22 @@ Notes for AI agents (and future-me) working on this repo.
 
 ## What this is
 
-`mlm` — minimal CLI time tracker. Core loop: fire a `start`/`stop` point
-for the current date, optionally attach a short note, later review a
-log. Everything persists in SQLite in the platform app-data dir.
+`mlm` — minimal CLI time tracker. Core loop: fire a `start`/`stop`
+punch for the current date, optionally attach a short note, later
+review a day's or week's totals via `status`/`week`. Everything
+persists in SQLite in the platform app-data dir. See `README.md` for
+the full command reference and `SPEC.md` for the detailed behavior
+spec.
 
 ## Current state
 
-Scaffolding only. Structure and deps are in place; command bodies are
-`TODO` stubs. Don't build out full features until design is agreed —
-see project memory / conversation history for the latest decisions on:
+All commands (`start`, `stop`, `note`, `status`, `week`, `week
+target`) are implemented, tested, and match `SPEC.md`. Remaining
+stretch ideas (not implemented):
 
-- schema shape (entries table, single start/stop pairs vs. arbitrary
-  punches, how notes attach)
-- overnight/cross-midnight handling in `time.rs`
-- exact CLI surface (subcommands, flags, output format)
 - dashboard layout/widgets (ratatui: `Chart`/`Sparkline`/`BarChart`)
-- stretch: shell prompt integration — needs a fast, side-effect-free
-  "status" query (e.g. `mlm status --short`) cheap enough for PS1/starship
+- shell prompt integration — needs a fast, side-effect-free "status"
+  query (e.g. `mlm status --short`) cheap enough for PS1/starship
 
 ## Layout
 
@@ -43,8 +42,10 @@ see project memory / conversation history for the latest decisions on:
 
 ```sh
 cargo build
-cargo run -- start "note"
-cargo run -- log
+cargo test
+cargo clippy --all-targets -- -D warnings
+MLM_DB_PATH=/tmp/mlm-check.db cargo run -- start "9:00" "note"
+MLM_DB_PATH=/tmp/mlm-check.db cargo run -- status
 ```
 
 ## Pre-commit quality gate (CRAP-ish: complexity + coverage)
