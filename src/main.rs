@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod date;
 mod db;
+mod render;
 mod stint;
 mod storage;
 mod time;
