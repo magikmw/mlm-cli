@@ -342,12 +342,14 @@ fn punch_from_row(
     })
 }
 
-/// All punches for a local calendar date, sorted by instant, ties broken
-/// by insertion order (`at_utc ASC, id ASC`) — already in §4.3 step 1's
-/// required order. Empty `Vec`, never an error, for a date with no rows.
+/// All punches for a local calendar date, sorted by instant; ties at an
+/// identical instant are broken first by kind (`start` before `end`), then
+/// by `id` (insertion order) — SPEC.md §4.3 step 1 / PLAN.md interface
+/// contract 10. Empty `Vec`, never an error, for a date with no rows.
 pub fn punches_for_date(conn: &Connection, date: NaiveDate) -> Result<Vec<Punch>, StorageError> {
     let mut stmt = conn.prepare(
-        "SELECT id, at_utc, \"date\", kind FROM punches WHERE \"date\" = ?1 ORDER BY at_utc ASC, id ASC",
+        "SELECT id, at_utc, \"date\", kind FROM punches WHERE \"date\" = ?1 \
+         ORDER BY at_utc ASC, CASE kind WHEN 'start' THEN 0 ELSE 1 END ASC, id ASC",
     )?;
     let rows = stmt.query_map((date.format("%Y-%m-%d").to_string(),), map_punch_row)?;
     let mut out = Vec::new();
@@ -369,7 +371,7 @@ pub fn punches_in_range(
     let mut stmt = conn.prepare(
         "SELECT id, at_utc, \"date\", kind FROM punches \
          WHERE \"date\" BETWEEN ?1 AND ?2 \
-         ORDER BY \"date\" ASC, at_utc ASC, id ASC",
+         ORDER BY \"date\" ASC, at_utc ASC, CASE kind WHEN 'start' THEN 0 ELSE 1 END ASC, id ASC",
     )?;
     let rows = stmt.query_map(
         (
@@ -646,7 +648,7 @@ mod tests {
 
     // P12
     #[test]
-    fn identical_instants_tiebreak_by_insertion_order_both_directions() {
+    fn identical_instants_tiebreak_by_kind_then_insertion_order() {
         let conn = test_db();
         let start_id = insert_punch(&conn, PunchKind::Start, d(2026, 1, 15), t(12, 0), &TZ_UTC)
             .expect("insert");
@@ -661,14 +663,21 @@ mod tests {
         assert_eq!(punches[0].id, start_id);
         assert_eq!(punches[1].id, end_id);
 
+        // Same instant, inserted in the opposite order (`End` before
+        // `Start`): the read must still put `Start` first — kind is the
+        // tiebreak, not insertion order (SPEC.md §4.3 step 1).
         let conn2 = test_db();
-        insert_punch(&conn2, PunchKind::End, d(2026, 1, 15), t(12, 0), &TZ_UTC).expect("insert");
-        insert_punch(&conn2, PunchKind::Start, d(2026, 1, 15), t(12, 0), &TZ_UTC).expect("insert");
+        let end_id2 = insert_punch(&conn2, PunchKind::End, d(2026, 1, 15), t(12, 0), &TZ_UTC)
+            .expect("insert");
+        let start_id2 = insert_punch(&conn2, PunchKind::Start, d(2026, 1, 15), t(12, 0), &TZ_UTC)
+            .expect("insert");
         let punches2 = punches_for_date(&conn2, d(2026, 1, 15)).expect("read");
         assert_eq!(
             punches2.iter().map(|p| p.kind).collect::<Vec<_>>(),
-            vec![PunchKind::End, PunchKind::Start]
+            vec![PunchKind::Start, PunchKind::End]
         );
+        assert_eq!(punches2[0].id, start_id2);
+        assert_eq!(punches2[1].id, end_id2);
     }
 
     // P13 -- see dst_order_holds_across_transition_within_one_date (D2 twin)

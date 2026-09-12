@@ -107,3 +107,29 @@ delete the stand-in block in `stint.rs` and add
 - No production code path yet calls any of this module's functions
   (`main.rs` still has its M7-owned TODO stubs) — expected at this
   stage; `#![allow(dead_code)]` mirrors `stint.rs`'s same situation.
+
+## Post-review fix (2026-09-12)
+
+Addressed review finding 1 in `plans/reports/milestone-4-review.md`:
+`punches_for_date`/`punches_in_range` ordered same-instant punches by
+`(at_utc, id)` only, so an `End` inserted before a `Start` at an identical
+instant read back as `[End, Start]` — the reverse of SPEC.md §4.3 step 1
+and PLAN.md interface contract 10, which require `start` before `end` as
+the tiebreak, then `id`. Masked in practice because `stint.rs::classify()`
+already re-sorts by `(at_utc, kind, id)` internally, but a real contract
+violation for any future caller trusting storage's own read order.
+
+Fix: both queries' `ORDER BY` now include an explicit
+`CASE kind WHEN 'start' THEN 0 ELSE 1 END` tiebreak between `at_utc` and
+`id`, matching `stint.rs`'s `PunchKind: Start < End` convention. Doc
+comments on both functions updated to state the real ordering contract.
+Test P12 (`identical_instants_tiebreak_by_insertion_order_both_directions`,
+renamed `identical_instants_tiebreak_by_kind_then_insertion_order`) was
+locking in the wrong `[End, Start]` result for the End-before-Start
+insertion order; corrected to assert `[Start, End]` in both insertion
+orders, with `id` only decided within same-kind ties.
+
+Verified in this worktree: `cargo build` clean, `cargo test` 169 passed/0
+failed (same count as before — no test was added or removed, only
+corrected), `cargo clippy --all-targets -- -D warnings` clean, `cargo fmt
+--check` clean.
