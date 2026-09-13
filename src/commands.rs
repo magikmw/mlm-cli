@@ -10,9 +10,9 @@
 use chrono::{DateTime, Local, Utc};
 use rusqlite::Connection;
 
-use crate::cli::{NoteArgs, PunchArgs};
-use crate::date::resolve_future_checked_date;
-use crate::storage::{self, PunchKind};
+use crate::cli::{DeleteEntryArgs, NoteArgs, PunchArgs};
+use crate::date::{format_date, resolve_future_checked_date};
+use crate::storage::{self, Note, Punch, PunchKind};
 use crate::time::{TimeParseError, parse_time};
 
 /// Record a start punch for today, optionally with an inline note
@@ -36,6 +36,177 @@ pub fn note(conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs) -> any
     let target_date = resolve_target_date(&args.date, today)?;
     let body = args.body.join(" ");
     storage::insert_note(conn, target_date, &body, now.with_timezone(&Utc))?;
+    Ok(())
+}
+
+/// Wrap `body` as a single, safely-quoted POSIX/fish shell token:
+/// single-quoted, with every embedded `'` escaped as `'"'"'` (close the
+/// open single-quote, emit a double-quoted literal `'`, reopen the
+/// single-quote). Single quotes, never double: double quotes still let
+/// a shell interpolate `$(...)`/backticks/`$VAR` inside them before the
+/// token reaches `mlm` on replay (spec §5). The output always starts and
+/// ends with `'`, even for an empty or already-safe body.
+fn quote_shell_single(body: &str) -> String {
+    let mut out = String::with_capacity(body.len() + 2);
+    out.push('\'');
+    for ch in body.chars() {
+        if ch == '\'' {
+            out.push_str("'\"'\"'");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Validate a 1-based ephemeral `id` against `count` freshly-fetched
+/// rows for the resolved date; on success, return the corresponding
+/// zero-based index into that `Vec`. `id == 0` and `id > count` are both
+/// application-level hard errors (spec §5) — clap has already rejected
+/// negative/non-numeric/too-large values before this ever runs (Task 2).
+fn validate_entry_id(id: u32, count: usize) -> anyhow::Result<usize> {
+    if id == 0 {
+        anyhow::bail!("id must be 1 or greater (got 0); {count} entries for this date");
+    }
+    let index = id as usize - 1;
+    if index >= count {
+        anyhow::bail!("id {id} is out of range; only {count} entries for this date");
+    }
+    Ok(index)
+}
+
+/// List-mode output for punches (spec §4): `<n>  <kind> <HH:MM>` per
+/// row, 1-based. Pure — never touches storage.
+fn print_punch_list(rows: &[Punch]) {
+    for (i, p) in rows.iter().enumerate() {
+        let local_time = p.at_utc.with_timezone(&Local).time();
+        println!(
+            "{}  {} {}",
+            i + 1,
+            p.kind.as_str(),
+            local_time.format("%H:%M")
+        );
+    }
+}
+
+/// List-mode output for notes (spec §4): `<n>  <body>` per row, 1-based.
+/// Pure — never touches storage.
+fn print_note_list(rows: &[Note]) {
+    for (i, n) in rows.iter().enumerate() {
+        println!("{}  {}", i + 1, n.body);
+    }
+}
+
+/// Build the punch recreate-echo (spec §5/§7): `mlm start|stop
+/// HH:MM[ --date YYYY-MM-DD]`. Converts the deleted row's own stored
+/// `at_utc` to local time per-instant (`p.at_utc.with_timezone(&Local)`)
+/// — never a single offset grabbed once from `now` and reused — so a
+/// backdated punch on the far side of a DST boundary from today still
+/// echoes its correct local wall-clock time.
+///
+/// `PunchKind::as_str()` returns `"start"`/`"end"`, but the CLI command
+/// for an end-punch is `mlm stop`, not `mlm end` — never reuse
+/// `as_str()` here, match on `kind` explicitly instead.
+fn punch_recreate_line(p: &Punch, today: chrono::NaiveDate) -> String {
+    let verb = match p.kind {
+        PunchKind::Start => "start",
+        PunchKind::End => "stop",
+    };
+    let local_time = p.at_utc.with_timezone(&Local).time();
+    let mut line = format!("mlm {verb} {}", local_time.format("%H:%M"));
+    if p.date != today {
+        line.push_str(&format!(" --date {}", format_date(p.date)));
+    }
+    line
+}
+
+/// Build the note recreate-echo (spec §5/§7): `mlm note[ --date
+/// YYYY-MM-DD] '<quoted body>'`, `--date` always preceding the body
+/// (backdated-punches spec §2.1 ordering footgun — this printed string
+/// is fed back into `mlm note`, which does have that ordering
+/// requirement, even though `delete`'s own args don't). Defensive
+/// fallback (spec §5, legacy pre-Milestone-13 rows only): if the deleted
+/// body still contains a literal `\n` — checked here, at echo time,
+/// never assumed away — print a plain description instead of a
+/// broken/multi-line "command".
+fn note_recreate_line(n: &Note, today: chrono::NaiveDate) -> String {
+    if n.body.contains('\n') {
+        let first_line = n.body.lines().next().unwrap_or("");
+        return format!("deleted note ({}): {first_line}...", format_date(n.date));
+    }
+    let mut line = "mlm note".to_string();
+    if n.date != today {
+        line.push_str(&format!(" --date {}", format_date(n.date)));
+    }
+    line.push(' ');
+    line.push_str(&quote_shell_single(&n.body));
+    line
+}
+
+/// List (no `ID`) or delete (`ID` given) that date's notes (spec §4/§5).
+/// `ID` is always resolved against a freshly re-run
+/// `storage::notes_for_date` on every invocation — never a cached
+/// listing from an earlier call (spec §5's stale-id note). On delete,
+/// prints a ready-to-run recreate line (spec §5/§7); the note-body
+/// quoting/footgun/legacy-newline handling for that line lives in
+/// `note_recreate_line`.
+pub fn delete_note(
+    conn: &Connection,
+    now: DateTime<Local>,
+    args: &DeleteEntryArgs,
+) -> anyhow::Result<()> {
+    let today = now.date_naive();
+    let target_date = resolve_target_date(&args.date, today)?;
+    let rows = storage::notes_for_date(conn, target_date)?;
+
+    let Some(id) = args.id else {
+        if rows.is_empty() {
+            println!("nothing to delete for {}.", format_date(target_date));
+        } else {
+            print_note_list(&rows);
+        }
+        return Ok(());
+    };
+
+    let index = validate_entry_id(id, rows.len())?;
+    let deleted = storage::delete_note(conn, rows[index].id)?;
+    println!(
+        "deleted. to recreate: {}",
+        note_recreate_line(&deleted, today)
+    );
+    Ok(())
+}
+
+/// List (no `ID`) or delete (`ID` given) that date's punches (spec
+/// §4/§5). Same freshness/no-caching rule as `delete_note`. On delete,
+/// prints a ready-to-run recreate line built from the deleted row's own
+/// `at_utc` converted to local time per-instant (`punch_recreate_line`)
+/// — never `now`'s offset.
+pub fn delete_punch(
+    conn: &Connection,
+    now: DateTime<Local>,
+    args: &DeleteEntryArgs,
+) -> anyhow::Result<()> {
+    let today = now.date_naive();
+    let target_date = resolve_target_date(&args.date, today)?;
+    let rows = storage::punches_for_date(conn, target_date)?;
+
+    let Some(id) = args.id else {
+        if rows.is_empty() {
+            println!("nothing to delete for {}.", format_date(target_date));
+        } else {
+            print_punch_list(&rows);
+        }
+        return Ok(());
+    };
+
+    let index = validate_entry_id(id, rows.len())?;
+    let deleted = storage::delete_punch(conn, rows[index].id)?;
+    println!(
+        "deleted. to recreate: {}",
+        punch_recreate_line(&deleted, today)
+    );
     Ok(())
 }
 
@@ -112,7 +283,7 @@ mod tests {
     use crate::cli::Cli;
     use crate::db;
     use crate::storage::{Note, Punch, StorageError, notes_for_date, punches_for_date};
-    use chrono::{Local, NaiveDate, TimeZone};
+    use chrono::{Local, NaiveDate, NaiveTime, TimeZone};
     use clap::Parser;
 
     fn test_db() -> Connection {
@@ -180,6 +351,30 @@ mod tests {
 
     fn notes_for(conn: &Connection, date: NaiveDate) -> Vec<Note> {
         notes_for_date(conn, date).expect("read notes")
+    }
+
+    fn delete_note_args(argv: &[&str]) -> DeleteEntryArgs {
+        let mut full = vec!["mlm", "delete", "note"];
+        full.extend_from_slice(argv);
+        match Cli::try_parse_from(full).expect("parse").command {
+            crate::cli::Command::Delete(crate::cli::DeleteArgs { target }) => match target {
+                crate::cli::DeleteTarget::Note(a) => a,
+                other => panic!("expected DeleteTarget::Note, got {other:?}"),
+            },
+            other => panic!("expected Command::Delete, got {other:?}"),
+        }
+    }
+
+    fn delete_punch_args(argv: &[&str]) -> DeleteEntryArgs {
+        let mut full = vec!["mlm", "delete", "punch"];
+        full.extend_from_slice(argv);
+        match Cli::try_parse_from(full).expect("parse").command {
+            crate::cli::Command::Delete(crate::cli::DeleteArgs { target }) => match target {
+                crate::cli::DeleteTarget::Punch(a) => a,
+                other => panic!("expected DeleteTarget::Punch, got {other:?}"),
+            },
+            other => panic!("expected Command::Delete, got {other:?}"),
+        }
     }
 
     // --- Happy paths -------------------------------------------------
@@ -944,6 +1139,507 @@ mod tests {
             "after: {}",
             after.week_line
         );
+        assert_ne!(before.week_line, after.week_line);
+    }
+
+    // --- delete: list/delete handlers (Milestone 14) ---------------------
+
+    #[test]
+    fn delete_note_future_date_is_rejected() {
+        let conn = test_db();
+        let r = delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["--date", "2026-02-13"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+        assert!(notes_for(&conn, d(2026, 2, 13)).is_empty());
+    }
+
+    #[test]
+    fn delete_punch_future_date_is_rejected() {
+        let conn = test_db();
+        let r = delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["--date", "2026-02-13"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+        assert!(punches_for(&conn, d(2026, 2, 13)).is_empty());
+    }
+
+    #[test]
+    fn delete_note_malformed_date_is_rejected() {
+        let conn = test_db();
+        let r = delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["--date", "not-a-date"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn delete_punch_malformed_date_is_rejected() {
+        let conn = test_db();
+        let r = delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["--date", "not-a-date"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+    }
+
+    /// Regression test for the flag-collision/`--`-swallowing fix (spec
+    /// §5): the underlying bug is position-dependent, so the body must
+    /// have the flag-lookalike as its *leading* token, not mid-sentence
+    /// (a mid-sentence one would pass identically with or without the
+    /// fix and prove nothing). There is no stdout-capture fixture in this
+    /// file and no real shell to hand the printed line to, so this
+    /// exercises the actual write path (`storage::insert_note` ->
+    /// `storage::delete_note` -> `note_recreate_line`) and then performs
+    /// the shell-unquoting inverse by hand: strip the surrounding `'`
+    /// and un-escape `'"'"'` back to a literal `'`, which is exactly what
+    /// a POSIX/fish shell would do before handing the token to `mlm`.
+    #[test]
+    fn quoting_round_trip_leading_flag_lookalike() {
+        let body = "--verbose logging bug";
+        let conn = test_db();
+        let id = storage::insert_note(&conn, today(), body, fixed_now().with_timezone(&Utc))
+            .expect("insert");
+        let deleted = storage::delete_note(&conn, id).expect("delete");
+        let line = note_recreate_line(&deleted, today());
+        assert!(!line.contains("--date"));
+
+        let quoted = line
+            .strip_prefix("mlm note ")
+            .expect("expected 'mlm note ' prefix");
+        assert!(quoted.starts_with('\'') && quoted.ends_with('\''));
+        let unquoted = quoted[1..quoted.len() - 1].replace("'\"'\"'", "'");
+        assert_eq!(unquoted, body);
+
+        // Feed the recovered single token back through the real CLI
+        // parser as one argv element (exactly what a shell hands back
+        // after unquoting a single-quoted token) and confirm it survives
+        // as the whole note body, unsplit and unmisparsed.
+        let parsed = note_args(&[&unquoted]);
+        assert_eq!(parsed.body, vec![body.to_string()]);
+    }
+
+    #[test]
+    fn quoting_round_trip_embedded_quote() {
+        let body = "it's a 'quoted' fix";
+        let conn = test_db();
+        let id = storage::insert_note(&conn, today(), body, fixed_now().with_timezone(&Utc))
+            .expect("insert");
+        let deleted = storage::delete_note(&conn, id).expect("delete");
+        let line = note_recreate_line(&deleted, today());
+
+        let quoted = line
+            .strip_prefix("mlm note ")
+            .expect("expected 'mlm note ' prefix");
+        assert!(quoted.starts_with('\'') && quoted.ends_with('\''));
+        let unquoted = quoted[1..quoted.len() - 1].replace("'\"'\"'", "'");
+        assert_eq!(unquoted, body);
+    }
+
+    /// Pins the `PunchKind::as_str()`-divergence correction: the CLI
+    /// command for an end-punch is `mlm stop`, never `mlm end`, so the
+    /// recreate-line builder must not reuse `as_str()` (which returns
+    /// `"end"`) as the verb.
+    #[test]
+    fn punch_recreate_line_uses_stop_not_end_verb() {
+        let p = Punch {
+            id: 1,
+            at_utc: Utc.with_ymd_and_hms(2026, 2, 12, 9, 0, 0).unwrap(),
+            date: today(),
+            kind: PunchKind::End,
+        };
+        let line = punch_recreate_line(&p, today());
+        assert!(line.contains("mlm stop "), "line was {line:?}");
+        assert!(!line.contains("mlm end"), "line was {line:?}");
+    }
+
+    /// Simulates a pre-Milestone-13 row that still carries a literal
+    /// `\n`. `storage::insert_note` itself now normalizes embedded
+    /// newlines away on every insert (Milestone 13), so — unlike the
+    /// milestone-14-task-3 plan's original wording, which assumed
+    /// `insert_note` could still be used to seed this fixture — the only
+    /// way left to construct this legacy shape is a raw SQL insert
+    /// bypassing the typed insert path entirely, matching the same
+    /// pattern `storage.rs`'s own legacy-data tests (`X2`) already use.
+    /// Noted here as a deliberate deviation from the plan's exact wording
+    /// for this reason.
+    #[test]
+    fn legacy_newline_body_falls_back_to_plain_description() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO notes (\"date\", body, created_at_utc) VALUES (?1, ?2, ?3)",
+            ("2026-02-10", "line one\nline two", "2026-02-10T09:00:00Z"),
+        )
+        .expect("raw insert bypassing normalization");
+
+        let rows = notes_for(&conn, d(2026, 2, 10));
+        assert_eq!(rows.len(), 1);
+        let deleted = storage::delete_note(&conn, rows[0].id).expect("delete");
+        let line = note_recreate_line(&deleted, today());
+        assert_eq!(line, "deleted note (2026-02-10): line one...");
+    }
+
+    #[test]
+    fn list_mode_empty_date_prints_nothing_to_delete_note() {
+        let conn = test_db();
+        let r = delete_note(&conn, fixed_now(), &delete_note_args(&[]));
+        assert!(r.is_ok());
+        assert!(notes(&conn).is_empty());
+    }
+
+    #[test]
+    fn list_mode_empty_date_prints_nothing_to_delete_punch() {
+        let conn = test_db();
+        let r = delete_punch(&conn, fixed_now(), &delete_punch_args(&[]));
+        assert!(r.is_ok());
+        assert!(punches(&conn).is_empty());
+    }
+
+    #[test]
+    fn list_mode_never_mutates_storage_and_numbers_correctly_punch() {
+        let mut conn = test_db();
+        start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
+        stop(&mut conn, fixed_now(), &stop_args(&["17:00"])).expect("seed");
+
+        let r = delete_punch(&conn, fixed_now(), &delete_punch_args(&[]));
+        assert!(r.is_ok());
+
+        let rows = punches(&conn);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].kind, PunchKind::Start);
+        assert_eq!(rows[1].kind, PunchKind::End);
+    }
+
+    #[test]
+    fn list_mode_never_mutates_storage_and_numbers_correctly_note() {
+        let mut conn = test_db();
+        note(&mut conn, fixed_now(), &note_args(&["first note"])).expect("seed");
+        note(&mut conn, fixed_now(), &note_args(&["second note"])).expect("seed");
+
+        let r = delete_note(&conn, fixed_now(), &delete_note_args(&[]));
+        assert!(r.is_ok());
+
+        let rows = notes(&conn);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].body, "first note");
+        assert_eq!(rows[1].body, "second note");
+    }
+
+    #[test]
+    fn delete_recreate_line_omits_date_for_today_includes_for_other_date_punch() {
+        let conn = test_db();
+        let id_today = storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            today(),
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            &Local,
+        )
+        .expect("insert");
+        let deleted_today = storage::delete_punch(&conn, id_today).expect("delete");
+        let line_today = punch_recreate_line(&deleted_today, today());
+        assert!(!line_today.contains("--date"));
+
+        let other_date = d(2026, 2, 10);
+        let id_other = storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            other_date,
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            &Local,
+        )
+        .expect("insert");
+        let deleted_other = storage::delete_punch(&conn, id_other).expect("delete");
+        let line_other = punch_recreate_line(&deleted_other, today());
+        assert!(line_other.contains("--date 2026-02-10"));
+    }
+
+    #[test]
+    fn delete_recreate_line_omits_date_for_today_includes_for_other_date_note() {
+        let conn = test_db();
+        let id_today = storage::insert_note(
+            &conn,
+            today(),
+            "today note",
+            fixed_now().with_timezone(&Utc),
+        )
+        .expect("insert");
+        let deleted_today = storage::delete_note(&conn, id_today).expect("delete");
+        let line_today = note_recreate_line(&deleted_today, today());
+        assert!(!line_today.contains("--date"));
+
+        let other_date = d(2026, 2, 10);
+        let id_other = storage::insert_note(
+            &conn,
+            other_date,
+            "other note",
+            fixed_now().with_timezone(&Utc),
+        )
+        .expect("insert");
+        let deleted_other = storage::delete_note(&conn, id_other).expect("delete");
+        let line_other = note_recreate_line(&deleted_other, today());
+        assert!(line_other.contains("--date 2026-02-10"));
+    }
+
+    #[test]
+    fn note_recreate_line_date_precedes_body() {
+        let n = Note {
+            id: 1,
+            date: d(2026, 2, 10),
+            body: "fixed migration runner bug".to_string(),
+            created_at_utc: fixed_now().with_timezone(&Utc),
+        };
+        let line = note_recreate_line(&n, today());
+        let date_idx = line.find("--date").expect("expected --date in line");
+        let quote_idx = line.find('\'').expect("expected quoted body");
+        assert!(
+            date_idx < quote_idx,
+            "expected --date to precede the quoted body in {line:?}"
+        );
+    }
+
+    #[test]
+    fn delete_note_valid_id_removes_correct_row() {
+        let mut conn = test_db();
+        note(&mut conn, fixed_now(), &note_args(&["first"])).expect("seed");
+        note(&mut conn, fixed_now(), &note_args(&["second"])).expect("seed");
+
+        delete_note(&conn, fixed_now(), &delete_note_args(&["1"])).expect("delete");
+
+        let remaining = notes(&conn);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].body, "second");
+    }
+
+    #[test]
+    fn delete_punch_valid_id_removes_correct_row() {
+        let mut conn = test_db();
+        start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
+        stop(&mut conn, fixed_now(), &stop_args(&["17:00"])).expect("seed");
+
+        delete_punch(&conn, fixed_now(), &delete_punch_args(&["1"])).expect("delete");
+
+        let remaining = punches(&conn);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].kind, PunchKind::End);
+    }
+
+    #[test]
+    fn delete_note_id_zero_and_past_count_are_rejected() {
+        let mut conn = test_db();
+        note(&mut conn, fixed_now(), &note_args(&["only note"])).expect("seed");
+
+        delete_note(&conn, fixed_now(), &delete_note_args(&["0"])).expect_err("expected error");
+        assert_eq!(notes(&conn).len(), 1);
+
+        delete_note(&conn, fixed_now(), &delete_note_args(&["2"])).expect_err("expected error");
+        assert_eq!(notes(&conn).len(), 1);
+    }
+
+    #[test]
+    fn delete_punch_id_zero_and_past_count_are_rejected() {
+        let mut conn = test_db();
+        start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
+
+        delete_punch(&conn, fixed_now(), &delete_punch_args(&["0"])).expect_err("expected error");
+        assert_eq!(punches(&conn).len(), 1);
+
+        delete_punch(&conn, fixed_now(), &delete_punch_args(&["2"])).expect_err("expected error");
+        assert_eq!(punches(&conn).len(), 1);
+    }
+
+    #[test]
+    fn delete_note_scoping_never_touches_other_date_with_same_count() {
+        let conn = test_db();
+        storage::insert_note(
+            &conn,
+            d(2026, 2, 10),
+            "on the 10th",
+            fixed_now().with_timezone(&Utc),
+        )
+        .expect("seed");
+        storage::insert_note(
+            &conn,
+            d(2026, 2, 11),
+            "on the 11th",
+            fixed_now().with_timezone(&Utc),
+        )
+        .expect("seed");
+
+        delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["1", "--date", "2026-02-10"]),
+        )
+        .expect("delete");
+
+        assert!(notes_for(&conn, d(2026, 2, 10)).is_empty());
+        let remaining = notes_for(&conn, d(2026, 2, 11));
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].body, "on the 11th");
+    }
+
+    #[test]
+    fn delete_punch_scoping_never_touches_other_date_with_same_count() {
+        let conn = test_db();
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            d(2026, 2, 10),
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            &Local,
+        )
+        .expect("seed");
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            d(2026, 2, 11),
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            &Local,
+        )
+        .expect("seed");
+
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["1", "--date", "2026-02-10"]),
+        )
+        .expect("delete");
+
+        assert!(punches_for(&conn, d(2026, 2, 10)).is_empty());
+        let remaining = punches_for(&conn, d(2026, 2, 11));
+        assert_eq!(remaining.len(), 1);
+    }
+
+    /// `punch_recreate_line` takes no `now` at all -- only the deleted
+    /// row's own `at_utc` and `today` (for the `--date` decision) -- so
+    /// it structurally cannot reuse a captured "now" offset the way the
+    /// bug this guards against would. This file's whole test module runs
+    /// under whatever timezone the host machine's `chrono::Local`
+    /// resolves to (no fixed test TZ is pinned anywhere in this file, and
+    /// none of `commands.rs`'s existing tests assume a specific DST rule
+    /// either), so a real spring-forward/fall-back date can't be relied
+    /// on to actually cross a transition in every environment this runs
+    /// in. This pins the same contract in a way that holds regardless of
+    /// the host's zone: pick an `at_utc` on a date far from `fixed_now()`
+    /// (so any bug reusing `fixed_now()`'s offset instead of the row's
+    /// own would be detectable wherever DST does apply), and assert the
+    /// recreate line's `HH:MM` matches converting that instant directly,
+    /// computed independently in the test -- never `fixed_now()`'s.
+    #[test]
+    fn dst_crossing_punch_delete_echoes_correct_local_time() {
+        let far_at_utc = Utc.with_ymd_and_hms(2026, 7, 15, 12, 0, 0).unwrap();
+        let expected_local = far_at_utc.with_timezone(&Local).time();
+        let p = Punch {
+            id: 1,
+            at_utc: far_at_utc,
+            date: d(2026, 7, 15),
+            kind: PunchKind::Start,
+        };
+        let line = punch_recreate_line(&p, today());
+        assert!(
+            line.contains(&expected_local.format("%H:%M").to_string()),
+            "line was {line:?}"
+        );
+        assert!(line.contains("--date 2026-07-15"), "line was {line:?}");
+    }
+
+    /// Mirrors `backdated_punch_retroactively_changes_a_later_closed_weeks_owed`'s
+    /// before/after `status::resolve` pattern, but in reverse: deleting
+    /// the only entry on the currently-earliest tracked date shifts
+    /// `storage::earliest_data_date` forward, which changes a later
+    /// week's figures on the next status/week view (spec §5's called-out
+    /// consequence).
+    #[test]
+    fn earliest_data_date_shift_changes_later_status() {
+        let mut conn = test_db();
+
+        // Week 2026-04 (Mon 2026-01-19 .. Sun 2026-01-25): the only entry
+        // on what will be the earliest tracked date.
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "2026-01-20", "09:00"]),
+        )
+        .expect("ok");
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "2026-01-20", "11:00"]),
+        )
+        .expect("ok");
+
+        // Week 2026-05 (Mon 2026-01-26 .. Sun 2026-02-01): later data so
+        // the anchor still has somewhere to land after the earliest
+        // week's data is removed.
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "2026-01-27", "09:00"]),
+        )
+        .expect("ok");
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "2026-01-27", "13:00"]),
+        )
+        .expect("ok");
+
+        assert_eq!(
+            storage::earliest_data_date(&conn).unwrap(),
+            Some(d(2026, 1, 20))
+        );
+
+        let before =
+            crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
+
+        // Delete both punches on the earliest date (start, then the new
+        // position-1 end, since the listing re-numbers after each
+        // delete).
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["1", "--date", "2026-01-20"]),
+        )
+        .expect("delete");
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["1", "--date", "2026-01-20"]),
+        )
+        .expect("delete");
+
+        assert!(punches_for(&conn, d(2026, 1, 20)).is_empty());
+        assert_eq!(
+            storage::earliest_data_date(&conn).unwrap(),
+            Some(d(2026, 1, 27))
+        );
+
+        let after =
+            crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
         assert_ne!(before.week_line, after.week_line);
     }
 }
