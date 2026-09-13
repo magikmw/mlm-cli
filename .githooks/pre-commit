@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# CRAP-ish quality gate: blocks a commit when a function's cognitive
-# complexity exceeds the configured threshold, or when overall test-line
-# coverage would regress relative to the recorded baseline.
+# CRAP-ish quality gate: blocks a commit when the code isn't
+# `cargo fmt`-clean, when a function's cognitive complexity exceeds the
+# configured threshold, or when overall test-line coverage would
+# regress relative to the recorded baseline.
 #
 # One-time setup (per clone):
 #   git config core.hooksPath .githooks
@@ -27,6 +28,27 @@ cd "$REPO_ROOT" || exit 1
 
 BASELINE_FILE="$REPO_ROOT/coverage-baseline.json"
 STATUS=0
+
+# ---------------------------------------------------------------------------
+# 0. Formatting gate
+# ---------------------------------------------------------------------------
+echo "==> quality gate: cargo fmt"
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "    SKIP (cargo not found)"
+elif ! cargo fmt --version >/dev/null 2>&1; then
+    echo "    SKIP (rustfmt not installed -- 'rustup component add rustfmt')"
+else
+    if cargo fmt --check >/tmp/mlm-fmt-check.$$ 2>&1; then
+        echo "    OK"
+    else
+        echo "    FAIL: not formatted -- run 'cargo fmt' and re-stage:"
+        echo ""
+        sed 's/^/    /' /tmp/mlm-fmt-check.$$
+        STATUS=1
+    fi
+    rm -f /tmp/mlm-fmt-check.$$
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Complexity gate

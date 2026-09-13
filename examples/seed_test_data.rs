@@ -23,6 +23,7 @@ use chrono::{Datelike, Duration, Local, NaiveTime};
 use mlm::date::WeekId;
 use mlm::storage::{self, PunchKind};
 use mlm::{db, week_target};
+use rusqlite::Connection;
 
 /// Tiny dependency-free PRNG (SplitMix64) — good enough for "plausible
 /// randomness," and keeps this example from needing a `rand` dependency
@@ -78,7 +79,15 @@ const NOTE_POOL: &[&str] = &[
 
 const PROJECT_TAGS: &[&str] = &["api", "infra", "web", "mobile"];
 
-fn main() -> anyhow::Result<()> {
+/// Parsed CLI arguments. A plain struct, not `main`'s local variables,
+/// so `parse_args` can carry the whole argument loop on its own.
+struct Args {
+    weeks: i64,
+    seed: u64,
+    db_path: Option<PathBuf>,
+}
+
+fn parse_args() -> anyhow::Result<Args> {
     let mut weeks: i64 = 3;
     let mut seed: u64 = Local::now().timestamp() as u64;
     let mut db_path: Option<PathBuf> = None;
@@ -92,6 +101,96 @@ fn main() -> anyhow::Result<()> {
             other => anyhow::bail!("unrecognized argument: {other}"),
         }
     }
+
+    Ok(Args {
+        weeks,
+        seed,
+        db_path,
+    })
+}
+
+/// What got written for one calendar date, so the caller can accumulate
+/// totals and print anomaly notices without `main` itself tracking the
+/// day's internal branching.
+struct DayOutcome {
+    punches: u32,
+    notes: u32,
+    left_open: bool,
+    anomaly: Option<String>,
+}
+
+fn seed_day(
+    conn: &Connection,
+    rng: &mut Rng,
+    date: chrono::NaiveDate,
+    is_today: bool,
+    now_time: NaiveTime,
+    now_utc: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<DayOutcome> {
+    let mut outcome = DayOutcome {
+        punches: 0,
+        notes: 0,
+        left_open: false,
+        anomaly: None,
+    };
+
+    let is_weekend = matches!(date.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
+
+    // Roughly: weekdays are worked unless a rolled "day off", a rare
+    // weekend session happens, and today is truncated at "now" if
+    // it's a workday (can't punch in the future).
+    let works_today = if is_weekend {
+        rng.chance(0.05)
+    } else {
+        !rng.chance(0.08) // ~8% chance of a full day off (PTO/sick)
+    };
+
+    if works_today {
+        let (stints, left_open) = plausible_stints(rng, is_today, now_time);
+        outcome.left_open = left_open;
+        for (start, end) in &stints {
+            storage::insert_punch(conn, PunchKind::Start, date, *start, &Local)?;
+            outcome.punches += 1;
+            if let Some(end) = end {
+                storage::insert_punch(conn, PunchKind::End, date, *end, &Local)?;
+                outcome.punches += 1;
+            }
+        }
+
+        if rng.chance(0.75) {
+            let mut body = rng.pick(NOTE_POOL).to_string();
+            if rng.chance(0.3) {
+                body = format!("{}: {}", rng.pick(PROJECT_TAGS), body);
+            }
+            storage::insert_note(conn, date, &body, now_utc)?;
+            outcome.notes += 1;
+        }
+    }
+
+    // Small chance (once every few weeks, never on today) of a
+    // deliberate anomaly, to exercise status/week's `[!]` rendering. An
+    // orphaned `end` (a stop with nothing open to close) is a flagged
+    // anomaly regardless of what else happened that day — unlike a
+    // single stray trailing `start`, which SPEC.md treats as an
+    // ordinary open stint, not an anomaly, on its own.
+    if !is_today && rng.chance(0.05) {
+        let stray_time = NaiveTime::from_hms_opt(rng.range(20, 22) as u32, 0, 0).unwrap();
+        storage::insert_punch(conn, PunchKind::End, date, stray_time, &Local)?;
+        outcome.punches += 1;
+        outcome.anomaly = Some(format!(
+            "  {date}: injected an orphaned `end` at {stray_time} (flagged anomaly)"
+        ));
+    }
+
+    Ok(outcome)
+}
+
+fn main() -> anyhow::Result<()> {
+    let Args {
+        weeks,
+        seed,
+        db_path,
+    } = parse_args()?;
 
     let path = db_path
         .or_else(|| std::env::var_os("MLM_DB_PATH").map(PathBuf::from))
@@ -121,83 +220,26 @@ fn main() -> anyhow::Result<()> {
 
     let mut date = first_day;
     while date <= today {
-        let is_today = date == today;
-        let weekday = date.weekday();
-        let is_weekend = matches!(weekday, chrono::Weekday::Sat | chrono::Weekday::Sun);
-
-        // Roughly: weekdays are worked unless a rolled "day off", a rare
-        // weekend session happens, and today is truncated at "now" if
-        // it's a workday (can't punch in the future).
-        let works_today = if is_weekend {
-            rng.chance(0.05)
-        } else {
-            !rng.chance(0.08) // ~8% chance of a full day off (PTO/sick)
-        };
-
-        if works_today {
-            let (stints, left_open) = plausible_stints(&mut rng, is_today, now_time);
-            for (start, end) in &stints {
-                storage::insert_punch(&conn, PunchKind::Start, date, *start, &Local)?;
-                punch_count += 1;
-                if let Some(end) = end {
-                    storage::insert_punch(&conn, PunchKind::End, date, *end, &Local)?;
-                    punch_count += 1;
-                }
-            }
-            if left_open {
-                println!("  {date}: left open (ongoing stint) — exercises the EOD estimate");
-            }
-
-            if rng.chance(0.75) {
-                let mut body = rng.pick(NOTE_POOL).to_string();
-                if rng.chance(0.3) {
-                    body = format!("{}: {}", rng.pick(PROJECT_TAGS), body);
-                }
-                storage::insert_note(&conn, date, &body, now_utc)?;
-                note_count += 1;
-            }
+        let outcome = seed_day(&conn, &mut rng, date, date == today, now_time, now_utc)?;
+        punch_count += outcome.punches;
+        note_count += outcome.notes;
+        if outcome.left_open {
+            println!("  {date}: left open (ongoing stint) — exercises the EOD estimate");
         }
-
-        // Small chance (once every few weeks, never on today) of a
-        // deliberate anomaly, to exercise status/week's `[!]` rendering.
-        // An orphaned `end` (a stop with nothing open to close) is a
-        // flagged anomaly regardless of what else happened that day —
-        // unlike a single stray trailing `start`, which SPEC.md treats
-        // as an ordinary open stint, not an anomaly, on its own.
-        if !is_today && rng.chance(0.05) {
-            let stray_time = NaiveTime::from_hms_opt(rng.range(20, 22) as u32, 0, 0).unwrap();
-            storage::insert_punch(&conn, PunchKind::End, date, stray_time, &Local)?;
-            punch_count += 1;
-            anomaly_notes.push(format!(
-                "  {date}: injected an orphaned `end` at {stray_time} (flagged anomaly)"
-            ));
-        }
+        anomaly_notes.extend(outcome.anomaly);
 
         date += Duration::days(1);
     }
 
-    // Override one of the covered weeks' targets, so `week`'s target
+    // Override the first covered week's target, so `week`'s target
     // override path (§3.7) has something to show too.
-    let candidate_weeks: Vec<WeekId> = {
-        let mut seen = Vec::new();
-        let mut d = first_day;
-        while d <= today {
-            let w = WeekId::from_date(d);
-            if seen.last() != Some(&w) {
-                seen.push(w);
-            }
-            d += Duration::days(1);
-        }
-        seen
-    };
-    if let Some(overridden) = candidate_weeks.first() {
-        // A plausible half-week: 20h instead of the 40h default.
-        week_target::set_week_target(&conn, overridden, 20 * 60)?;
-        println!(
-            "  target override: week {} set to 20h 00m (half week)",
-            overridden
-        );
-    }
+    let overridden = WeekId::from_date(first_day);
+    // A plausible half-week: 20h instead of the 40h default.
+    week_target::set_week_target(&conn, &overridden, 20 * 60)?;
+    println!(
+        "  target override: week {} set to 20h 00m (half week)",
+        overridden
+    );
 
     println!();
     println!("done: {punch_count} punches, {note_count} notes inserted.");
