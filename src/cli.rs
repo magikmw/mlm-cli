@@ -145,20 +145,19 @@ pub struct DeleteEntryArgs {
     /// (run with no ID to list instead of deleting). Position 0 and
     /// anything past the current count are rejected once the app
     /// resolves this against a fresh listing, not here.
-    ///
-    /// `allow_negative_numbers = true` is required despite the `u32`
-    /// value_parser: verified empirically against clap 4.6.6 that,
-    /// without it, a bare `-1` positional here is rejected as
-    /// `UnknownArgument` (clap tries it as a flag first) rather than
-    /// reaching the `u32` parser to fail as `ValueValidation`.
+    // `allow_negative_numbers = true` is required despite the `u32`
+    // value_parser: verified empirically against clap 4.6.6 that,
+    // without it, a bare `-1` positional here is rejected as
+    // `UnknownArgument` (clap tries it as a flag first) rather than
+    // reaching the `u32` parser to fail as `ValueValidation`.
     #[arg(value_name = "ID", allow_negative_numbers = true)]
     pub id: Option<u32>,
 
     /// Date to operate on: YYYY-MM-DD, or `-N` for N days before today
-    /// (e.g. `-1` = yesterday). Defaults to today. A malformed or future
-    /// date is rejected once the app resolves it with
-    /// `date::resolve_future_checked_date`, the same resolver
-    /// start/stop/note already use -- not here at the parsing level.
+    /// (e.g. `-1` = yesterday). Defaults to today.
+    // A malformed or future date is rejected once the app resolves it
+    // with `date::resolve_future_checked_date`, the same resolver
+    // start/stop/note already use -- not here at the parsing level.
     #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
     pub date: Option<String>,
 }

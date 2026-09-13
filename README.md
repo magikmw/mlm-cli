@@ -268,10 +268,10 @@ it. `-d`/`--date` targets a different date the same way as
 `start`/`stop`/`note` (`YYYY-MM-DD` or `-N`), and defaults to today.
 
 ```sh
-$ mlm delete note
+$ mlm delete note --date 2026-09-10
 1  fixed migration runner bug
 2  reviewed open PRs
-$ mlm delete note 1
+$ mlm delete note 1 --date 2026-09-10
 deleted. to recreate: mlm note --date 2026-09-10 'fixed migration runner bug'
 ```
 
@@ -291,7 +291,7 @@ Same list/delete shape as `delete note`, for punches instead —
 ```sh
 $ mlm delete punch
 1  start 09:00
-2  stop 13:00
+2  end 13:00
 $ mlm delete punch 2
 deleted. to recreate: mlm stop 13:00 --date 2026-09-10
 ```

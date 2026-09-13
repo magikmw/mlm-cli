@@ -226,6 +226,23 @@ jobs:
           MLM_DB_PATH="$delete_flag_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-flag-restore.out"
           grep -q -- "--verbose logging bug" "${RUNNER_TEMP}/status-after-flag-restore.out"
 
+          # --- delete: embedded-apostrophe note body (milestone 14 finding
+          # 10), isolated the same way as the flag-lookalike case above. ---
+          delete_quote_db="${RUNNER_TEMP}/mlm-ci-smoke-delete-quote.db"
+
+          echo "--- delete: seed a note whose body contains a literal apostrophe ---"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" note "it's a test"
+
+          echo "--- delete: delete it, capture the quoted recreate line ---"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" delete note 1 | tee "${RUNNER_TEMP}/delete-quote-do.out"
+
+          echo "--- delete: run the embedded-quote recreate line through a real shell, confirm exact body restored ---"
+          recreate_quote="$(grep -o "mlm note .*" "${RUNNER_TEMP}/delete-quote-do.out")"
+          inner="${mlm_bin} ${recreate_quote#mlm }"
+          MLM_DB_PATH="$delete_quote_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-quote-restore.out"
+          grep -q -- "it's a test" "${RUNNER_TEMP}/status-after-quote-restore.out"
+
           # Future dates must be rejected on delete too, mirroring the
           # start/stop/note future-date check above.
           echo "--- delete: future --date is a hard error ---"
