@@ -16,13 +16,15 @@ use crate::storage::{self, PunchKind};
 use crate::time::{TimeParseError, parse_time};
 
 /// Record a start punch for today, optionally with an inline note
-/// (SPEC §3.2).
+/// (SPEC §3.2), or against another day via `--date`
+/// (backdated-punches spec §4).
 pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
     punch(conn, now, PunchKind::Start, args)
 }
 
 /// Record an end punch for today, optionally with an inline note
-/// (SPEC §3.3 — "same shape as start").
+/// (SPEC §3.3 — "same shape as start"), or against another day via
+/// `--date` (backdated-punches spec §4).
 pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
     punch(conn, now, PunchKind::End, args)
 }
@@ -31,13 +33,23 @@ pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> an
 /// `--date`, a resolved past date (backdated-punches spec §4).
 pub fn note(conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs) -> anyhow::Result<()> {
     let today = now.date_naive();
-    let target_date = match &args.date {
-        Some(s) => resolve_future_checked_date(s, today)?,
-        None => today,
-    };
+    let target_date = resolve_target_date(&args.date, today)?;
     let body = args.body.join(" ");
     storage::insert_note(conn, target_date, &body, now.with_timezone(&Utc))?;
     Ok(())
+}
+
+/// Shared date-resolution step for `note()` and `punch()`: `None` means
+/// "today"; `Some` is resolved (and future-checked) via
+/// `resolve_future_checked_date` (backdated-punches spec §3/§4).
+fn resolve_target_date(
+    date: &Option<String>,
+    today: chrono::NaiveDate,
+) -> anyhow::Result<chrono::NaiveDate> {
+    match date {
+        Some(s) => Ok(resolve_future_checked_date(s, today)?),
+        None => Ok(today),
+    }
 }
 
 /// Shared `start`/`stop` implementation, parameterised by punch kind.
@@ -59,10 +71,7 @@ fn punch(
     args: &PunchArgs,
 ) -> anyhow::Result<()> {
     let today = now.date_naive();
-    let target_date = match &args.date {
-        Some(s) => resolve_future_checked_date(s, today)?,
-        None => today,
-    };
+    let target_date = resolve_target_date(&args.date, today)?;
 
     let time_of_day = match &args.time {
         Some(s) => parse_time(s)?,
@@ -736,6 +745,104 @@ mod tests {
                 .with_timezone(&Utc)
         );
         assert!(punches(&conn).is_empty(), "nothing written against today");
+    }
+
+    // Malformed --date on `note` is rejected; nothing written. Only the
+    // happy path (`backdated_note_stored_against_resolved_date`) and
+    // `start`'s equivalent existed before -- `note()`'s own
+    // date-error paths were untested.
+    #[test]
+    fn note_malformed_date_is_rejected() {
+        let mut conn = test_db();
+        let r = note(
+            &mut conn,
+            fixed_now(),
+            &note_args(&["--date", "not-a-date", "fixed a bug"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+        assert!(notes(&conn).is_empty());
+    }
+
+    // Future --date on `note` is rejected; nothing written.
+    #[test]
+    fn note_future_date_is_rejected() {
+        let mut conn = test_db();
+        let r = note(
+            &mut conn,
+            fixed_now(),
+            &note_args(&["--date", "2026-02-13", "fixed a bug"]),
+        );
+        let err = r.expect_err("expected error");
+        let is_future = matches!(
+            err.downcast_ref::<crate::date::DateWeekError>()
+                .map(|e| &e.cause),
+            Some(crate::date::Cause::Future)
+        );
+        assert!(is_future, "expected Cause::Future, got {err:?}");
+        assert!(notes(&conn).is_empty());
+        assert!(notes_for(&conn, d(2026, 2, 13)).is_empty());
+    }
+
+    // --- stop's own date-error paths (backdated-punches spec §5) --------
+    //
+    // Every existing malformed-date/future-date/missing-TIME test above
+    // exercises only `start`, even though `stop` shares the same
+    // `punch()` helper -- so nothing today proves `stop` itself hits
+    // these paths, only that it compiles against the same helper. This
+    // mirrors those three `start` tests for `stop`.
+
+    #[test]
+    fn backdated_stop_without_time_is_rejected() {
+        let mut conn = test_db();
+        let r = stop(&mut conn, fixed_now(), &stop_args(&["--date", "-1"]));
+        let err = r.expect_err("expected error");
+        let is_required = matches!(
+            err.downcast_ref::<crate::time::TimeParseError>(),
+            Some(crate::time::TimeParseError::Required)
+        );
+        assert!(
+            is_required,
+            "expected TimeParseError::Required, got {err:?}"
+        );
+        assert!(punches_for(&conn, d(2026, 2, 11)).is_empty());
+        assert!(punches(&conn).is_empty());
+    }
+
+    #[test]
+    fn future_dated_stop_is_rejected() {
+        let mut conn = test_db();
+        let r = stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "2026-02-13", "09:00"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+        assert!(punches_for(&conn, d(2026, 2, 13)).is_empty());
+    }
+
+    #[test]
+    fn stop_bad_date_precedes_bad_time_error() {
+        let mut conn = test_db();
+        let r = stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "not-a-date", "25:00"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected the date error to win, got {err:?}"
+        );
+        assert!(err.downcast_ref::<crate::time::TimeParseError>().is_none());
+        assert!(punches(&conn).is_empty());
     }
 
     // --- backdated note (backdated-punches spec §5) ---------------------
