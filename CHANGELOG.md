@@ -1,6 +1,16 @@
 # Changelog
 
 All notable changes to this project are documented in this file.
+## [0.1.3] - 2026-09-13
+
+### 🚀 Features
+
+- (ux) command aliases
+
+### 💼 Other Changes
+
+- (docs) clean impl plans from project's root
+- (ci) prepend, don't overwrite the changelog but actually
 
 ## [0.1.2] - 2026-09-13
 
