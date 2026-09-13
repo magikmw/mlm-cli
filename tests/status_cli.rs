@@ -142,7 +142,10 @@ fn t15_malformed_date_exits_nonzero_with_stderr_message() {
 /// code's timezone source), not evidence of a Windows-specific bug in
 /// mlm's own conversion logic — storage.rs's explicit-Tz DST tests
 /// above already cover the actual conversion math portably.
-#[cfg_attr(windows, ignore = "TZ env var does not control chrono::Local on Windows; see doc comment")]
+#[cfg_attr(
+    windows,
+    ignore = "TZ env var does not control chrono::Local on Windows; see doc comment"
+)]
 #[test]
 fn dst_transition_is_shown_correctly_end_to_end_via_status() {
     let dir = TempDir::new().expect("temp dir");
