@@ -642,8 +642,13 @@ repeated in the week table).
 
 `start`, `stop`, `note`, and `week target` print nothing on success —
 silent, Unix-conventional, exit `0` (§6.3) is the only signal. A hard
-error (§6.1) still prints its message to stderr as usual. Only
-`status` and `week` produce stdout output (§7.1, §7.2).
+error (§6.1) still prints its message to stderr as usual. `status` and
+`week` produce stdout output (§7.1, §7.2); `delete note`/`delete
+punch` are a narrow, deliberate exception to the write-command-silence
+rule above rather than a repeal of it — list mode prints that date's
+numbered entries (or `nothing to delete for <date>.` when there are
+none), and a successful delete prints a ready-to-run recreate command
+(`docs/dev/specs/2026-09-13-delete-punches-notes.md` §5).
 
 ## 8. User flows (test basis)
 

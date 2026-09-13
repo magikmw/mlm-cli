@@ -256,8 +256,14 @@ SPEC.md and PLAN.md:
     required hard-error case).
 43. **Write commands are silent on success**: `start`, `stop`, `note`,
     `week target` print nothing; exit `0` is the only success signal
-    (new §7.4). Previously unspecified, and two independent milestone
+    (§7.4). Previously unspecified, and two independent milestone
     plans had proposed two different confirmation-line wordings.
+    `delete note`/`delete punch` are a deliberate, narrow exception
+    added by the delete-punches/notes milestone: list mode and a
+    successful delete both print to stdout (§7.4,
+    `docs/dev/specs/2026-09-13-delete-punches-notes.md` §5) — the
+    silence rule above still governs every other write command
+    unchanged.
 44. **`created_at_utc` is minute-granular, not real-seconds**: fixes a
     genuine §4.1/§2.3 tension ("no seconds precision anywhere" vs. a
     tiebreaker column that needs sub-minute precision to do its job).
