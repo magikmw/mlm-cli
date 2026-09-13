@@ -11,8 +11,9 @@ use chrono::{DateTime, Local, Utc};
 use rusqlite::Connection;
 
 use crate::cli::{NoteArgs, PunchArgs};
+use crate::date::resolve_future_checked_date;
 use crate::storage::{self, PunchKind};
-use crate::time::parse_time;
+use crate::time::{TimeParseError, parse_time};
 
 /// Record a start punch for today, optionally with an inline note
 /// (SPEC §3.2).
@@ -26,22 +27,31 @@ pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> an
     punch(conn, now, PunchKind::End, args)
 }
 
-/// Record a standalone work-log note for today (SPEC §3.4).
+/// Record a standalone work-log note (SPEC §3.4), against today or, with
+/// `--date`, a resolved past date (backdated-punches spec §4).
 pub fn note(conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs) -> anyhow::Result<()> {
     let today = now.date_naive();
+    let target_date = match &args.date {
+        Some(s) => resolve_future_checked_date(s, today)?,
+        None => today,
+    };
     let body = args.body.join(" ");
-    storage::insert_note(conn, today, &body, now.with_timezone(&Utc))?;
+    storage::insert_note(conn, target_date, &body, now.with_timezone(&Utc))?;
     Ok(())
 }
 
 /// Shared `start`/`stop` implementation, parameterised by punch kind.
 ///
-/// Validation order (§4.1): `TIME` is parsed first (E1 exits here,
-/// nothing written), then the note body is handed to
-/// `storage::insert_punch_with_note`, which itself validates
-/// empty/whitespace bodies *before* opening a transaction (E5) and wraps
-/// the punch+note pair in one transaction so a failure at either insert
-/// rolls back both (§6.1: a rejected note leaves no orphaned punch).
+/// Validation order (backdated-punches spec §3, extending §4.1's
+/// existing rule): date resolution happens first (a malformed or
+/// future `--date` is a hard error here, before TIME is even looked
+/// at), then TIME is parsed -- required when the resolved date isn't
+/// today (E1/new "required" case exits here, nothing written) -- then
+/// the note body is handed to `storage::insert_punch_with_note`, which
+/// itself validates empty/whitespace bodies *before* opening a
+/// transaction (E5) and wraps the punch+note pair in one transaction so
+/// a failure at either insert rolls back both (§6.1: a rejected note
+/// leaves no orphaned punch).
 fn punch(
     conn: &mut Connection,
     now: DateTime<Local>,
@@ -49,10 +59,15 @@ fn punch(
     args: &PunchArgs,
 ) -> anyhow::Result<()> {
     let today = now.date_naive();
+    let target_date = match &args.date {
+        Some(s) => resolve_future_checked_date(s, today)?,
+        None => today,
+    };
 
     let time_of_day = match &args.time {
         Some(s) => parse_time(s)?,
-        None => now.time(),
+        None if target_date == today => now.time(),
+        None => return Err(TimeParseError::Required.into()),
     };
 
     let note_text = join_note(&args.note);
@@ -60,7 +75,7 @@ fn punch(
     storage::insert_punch_with_note(
         conn,
         kind,
-        today,
+        target_date,
         time_of_day,
         &Local,
         note_text.as_deref(),
@@ -132,6 +147,30 @@ mod tests {
 
     fn notes(conn: &Connection) -> Vec<Note> {
         notes_for_date(conn, today()).expect("read notes")
+    }
+
+    /// A known date; panics on a typo in the test itself. (Same
+    /// fixture as `date.rs`'s and `status.rs`'s `mod tests`.)
+    fn d(y: i32, m: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, day).expect("test fixture is a real date")
+    }
+
+    fn stop_args(argv: &[&str]) -> PunchArgs {
+        // argv excludes "mlm" and the subcommand name.
+        let mut full = vec!["mlm", "stop"];
+        full.extend_from_slice(argv);
+        match Cli::try_parse_from(full).expect("parse").command {
+            crate::cli::Command::Stop(a) => a,
+            other => panic!("expected Stop, got {other:?}"),
+        }
+    }
+
+    fn punches_for(conn: &Connection, date: NaiveDate) -> Vec<Punch> {
+        punches_for_date(conn, date).expect("read punches")
+    }
+
+    fn notes_for(conn: &Connection, date: NaiveDate) -> Vec<Note> {
+        notes_for_date(conn, date).expect("read notes")
     }
 
     // --- Happy paths -------------------------------------------------
@@ -518,5 +557,286 @@ mod tests {
     fn bare_note_command_is_clap_error() {
         let err = Cli::try_parse_from(["mlm", "note"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    // --- backdated punches (backdated-punches spec §5) ------------------
+
+    // Successful backdated punch with explicit TIME.
+    #[test]
+    fn backdated_start_with_explicit_time_succeeds() {
+        let mut conn = test_db();
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "-1", "09:00"]),
+        )
+        .expect("ok");
+        let yesterday = d(2026, 2, 11);
+        let p = punches_for(&conn, yesterday);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].date, yesterday);
+        assert_eq!(
+            p[0].at_utc,
+            Local
+                .with_ymd_and_hms(2026, 2, 11, 9, 0, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        assert!(punches(&conn).is_empty(), "nothing written against today");
+    }
+
+    // Missing TIME with a backdated --date is rejected; nothing written.
+    #[test]
+    fn backdated_start_without_time_is_rejected() {
+        let mut conn = test_db();
+        let r = start(&mut conn, fixed_now(), &punch_args(&["--date", "-1"]));
+        let err = r.expect_err("expected error");
+        assert!(
+            matches!(
+                err.downcast_ref::<crate::time::TimeParseError>(),
+                Some(crate::time::TimeParseError::Required)
+            ),
+            "expected TimeParseError::Required, got {err:?}"
+        );
+        assert!(punches_for(&conn, d(2026, 2, 11)).is_empty());
+        assert!(punches(&conn).is_empty());
+    }
+
+    // Future --date is rejected; nothing written.
+    #[test]
+    fn future_dated_start_is_rejected() {
+        let mut conn = test_db();
+        let r = start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "2026-02-13", "09:00"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected DateWeekError, got {err:?}"
+        );
+        assert!(punches_for(&conn, d(2026, 2, 13)).is_empty());
+    }
+
+    // --date omitted behaves exactly as before (regression guard).
+    #[test]
+    fn omitted_date_flag_behaves_like_before() {
+        let mut conn = test_db();
+        start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("ok");
+        let p = punches(&conn);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].date, today());
+    }
+
+    // An anomaly-producing pairing on a backdated date surfaces the same
+    // as it would for today: two starts, no end, is still just two
+    // "start" rows for that date -- anomaly *rendering* is status's job,
+    // this only proves storage.rs's per-date bookkeeping isn't disturbed
+    // by a backdated date.
+    #[test]
+    fn backdated_anomaly_producing_pairing_is_stored_like_today() {
+        let mut conn = test_db();
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "-1", "09:00"]),
+        )
+        .expect("ok");
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "-1", "10:00"]),
+        )
+        .expect("ok");
+        let p = punches_for(&conn, d(2026, 2, 11));
+        assert_eq!(p.len(), 2);
+        assert!(p.iter().all(|x| x.kind == PunchKind::Start));
+    }
+
+    // An inline NOTE alongside a backdated punch lands on the *resolved*
+    // date, not today.
+    #[test]
+    fn backdated_inline_note_lands_on_resolved_date() {
+        let mut conn = test_db();
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "-1", "09:00", "kicked off migration"]),
+        )
+        .expect("ok");
+        let yesterday = d(2026, 2, 11);
+        let n = notes_for(&conn, yesterday);
+        assert_eq!(n.len(), 1);
+        assert_eq!(n[0].date, yesterday);
+        assert_eq!(n[0].body, "kicked off migration");
+        assert!(notes(&conn).is_empty(), "nothing written against today");
+    }
+
+    // A simultaneous bad --date + bad/missing TIME reports the date
+    // error (precedence: date -> TIME -> NOTE).
+    #[test]
+    fn bad_date_precedes_bad_time_error() {
+        let mut conn = test_db();
+        let r = start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "not-a-date", "25:00"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected the date error to win, got {err:?}"
+        );
+        assert!(err.downcast_ref::<crate::time::TimeParseError>().is_none());
+        assert!(punches(&conn).is_empty());
+    }
+
+    #[test]
+    fn bad_date_precedes_missing_time_error() {
+        let mut conn = test_db();
+        let r = start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "not-a-date"]),
+        );
+        let err = r.expect_err("expected error");
+        assert!(
+            err.downcast_ref::<crate::date::DateWeekError>().is_some(),
+            "expected the date error to win over the missing-TIME error, got {err:?}"
+        );
+    }
+
+    // `stop` shares `punch()` with `start`, but every backdated test
+    // above exercises it only via `start(...)`. `stop_all_shapes` (the
+    // pre-existing test this mirrors) is the only place `stop` itself is
+    // exercised at all, and it never touches `--date` -- so nothing
+    // today actually proves the shared helper resolves `--date`
+    // correctly on the `stop` path specifically, only that it compiles
+    // against `PunchArgs`. This closes that gap.
+    #[test]
+    fn backdated_stop_with_explicit_time_succeeds() {
+        let mut conn = test_db();
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "-1", "17:30"]),
+        )
+        .expect("ok");
+        let yesterday = d(2026, 2, 11);
+        let p = punches_for(&conn, yesterday);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].kind, PunchKind::End);
+        assert_eq!(p[0].date, yesterday);
+        assert_eq!(
+            p[0].at_utc,
+            Local
+                .with_ymd_and_hms(2026, 2, 11, 17, 30, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        assert!(punches(&conn).is_empty(), "nothing written against today");
+    }
+
+    // --- backdated note (backdated-punches spec §5) ---------------------
+
+    #[test]
+    fn backdated_note_stored_against_resolved_date() {
+        let mut conn = test_db();
+        note(
+            &mut conn,
+            fixed_now(),
+            &note_args(&["--date", "-3", "fixed a bug"]),
+        )
+        .expect("ok");
+        let target = d(2026, 2, 9);
+        let n = notes_for(&conn, target);
+        assert_eq!(n.len(), 1);
+        assert_eq!(n[0].date, target);
+        assert_eq!(n[0].body, "fixed a bug");
+        // created_at_utc still reflects real now, not the backdated date.
+        assert_eq!(n[0].created_at_utc, fixed_now().with_timezone(&Utc));
+        assert!(notes(&conn).is_empty(), "nothing written against today");
+    }
+
+    // --- retroactive week recompute (backdated-punches spec §3.1) -------
+    //
+    // §3.1 calls this the whole point of the feature: backdating a punch
+    // into an already-"closed" past week must change that week's, and a
+    // later week's, owed/carry figures on the next status view. Nothing
+    // above proves this -- every test up to here only inspects rows via
+    // `punches_for`/`notes_for`, never a computed week figure. This
+    // drives `status::resolve` (src/status.rs) directly against the same
+    // in-memory connection `commands::start`/`stop` just wrote to, so it
+    // is a genuine end-to-end check of storage -> week accounting, not a
+    // restatement of either module's own unit tests.
+    //
+    // Fixture: `fixed_now()` is 2026-02-12 (Thursday, ISO week 2026-07).
+    // 2026-01-27 is a Tuesday in ISO week 2026-05 (Mon 2026-01-26 .. Sun
+    // 2026-02-01) and is exactly 16 days before `fixed_now()`'s date, so
+    // `--date -16` reaches the same day as `--date 2026-01-27`. ISO week
+    // 2026-06 (Mon 2026-02-02 .. Sun 2026-02-08) sits between 2026-05 and
+    // the current week 2026-07, so it is already "closed" (in the past,
+    // per `render::week_framing`) both before and after the backdated
+    // punch lands -- exactly the "already-closed past week" §3.1
+    // describes, not the current week's own live-updating figure.
+    #[test]
+    fn backdated_punch_retroactively_changes_a_later_closed_weeks_owed() {
+        let mut conn = test_db();
+
+        // Seed 4h in week 2026-05 (2026-01-27, 09:00-13:00).
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "2026-01-27", "09:00"]),
+        )
+        .expect("ok");
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "2026-01-27", "13:00"]),
+        )
+        .expect("ok");
+
+        // Before the fix: week 2026-05 worked 240m against a 2400m
+        // default target, so it owes 2160m and carries -2160m forward
+        // through the idle week 2026-06 (which itself then owes its own
+        // full 2400m on top): 2160 + 2400 = 4560m = 76h 00m.
+        let before =
+            crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
+        assert!(
+            before.week_line.contains("Total still owed: 76h 00m"),
+            "before: {}",
+            before.week_line
+        );
+
+        // A forgotten 2h stint is now backdated into week 2026-05 via
+        // the -N shorthand (2026-01-27 is 16 days before fixed_now()'s
+        // date).
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["--date", "-16", "14:00"]),
+        )
+        .expect("ok");
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["--date", "-16", "16:00"]),
+        )
+        .expect("ok");
+
+        // After: week 2026-05 now worked 360m, owes 2040m; week 2026-06
+        // owes 2040 + 2400 = 4440m = 74h 00m -- 2 hours less, exactly the
+        // backdated stint's length, with no `status`/`week` action taken
+        // beyond re-reading the same view.
+        let after =
+            crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
+        assert!(
+            after.week_line.contains("Total still owed: 74h 00m"),
+            "after: {}",
+            after.week_line
+        );
+        assert_ne!(before.week_line, after.week_line);
     }
 }
