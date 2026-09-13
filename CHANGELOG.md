@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.0] - 2026-09-13
+
+### 🚀 Features
+
+- *(feat)* Enable backdating punches and notes
+- *(cli)* Add -d/--date to start/stop/note, including -N shorthand and 'yesterday'
+- *(cli)* Accept -N shorthand with status
+
 ## [0.1.5] - 2026-09-13
 
 ### 💼 Other Changes
