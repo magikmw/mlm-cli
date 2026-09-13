@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.5] - 2026-09-13
+
+### 💼 Other Changes
+
+- (release) strip debug symbols from release binaries
+- (ci) filter Release commits and fix changelog spacing in git-cliff
+- (ci) bump actions/checkout to v6 in ci.yml
+- (docs) add SECURITY.md
+
 ## [0.1.4] - 2026-09-13
 
 ### 💼 Other Changes
