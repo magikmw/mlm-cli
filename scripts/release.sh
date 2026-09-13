@@ -90,7 +90,7 @@ cargo update --workspace --offline 2>/dev/null || cargo update --workspace
 
 # --- 3. Regenerate CHANGELOG.md ----------------------------------------
 
-git-cliff --config cliff.toml --tag "$tag" -o CHANGELOG.md
+git-cliff --config cliff.toml --prepend -l --tag "$tag" -o CHANGELOG.md
 
 # --- 4. Commit ----------------------------------------------------------
 
