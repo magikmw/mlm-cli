@@ -31,10 +31,12 @@ fn mlm_tz(db_path: &std::path::Path, tz: &str, args: &[&str]) -> std::process::O
         .expect("failed to run mlm binary")
 }
 
-/// Seed a punch row directly via SQL, bypassing the CLI (which only ever
-/// writes punches for "today"). `at_utc` and `date` are given pre-
-/// formatted so the test can pin exact historical instants around a real
-/// DST transition. Mirrors the frozen schema in `src/db.rs`.
+/// Seed a punch row directly via SQL, bypassing the CLI (which can also
+/// write a punch against a past date via `start`/`stop --date`, but not
+/// against an arbitrary UTC instant the way this helper can). `at_utc`
+/// and `date` are given pre-formatted so the test can pin exact
+/// historical instants around a real DST transition. Mirrors the frozen
+/// schema in `src/db.rs`.
 fn seed_punch(db_path: &std::path::Path, at_utc: &str, date: &str, kind: &str) {
     // Running `mlm` first (any command) creates the DB file and applies
     // migrations, so the schema exists before this raw insert runs.
@@ -184,6 +186,51 @@ fn dst_transition_is_shown_correctly_end_to_end_via_status() {
     assert!(
         after_out.contains("01h 00m"),
         "post-transition duration wrong: {after_out:?}"
+    );
+}
+
+/// Regression for the review finding that `mlm status -1` failed at the
+/// clap layer even though `--help` and the spec both promise `-N`
+/// shorthand works: `Status`'s positional `DATE` needs
+/// `allow_negative_numbers = true`, and nothing below the CLI/binary
+/// layer (only `status.rs`'s unit-level `resolve()` tests) exercised
+/// clap's own parsing of this argument.
+#[test]
+fn status_accepts_negative_number_shorthand_at_the_clap_layer() {
+    let dir = TempDir::new().expect("temp dir");
+    let db_path = dir.path().join("mlm.db");
+
+    // Seed yesterday directly (the CLI can now also write non-today
+    // dates via start/stop/note --date, but seeding keeps this test
+    // focused on status's own parsing).
+    let boot = mlm(&db_path, &["status"]);
+    assert!(boot.status.success(), "bootstrap status: {:?}", boot);
+
+    let today_out = stdout(&mlm(&db_path, &["status"]));
+    let today_line = today_out.lines().next().expect("today header line");
+    let today_date = today_line
+        .split_whitespace()
+        .nth(1)
+        .expect("today date token");
+    let today = chrono::NaiveDate::parse_from_str(today_date, "%Y-%m-%d").expect("parse today");
+    let yesterday = today - chrono::Days::new(1);
+    seed_punch(
+        &db_path,
+        &format!("{}T09:00:00Z", yesterday.format("%Y-%m-%d")),
+        &yesterday.format("%Y-%m-%d").to_string(),
+        "start",
+    );
+
+    let output = mlm(&db_path, &["status", "-1"]);
+    assert!(
+        output.status.success(),
+        "mlm status -1 should succeed, not be rejected as an unexpected argument: {:?}",
+        output
+    );
+    let out = stdout(&output);
+    assert!(
+        out.contains(&yesterday.format("%Y-%m-%d").to_string()),
+        "status -1 should show yesterday's date, got: {out:?}"
     );
 }
 

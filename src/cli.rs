@@ -15,15 +15,15 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Record a start punch for today.
+    /// Record a start punch for today, or another day with --date.
     #[command(visible_alias = "s")]
     Start(PunchArgs),
 
-    /// Record an end punch for today.
+    /// Record an end punch for today, or another day with --date.
     #[command(visible_alias = "e")]
     Stop(PunchArgs),
 
-    /// Record a work-log note for today.
+    /// Record a work-log note for today, or another day with --date.
     #[command(visible_alias = "n")]
     Note(NoteArgs),
 
@@ -36,6 +36,7 @@ pub enum Command {
     Status {
         /// Date to show: YYYY-MM-DD, or `-N` for N days before today
         /// (e.g. `-1` = yesterday). Defaults to today.
+        #[arg(allow_negative_numbers = true)]
         date: Option<String>,
     },
 }
