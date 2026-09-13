@@ -149,6 +149,13 @@ pub enum StorageError {
     /// not correspond to any real instant on that date in `tz`. Nothing
     /// was written.
     NonexistentLocalTime { local: NaiveDateTime },
+
+    /// §5 of the delete-punches-notes spec: a delete was attempted
+    /// against an internal id that doesn't exist (already deleted, or
+    /// external DB tampering — SPEC.md §2.2 puts concurrent access out
+    /// of scope, so this is defensive, not a concurrency feature).
+    /// Nothing was written.
+    NotFound { id: i64 },
 }
 
 impl fmt::Display for StorageError {
@@ -165,6 +172,7 @@ impl fmt::Display for StorageError {
                 f,
                 "local time {local} does not exist (spring-forward DST gap)"
             ),
+            StorageError::NotFound { id } => write!(f, "no row found with id {id}"),
         }
     }
 }
@@ -175,7 +183,8 @@ impl std::error::Error for StorageError {
             StorageError::Db(source) => Some(source),
             StorageError::CorruptRow { .. }
             | StorageError::EmptyNote
-            | StorageError::NonexistentLocalTime { .. } => None,
+            | StorageError::NonexistentLocalTime { .. }
+            | StorageError::NotFound { .. } => None,
         }
     }
 }
@@ -409,6 +418,45 @@ pub fn punches_in_range(
     Ok(out)
 }
 
+/// Delete the punch with the given internal `id` and return the row
+/// as it was immediately before deletion (for the delete command's
+/// recreate-echo). `id` is the internal DB surrogate key
+/// (`Punch::id`), never the ephemeral per-listing position computed
+/// by the `delete` command — that resolution happens in the caller.
+/// `StorageError::NotFound` if no row with that id exists; nothing is
+/// written on that path. Deleting one row never touches any other row
+/// (enforced by the `WHERE id = ?1` filter, verified by test).
+pub fn delete_punch(conn: &Connection, id: i64) -> Result<Punch, StorageError> {
+    let result = conn.query_row(
+        "DELETE FROM punches WHERE id = ?1 RETURNING id, at_utc, \"date\", kind",
+        (id,),
+        map_punch_row,
+    );
+    match result {
+        Ok((id, at_utc, date, kind)) => punch_from_row(id, at_utc, date, kind),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Err(StorageError::NotFound { id }),
+        Err(source) => Err(StorageError::Db(source)),
+    }
+}
+
+fn map_note_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, String, String, String)> {
+    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+}
+
+fn note_from_row(
+    id: i64,
+    date: String,
+    body: String,
+    created_at_utc: String,
+) -> Result<Note, StorageError> {
+    Ok(Note {
+        id,
+        date: parse_date(&date, "date")?,
+        body,
+        created_at_utc: parse_utc(&created_at_utc, "created_at_utc")?,
+    })
+}
+
 /// All notes for a local calendar date, in insertion order
 /// (`created_at_utc ASC, id ASC`). Empty `Vec`, never an error, for a
 /// date with no rows.
@@ -417,25 +465,34 @@ pub fn notes_for_date(conn: &Connection, date: NaiveDate) -> Result<Vec<Note>, S
         "SELECT id, \"date\", body, created_at_utc FROM notes \
          WHERE \"date\" = ?1 ORDER BY created_at_utc ASC, id ASC",
     )?;
-    let rows = stmt.query_map((date.format("%Y-%m-%d").to_string(),), |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
-        ))
-    })?;
+    let rows = stmt.query_map((date.format("%Y-%m-%d").to_string(),), map_note_row)?;
     let mut out = Vec::new();
     for row in rows {
         let (id, date, body, created_at_utc) = row?;
-        out.push(Note {
-            id,
-            date: parse_date(&date, "date")?,
-            body,
-            created_at_utc: parse_utc(&created_at_utc, "created_at_utc")?,
-        });
+        out.push(note_from_row(id, date, body, created_at_utc)?);
     }
     Ok(out)
+}
+
+/// Delete the note with the given internal `id` and return the row as
+/// it was immediately before deletion (for the delete command's
+/// recreate-echo). `id` is the internal DB surrogate key (`Note::id`),
+/// never the ephemeral per-listing position — that resolution happens
+/// in the caller. `StorageError::NotFound` if no row with that id
+/// exists; nothing is written on that path. Deleting one row never
+/// touches any other row (enforced by the `WHERE id = ?1` filter,
+/// verified by test).
+pub fn delete_note(conn: &Connection, id: i64) -> Result<Note, StorageError> {
+    let result = conn.query_row(
+        "DELETE FROM notes WHERE id = ?1 RETURNING id, \"date\", body, created_at_utc",
+        (id,),
+        map_note_row,
+    );
+    match result {
+        Ok((id, date, body, created_at_utc)) => note_from_row(id, date, body, created_at_utc),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Err(StorageError::NotFound { id }),
+        Err(source) => Err(StorageError::Db(source)),
+    }
 }
 
 /// The earliest local date with any punch or note data, across all
@@ -1353,5 +1410,109 @@ mod tests {
         insert_punch(&conn, PunchKind::Start, d(2026, 1, 10), t(9, 0), &TZ_UTC).expect("insert");
         let range = punches_in_range(&conn, d(2026, 2, 1), d(2026, 2, 28)).unwrap();
         assert!(range.is_empty());
+    }
+
+    // --- 7.8 delete-by-id --------------------------------------------------
+
+    #[test]
+    fn delete_punch_removes_row_and_returns_it() {
+        let conn = test_db();
+        let id = insert_punch(&conn, PunchKind::Start, d(2026, 1, 15), t(9, 0), &TZ_UTC)
+            .expect("insert");
+        let deleted = delete_punch(&conn, id).expect("delete");
+        assert_eq!(deleted.id, id);
+        assert_eq!(deleted.at_utc, utc(2026, 1, 15, 9, 0, 0));
+        assert_eq!(deleted.date, d(2026, 1, 15));
+        assert_eq!(deleted.kind, PunchKind::Start);
+        assert!(punches_for_date(&conn, d(2026, 1, 15)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_note_removes_row_and_returns_it() {
+        let conn = test_db();
+        let id = insert_note(&conn, d(2026, 1, 15), "a note", utc(2026, 1, 15, 9, 0, 0))
+            .expect("insert");
+        let deleted = delete_note(&conn, id).expect("delete");
+        assert_eq!(deleted.id, id);
+        assert_eq!(deleted.date, d(2026, 1, 15));
+        assert_eq!(deleted.body, "a note");
+        assert_eq!(deleted.created_at_utc, utc(2026, 1, 15, 9, 0, 0));
+        assert!(notes_for_date(&conn, d(2026, 1, 15)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_punch_nonexistent_id_returns_not_found() {
+        let conn = test_db();
+        let err = delete_punch(&conn, 999);
+        assert!(matches!(err, Err(StorageError::NotFound { id: 999 })));
+    }
+
+    #[test]
+    fn delete_note_nonexistent_id_returns_not_found() {
+        let conn = test_db();
+        let err = delete_note(&conn, 999);
+        assert!(matches!(err, Err(StorageError::NotFound { id: 999 })));
+    }
+
+    #[test]
+    fn delete_punch_leaves_other_punches_on_same_date_untouched() {
+        let conn = test_db();
+        let start_id = insert_punch(&conn, PunchKind::Start, d(2026, 1, 15), t(9, 0), &TZ_UTC)
+            .expect("insert");
+        let end_id =
+            insert_punch(&conn, PunchKind::End, d(2026, 1, 15), t(17, 0), &TZ_UTC).expect("insert");
+        delete_punch(&conn, start_id).expect("delete");
+        let remaining = punches_for_date(&conn, d(2026, 1, 15)).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, end_id);
+    }
+
+    #[test]
+    fn delete_punch_leaves_punches_on_other_dates_untouched() {
+        let conn = test_db();
+        let id_15 = insert_punch(&conn, PunchKind::Start, d(2026, 1, 15), t(9, 0), &TZ_UTC)
+            .expect("insert");
+        let id_16 = insert_punch(&conn, PunchKind::Start, d(2026, 1, 16), t(9, 0), &TZ_UTC)
+            .expect("insert");
+        delete_punch(&conn, id_15).expect("delete");
+        assert!(punches_for_date(&conn, d(2026, 1, 15)).unwrap().is_empty());
+        let remaining = punches_for_date(&conn, d(2026, 1, 16)).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, id_16);
+    }
+
+    #[test]
+    fn delete_note_leaves_other_notes_on_same_date_untouched() {
+        let conn = test_db();
+        let first =
+            insert_note(&conn, d(2026, 1, 15), "first", utc(2026, 1, 15, 9, 0, 0)).expect("insert");
+        let second = insert_note(&conn, d(2026, 1, 15), "second", utc(2026, 1, 15, 10, 0, 0))
+            .expect("insert");
+        delete_note(&conn, first).expect("delete");
+        let remaining = notes_for_date(&conn, d(2026, 1, 15)).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, second);
+    }
+
+    #[test]
+    fn delete_note_leaves_notes_on_other_dates_untouched() {
+        let conn = test_db();
+        let id_15 =
+            insert_note(&conn, d(2026, 1, 15), "on 15", utc(2026, 1, 15, 9, 0, 0)).expect("insert");
+        let id_16 =
+            insert_note(&conn, d(2026, 1, 16), "on 16", utc(2026, 1, 16, 9, 0, 0)).expect("insert");
+        delete_note(&conn, id_15).expect("delete");
+        assert!(notes_for_date(&conn, d(2026, 1, 15)).unwrap().is_empty());
+        let remaining = notes_for_date(&conn, d(2026, 1, 16)).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, id_16);
+    }
+
+    #[test]
+    fn not_found_error_names_the_id_and_has_no_source() {
+        let conn = test_db();
+        let err = delete_punch(&conn, 42).expect_err("expected NotFound");
+        assert!(err.to_string().contains("42"));
+        assert!(std::error::Error::source(&err).is_none());
     }
 }
