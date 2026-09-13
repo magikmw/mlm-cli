@@ -2,7 +2,9 @@
 
 **Baseline**: written against `v0.1.5`.
 
-**Status**: approved design, not yet implemented.
+**Status**: implemented — see
+`docs/dev/plans/milestone-12-backdated-punches.md` for the executed
+plan and the `backdated-punches` branch/commits for the change itself.
 
 ## 1. Summary
 

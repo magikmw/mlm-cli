@@ -41,11 +41,11 @@ arithmetic and lets entries land in any order.
 - Shell prompt integration.
 - Non-ISO week conventions.
 - 12h (AM/PM) time input — MVP is `HH:MM`/`HHMM`/`HH`, 24h only.
-- `+N`/`-N` relative day/week notation for `status`'s date argument
-  and `week`'s week-id argument.
-- Punches for anything but *today* — no way to log a forgotten punch
-  against yesterday in MVP (no editing means no fixing a wrong date
-  either, so this stays add-only-for-today until editing lands).
+- `+N`/`-N` relative week notation for `week`'s week-id argument.
+  (`status`'s `DATE` argument's own `-N` shorthand, and logging a
+  punch/note against a date other than today, are no longer non-goals —
+  both are implemented; see
+  `docs/dev/specs/2026-09-13-backdated-punches.md`.)
 - Stints spanning midnight: pairing is strictly per calendar `date`
   (§4.3), so a session like `start 23:30` / `stop 00:45` the next day
   splits in two rather than one clean overnight stint: day one is left

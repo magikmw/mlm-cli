@@ -32,8 +32,9 @@ for the full list and the reasoning behind each:
 - Shell prompt integration (current tracking state in PS1/starship)
 - Non-ISO week conventions
 - 12-hour (AM/PM) time input — 24h only for now
-- `+N`/`-N` relative day/week notation for `status`/`week`
-- Logging a punch against a date other than today
+- `+N`/`-N` relative week notation for `week`'s week-id argument
+  (`status`'s `DATE` argument already accepts `-N` — see
+  [`docs/dev/specs/2026-09-13-backdated-punches.md`](docs/dev/specs/2026-09-13-backdated-punches.md))
 
 ### Known limitations
 
@@ -116,39 +117,60 @@ is how you confirm things landed correctly.
 All commands include 1 character aliases for quick use.
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
 
-### `mlm start|s [TIME] [NOTE...]`
+### `mlm start|s [TIME] [NOTE...] [-d/--date DATE]`
 
 Record a start punch for today. `TIME` (`HH:MM`, `HHMM` or `HH`, 24h)
-defaults to now; an optional trailing `NOTE` also records a work-log
-note for today in the same call.
+defaults to now when recording for today; an optional trailing `NOTE`
+also records a work-log note for the same date in the same call.
+
+`-d`/`--date DATE` targets a different date instead of today — either
+`YYYY-MM-DD` or `-N` for N days before today (e.g. `-1` = yesterday).
+The date must not be in the future. When `--date` targets a day other
+than today, `TIME` is required (there's no "now" to default to).
 
 ```sh
 $ mlm start 09:00 "reviewed open PRs"
+$ mlm start --date -1 09:00 "forgot to punch in yesterday"
 ```
 
 (no output — see `status` below to confirm it landed)
 
-### `mlm stop|s [TIME] [NOTE...]`
+**Footgun**: `--date`/`-d` must come *before* the `NOTE` text on the
+command line. `NOTE` is a trailing variadic that swallows everything
+after it, including a later `--date` flag — `mlm start 09:00 wrapped
+up --date -1` silently records `--date -1` as part of the note text
+instead of parsing it as the date flag. See
+[`docs/dev/specs/2026-09-13-backdated-punches.md`](docs/dev/specs/2026-09-13-backdated-punches.md)
+§2.1.
 
-Record an end punch for today. Same argument shape as `start`.
+### `mlm stop|s [TIME] [NOTE...] [-d/--date DATE]`
+
+Record an end punch for today, or another day with `--date`. Same
+argument shape and TIME-required-when-backdated rule as `start`
+(including the `--date`-before-`NOTE` footgun above).
 
 ```sh
 $ mlm stop 13:00
 ```
 
-### `mlm note|n NOTE...`
+### `mlm note|n NOTE... [-d/--date DATE]`
 
 Record a work-log note for today, independent of any punch — for
-end-of-day notes or anything with nothing to attach to.
+end-of-day notes or anything with nothing to attach to. `-d`/`--date`
+targets a different date the same way as `start`/`stop` (`YYYY-MM-DD`
+or `-N`), and must likewise come before the `NOTE` text or it is
+silently absorbed into it.
 
 ```sh
 $ mlm note "fixed migration runner bug"
+$ mlm note --date -2 "fixed a bug"
 ```
 
 ### `mlm status|d [DATE]`
 
 Show a date's stints, notes, day total, and the totals for the week
-that date falls in. `DATE` (`YYYY-MM-DD`) defaults to today.
+that date falls in. `DATE` accepts `YYYY-MM-DD` or `-N` for N days
+before today (e.g. `-1` = yesterday), and defaults to today.
 
 ```sh
 $ mlm status
