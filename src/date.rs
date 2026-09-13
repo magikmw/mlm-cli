@@ -70,6 +70,7 @@ impl std::fmt::Display for DateWeekError {
         match (&self.arg, &self.cause) {
             (ArgKind::Date, Cause::Shape) => write!(f, "expected YYYY-MM-DD"),
             (ArgKind::WeekId, Cause::Shape) => write!(f, "expected YYYY-WW or WW"),
+            (ArgKind::Date, Cause::OutOfRange) => write!(f, "date offset is out of range"),
             (_, Cause::OutOfRange) => write!(f, "week number must be 1 or greater"),
             (_, Cause::NoSuchCalendarDate) => write!(f, "not a real calendar date"),
             (
@@ -110,6 +111,34 @@ pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError> {
     let month: u32 = s[5..7].parse().map_err(|_| err(Cause::Shape))?;
     let day: u32 = s[8..10].parse().map_err(|_| err(Cause::Shape))?;
     NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| err(Cause::NoSuchCalendarDate))
+}
+
+/// Core `DATE` resolver (backdated-punches spec §2, §4): accepts the
+/// existing absolute `YYYY-MM-DD` grammar, or a relative `-N` shorthand
+/// (`-` + one or more ASCII digits, N >= 1, leading zeros tolerated)
+/// meaning N days before `today`. No future-date opinion — `status`
+/// calls this directly; `start`/`stop`/`note` go through
+/// `resolve_future_checked_date` instead, which adds that check.
+pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
+    let err = |cause| DateWeekError::new(ArgKind::Date, s, cause);
+    if let Some(digits) = s.strip_prefix('-') {
+        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+            let n: u64 = match digits.parse() {
+                Ok(n) => n,
+                // The digit run itself doesn't fit in a u64 -- as
+                // unrepresentable as any other offset chrono can't
+                // handle, so the same Cause applies.
+                Err(_) => return Err(err(Cause::OutOfRange)),
+            };
+            if n == 0 {
+                return Err(err(Cause::Shape));
+            }
+            return today
+                .checked_sub_days(Days::new(n))
+                .ok_or_else(|| err(Cause::OutOfRange));
+        }
+    }
+    parse_date(s)
 }
 
 /// Canonical storage/display form: `YYYY-MM-DD`.
@@ -972,5 +1001,101 @@ mod tests {
             assert!(parse_week_id(input, TODAY()).is_err(), "week {input:?}");
             assert!(WeekId::from_key(input).is_err(), "from_key {input:?}");
         }
+    }
+
+    // --- resolve_date (backdated-punches spec §2, §5) ------------------
+
+    #[test]
+    fn resolve_date_passes_through_absolute_dates() {
+        let today = d(2026, 2, 12);
+        assert_eq!(resolve_date("2026-02-12", today).unwrap(), d(2026, 2, 12));
+        assert_eq!(resolve_date("2026-01-05", today).unwrap(), d(2026, 1, 5));
+    }
+
+    #[test]
+    fn resolve_date_accepts_relative_shorthand() {
+        let today = d(2026, 2, 12);
+        assert_eq!(resolve_date("-1", today).unwrap(), d(2026, 2, 11));
+        assert_eq!(resolve_date("-7", today).unwrap(), d(2026, 2, 5));
+        assert_eq!(resolve_date("-30", today).unwrap(), d(2026, 1, 13));
+    }
+
+    #[test]
+    fn resolve_date_shorthand_crosses_a_leap_year_boundary() {
+        // 2027-03-01 minus 1 day is 2027-02-28 (2027 is not a leap year).
+        let today = d(2027, 3, 1);
+        assert_eq!(resolve_date("-1", today).unwrap(), d(2027, 2, 28));
+    }
+
+    #[test]
+    fn resolve_date_zero_padded_shorthand_matches_unpadded() {
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_date("-01", today).unwrap(),
+            resolve_date("-1", today).unwrap()
+        );
+        assert_eq!(
+            resolve_date("-007", today).unwrap(),
+            resolve_date("-7", today).unwrap()
+        );
+    }
+
+    #[test]
+    fn resolve_date_rejects_minus_zero_as_shape() {
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_date("-0", today).unwrap_err(),
+            date_err("-0", Cause::Shape)
+        );
+        assert_eq!(
+            resolve_date("-00", today).unwrap_err(),
+            date_err("-00", Cause::Shape)
+        );
+    }
+
+    #[test]
+    fn resolve_date_rejects_malformed_shorthand_as_shape() {
+        let today = d(2026, 2, 12);
+        for input in ["-1.5", "-abc", "+1", "- 1", "-1 ", "-1\n", "--1"] {
+            assert_eq!(
+                resolve_date(input, today).unwrap_err(),
+                date_err(input, Cause::Shape),
+                "input {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_date_absurdly_large_n_is_out_of_range_not_panic() {
+        let today = d(2026, 2, 12);
+        for input in [
+            "-999999999999999999999999", // 24 digits: overflows the u64 parse itself
+            "-99999999999999",           // 14 digits: parses as u64, overflows checked_sub_days
+            "-18446744073709551615",     // u64::MAX exactly: parses as u64 (the largest
+                                         // value that can), still overflows
+                                         // checked_sub_days -- exercises the boundary
+                                         // right at the parse/arithmetic seam rather
+                                         // than deep in unrepresentable territory.
+        ] {
+            let err = resolve_date(input, today).unwrap_err();
+            assert_eq!(err, date_err(input, Cause::OutOfRange), "input {input}");
+        }
+    }
+
+    #[test]
+    fn resolve_date_today_and_future_are_both_accepted_by_the_core_resolver() {
+        let today = d(2026, 2, 12);
+        assert_eq!(resolve_date("2026-02-12", today).unwrap(), today);
+        assert_eq!(resolve_date("2026-02-13", today).unwrap(), d(2026, 2, 13));
+        assert_eq!(resolve_date("2030-01-01", today).unwrap(), d(2030, 1, 1));
+    }
+
+    #[test]
+    fn resolve_date_out_of_range_message_is_date_specific() {
+        let today = d(2026, 2, 12);
+        let msg = resolve_date("-99999999999999", today)
+            .unwrap_err()
+            .to_string();
+        assert!(!msg.contains("week number"), "{msg}");
     }
 }
