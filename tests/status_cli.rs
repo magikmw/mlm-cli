@@ -118,14 +118,31 @@ fn t15_malformed_date_exits_nonzero_with_stderr_message() {
 /// Cross-cutting: DST-safe per-instant conversion (§2.1, F12) end-to-end
 /// through `status`'s rendering path, not just the storage layer
 /// (Milestone 4 already covers storage in `src/storage.rs`'s D1/D2
-/// tests). Two completed stints straddle Europe/Warsaw's real 2026
-/// spring-forward (2026-03-29 02:00 -> 03:00 CET->CEST): one on
+/// tests, using an explicit `chrono_tz::TimeZone` value rather than the
+/// OS's configured zone — fully portable, unaffected by the Windows
+/// caveat below). Two completed stints straddle Europe/Warsaw's real
+/// 2026 spring-forward (2026-03-29 02:00 -> 03:00 CET->CEST): one on
 /// 2026-03-28 (still UTC+1) and one on 2026-03-30 (already UTC+2). Both
 /// are the *same* local wall-clock stint (12:00-13:00), stored as
 /// different UTC instants an hour apart in offset, and `status` must
 /// render both back as "12:00-13:00" for their respective dates —
 /// proving the UTC-to-local conversion is per-instant, not a single
 /// cached offset.
+///
+/// Unix-only: this test forces a specific zone via the child process's
+/// `TZ` environment variable, which `chrono::Local` (the real type the
+/// production code path uses for "now"/local time — correctly, since it
+/// must reflect the user's actual system zone) honors on Unix via
+/// glibc's `tzset()`. Windows' CRT does not read `TZ` for IANA zone
+/// names at all — it resolves the local zone from the OS's own
+/// registry-backed timezone APIs, so setting `TZ=Europe/Warsaw` there
+/// has no effect and this test's whole premise doesn't apply. This is a
+/// test-infrastructure gap (no portable way to force chrono::Local to a
+/// specific zone across platforms without changing the production
+/// code's timezone source), not evidence of a Windows-specific bug in
+/// mlm's own conversion logic — storage.rs's explicit-Tz DST tests
+/// above already cover the actual conversion math portably.
+#[cfg_attr(windows, ignore = "TZ env var does not control chrono::Local on Windows; see doc comment")]
 #[test]
 fn dst_transition_is_shown_correctly_end_to_end_via_status() {
     let dir = TempDir::new().expect("temp dir");
