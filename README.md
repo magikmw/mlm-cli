@@ -113,10 +113,10 @@ nothing prints unless something went wrong. `status` and `week` are
 the commands that produce output, so a `status` after punching in/out
 is how you confirm things landed correctly.
 
-All the examples below are real output, captured by running the
-built binary against a scratch database.
+All commands include 1 character aliases for quick use.
+I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
 
-### `mlm start [TIME] [NOTE...]`
+### `mlm start|s [TIME] [NOTE...]`
 
 Record a start punch for today. `TIME` (`HH:MM`, `HHMM` or `HH`, 24h)
 defaults to now; an optional trailing `NOTE` also records a work-log
@@ -128,7 +128,7 @@ $ mlm start 09:00 "reviewed open PRs"
 
 (no output — see `status` below to confirm it landed)
 
-### `mlm stop [TIME] [NOTE...]`
+### `mlm stop|s [TIME] [NOTE...]`
 
 Record an end punch for today. Same argument shape as `start`.
 
@@ -136,7 +136,7 @@ Record an end punch for today. Same argument shape as `start`.
 $ mlm stop 13:00
 ```
 
-### `mlm note NOTE...`
+### `mlm note|n NOTE...`
 
 Record a work-log note for today, independent of any punch — for
 end-of-day notes or anything with nothing to attach to.
@@ -145,7 +145,7 @@ end-of-day notes or anything with nothing to attach to.
 $ mlm note "fixed migration runner bug"
 ```
 
-### `mlm status [DATE]`
+### `mlm status|d [DATE]`
 
 Show a date's stints, notes, day total, and the totals for the week
 that date falls in. `DATE` (`YYYY-MM-DD`) defaults to today.
@@ -180,7 +180,7 @@ Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40
   09:05-16:40  (07h 35m)
 ```
 
-### `mlm week [WEEK_ID]`
+### `mlm week|w [WEEK_ID]`
 
 Show a week's per-day totals plus its carry-in/worked/fulfillment/
 target summary. `WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-37`)
@@ -207,7 +207,7 @@ Fulfillment:   44h 35m
 Target:        40h 00m
 ```
 
-### `mlm week target [WEEK_ID] DURATION`
+### `mlm week|w target [WEEK_ID] DURATION`
 
 Set an absolute target override for a week (default target is 40h
 when no override exists). `WEEK_ID` accepts the same forms as `week`

@@ -16,18 +16,23 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Record a start punch for today.
+    #[command(visible_alias = "s")]
     Start(PunchArgs),
 
     /// Record an end punch for today.
+    #[command(visible_alias = "e")]
     Stop(PunchArgs),
 
     /// Record a work-log note for today.
+    #[command(visible_alias = "n")]
     Note(NoteArgs),
 
     /// Show a week's totals, or set its target.
+    #[command(visible_alias = "w")]
     Week(WeekArgs),
 
     /// Show a date's stints, notes and totals (defaults to today).
+    #[command(visible_alias = "d")]
     Status {
         /// Date to show, YYYY-MM-DD. Defaults to today.
         date: Option<String>,
