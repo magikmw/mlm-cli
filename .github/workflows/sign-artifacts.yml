@@ -31,8 +31,22 @@ jobs:
           fi
           echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
 
+      # Ubuntu 22.04's apt repos don't carry a `minisign` package at all
+      # (not a network issue — `apt-get install minisign` fails with
+      # "Unable to locate package" even when the index fetch succeeds),
+      # so this downloads upstream's prebuilt static binary directly
+      # instead. Version pinned for reproducibility.
       - name: Install minisign
-        run: sudo apt-get update && sudo apt-get install -y minisign
+        env:
+          MINISIGN_VERSION: "0.12"
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/minisign.tar.gz \
+            "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz"
+          tar -xzf /tmp/minisign.tar.gz -C /tmp
+          sudo install -m 755 /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
+          rm -rf /tmp/minisign.tar.gz /tmp/minisign-linux
+          minisign -v
 
       - name: Download release artifacts
         env:
