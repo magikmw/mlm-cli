@@ -5,6 +5,43 @@ _Pronounced "mlem"._
 Simple CLI time tracker. Quickly log start/stop points for the current
 date plus a short note of what you did, stored in SQLite.
 
+## Features
+
+- `start`/`stop` — log a punch for today, with an optional note
+  attached in the same call
+- `note` — log a work-log entry independent of any punch
+- `status` — a day's stints, notes, and day/week totals, with a live
+  "how much is left today" estimate while a stint is open
+- `week` — a week's per-day totals plus carry-in/fulfillment against
+  target
+- `week target` — override a week's target hours; any shortfall or
+  surplus carries into the next week
+- Everything stored locally in SQLite — no account, no external
+  service
+- Cross-platform: Linux and Windows (MSVC)
+
+## Planned
+
+Not implemented yet — see [`docs/dev/SPEC.md`](docs/dev/SPEC.md) §1.2
+for the full list and the reasoning behind each:
+
+- Editing or deleting a punch/note after it's entered
+- Per-project tagging on notes/stints
+- A terminal dashboard (the deps are already in, the UI isn't built)
+- Shell prompt integration (current tracking state in PS1/starship)
+- Non-ISO week conventions
+- 12-hour (AM/PM) time input — 24h only for now
+- `+N`/`-N` relative day/week notation for `status`/`week`
+- Logging a punch against a date other than today
+
+### Known limitations
+
+- A session spanning midnight splits into two pieces instead of one
+  clean stint (pairing is strictly per calendar date)
+- A `stop`/`start` typed at the exact same instant, back-to-back
+  between two real stints, can mis-pair (tracked, not yet fixed —
+  see `docs/dev/SPEC.md` §1.2/§4.3)
+
 ## Install
 
 ```sh
@@ -26,11 +63,6 @@ source, so this works the same on Linux and Windows (MSVC).
 - [`ratatui`](https://docs.rs/ratatui) + [`crossterm`](https://docs.rs/crossterm) —
   terminal dashboard (bar/sparkline charts, text-cell only, no bitmap
   graphics — portable over SSH and on Windows)
-
-## Stretch goals
-
-- Shell prompt integration (e.g. show current tracking state in
-  PS1/starship).
 
 ## Data location
 

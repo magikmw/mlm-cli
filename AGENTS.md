@@ -8,13 +8,13 @@ Notes for AI agents (and future-me) working on this repo.
 punch for the current date, optionally attach a short note, later
 review a day's or week's totals via `status`/`week`. Everything
 persists in SQLite in the platform app-data dir. See `README.md` for
-the full command reference and `SPEC.md` for the detailed behavior
+the full command reference and `docs/dev/SPEC.md` for the detailed behavior
 spec.
 
 ## Current state
 
 All commands (`start`, `stop`, `note`, `status`, `week`, `week
-target`) are implemented, tested, and match `SPEC.md`. Remaining
+target`) are implemented, tested, and match `docs/dev/SPEC.md`. Remaining
 stretch ideas (not implemented):
 
 - dashboard layout/widgets (ratatui: `Chart`/`Sparkline`/`BarChart`)
