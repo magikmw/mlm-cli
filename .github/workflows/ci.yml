@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: build/test/lint (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy rustfmt
+          rustup target add ${{ matrix.target }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      - name: cargo build
+        run: cargo build --target ${{ matrix.target }}
+
+      - name: cargo test
+        run: cargo test --target ${{ matrix.target }}
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      # --- e2e smoke test: seed a real database with the example, then
+      # drive the actually-built binary against it, on each platform's
+      # own native runner. Catches anything platform-specific (path
+      # handling, SQLite bundling, DST/timezone edge cases) that only
+      # shows up on Windows/macOS, which aren't otherwise exercised.
+      - name: e2e smoke test (seed + status + week)
+        shell: bash
+        run: |
+          set -euo pipefail
+          db="${RUNNER_TEMP}/mlm-ci-smoke.db"
+          bin_ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            bin_ext=".exe"
+          fi
+          mlm_bin="target/${{ matrix.target }}/debug/mlm${bin_ext}"
+
+          cargo run --target ${{ matrix.target }} --example seed_test_data -- \
+            --db "$db" --seed 20260913
+
+          echo "--- status ---"
+          MLM_DB_PATH="$db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status.out"
+          grep -q "Day total:" "${RUNNER_TEMP}/status.out"
+
+          echo "--- week ---"
+          MLM_DB_PATH="$db" "$mlm_bin" week | tee "${RUNNER_TEMP}/week.out"
+          grep -q "Target:" "${RUNNER_TEMP}/week.out"
