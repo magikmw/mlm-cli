@@ -71,7 +71,7 @@ impl std::fmt::Display for DateWeekError {
         };
         write!(f, "invalid {} \"{}\": ", name, self.input)?;
         match (&self.arg, &self.cause) {
-            (ArgKind::Date, Cause::Shape) => write!(f, "expected YYYY-MM-DD"),
+            (ArgKind::Date, Cause::Shape) => write!(f, "expected YYYY-MM-DD or -N (N >= 1)"),
             (ArgKind::WeekId, Cause::Shape) => write!(f, "expected YYYY-WW or WW"),
             (ArgKind::Date, Cause::OutOfRange) => write!(f, "date offset is out of range"),
             (_, Cause::OutOfRange) => write!(f, "week number must be 1 or greater"),
@@ -137,9 +137,19 @@ pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekErro
             if n == 0 {
                 return Err(err(Cause::Shape));
             }
-            return today
+            let resolved = today
                 .checked_sub_days(Days::new(n))
-                .ok_or_else(|| err(Cause::OutOfRange));
+                .ok_or_else(|| err(Cause::OutOfRange))?;
+            // `parse_date` only ever accepts a 4-digit year (`1000..=9999`
+            // via `has_ymd_shape`'s exactly-10-bytes check), so the two
+            // spellings of DATE must agree on that same domain -- a `-N`
+            // that resolves outside it would write a value `parse_date`
+            // (and therefore the storage read-back path) can never parse
+            // again.
+            if !(MIN_YEAR..=MAX_YEAR).contains(&resolved.year()) {
+                return Err(err(Cause::OutOfRange));
+            }
+            return Ok(resolved);
         }
     }
     parse_date(s)
@@ -1040,6 +1050,13 @@ mod tests {
         // 2027-03-01 minus 1 day is 2027-02-28 (2027 is not a leap year).
         let today = d(2027, 3, 1);
         assert_eq!(resolve_date("-1", today).unwrap(), d(2027, 2, 28));
+
+        // 2028-03-01 minus 1 day is 2028-02-29: 2028 actually is a leap
+        // year (divisible by 4, not by 100), so this lands on a real
+        // Feb 29 rather than merely crossing a month boundary in a
+        // non-leap year like the case above.
+        let today = d(2028, 3, 1);
+        assert_eq!(resolve_date("-1", today).unwrap(), d(2028, 2, 29));
     }
 
     #[test]
@@ -1103,6 +1120,38 @@ mod tests {
         assert_eq!(resolve_date("2026-02-12", today).unwrap(), today);
         assert_eq!(resolve_date("2026-02-13", today).unwrap(), d(2026, 2, 13));
         assert_eq!(resolve_date("2030-01-01", today).unwrap(), d(2030, 1, 1));
+    }
+
+    #[test]
+    fn resolve_date_rejects_a_resolved_year_below_the_app_domain_floor() {
+        // today - 374782 days = 0999-12-31: representable by chrono's
+        // checked_sub_days (nowhere near overflow) but its year (999)
+        // falls outside the app's 1000..=9999 domain, the same domain
+        // parse_date's 4-digit year already enforces. Without the
+        // fix this resolves "successfully" to a date parse_date can
+        // never parse back -- exactly the data-corruption bug in the
+        // review finding.
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_date("-374782", today).unwrap_err(),
+            date_err("-374782", Cause::OutOfRange)
+        );
+        // And confirm the underlying chrono arithmetic really does land
+        // on 0999-12-31, not something else -- pins the N used above.
+        let raw = today.checked_sub_days(Days::new(374782)).unwrap();
+        assert_eq!(raw, NaiveDate::from_ymd_opt(999, 12, 31).unwrap());
+    }
+
+    #[test]
+    fn resolve_date_accepts_a_resolved_year_at_the_domain_floor() {
+        // today - 374781 days = 1000-01-01: the boundary value that must
+        // still succeed (regression guard for the inside edge of the
+        // 1000..=9999 domain).
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_date("-374781", today).unwrap(),
+            NaiveDate::from_ymd_opt(1000, 1, 1).unwrap()
+        );
     }
 
     #[test]
