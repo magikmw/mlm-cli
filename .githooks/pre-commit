@@ -39,15 +39,16 @@ if ! command -v cargo >/dev/null 2>&1; then
 elif ! cargo fmt --version >/dev/null 2>&1; then
     echo "    SKIP (rustfmt not installed -- 'rustup component add rustfmt')"
 else
-    if cargo fmt --check >/tmp/mlm-fmt-check.$$ 2>&1; then
+    FMT_OUT="$(mktemp)"
+    if cargo fmt --check >"$FMT_OUT" 2>&1; then
         echo "    OK"
     else
         echo "    FAIL: not formatted -- run 'cargo fmt' and re-stage:"
         echo ""
-        sed 's/^/    /' /tmp/mlm-fmt-check.$$
+        sed 's/^/    /' "$FMT_OUT"
         STATUS=1
     fi
-    rm -f /tmp/mlm-fmt-check.$$
+    rm -f "$FMT_OUT"
 fi
 
 # ---------------------------------------------------------------------------
