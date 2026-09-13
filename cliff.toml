@@ -21,6 +21,7 @@ header = """
 # Changelog
 
 All notable changes to this project are documented in this file.
+
 """
 body = """
 {% if version %}\
@@ -36,6 +37,7 @@ body = """
             {{ commit.message | upper_first }}\
     {% endfor %}
 {% endfor %}
+
 """
 # Remove leading and trailing whitespaces from the changelog's body.
 trim = true
@@ -81,6 +83,7 @@ commit_parsers = [
     # prefix, so this matches on content, not just a leading token.
     { message = "(?i)adversarial review", skip = true },
     { message = "^Merge ", skip = true },
+    { message = "(?i)^release v?\\d+\\.\\d+\\.\\d+", skip = true },
     { message = "^report:", skip = true },
     { message = "^feat", group = "<!-- 0 -->🚀 Features" },
     { message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
