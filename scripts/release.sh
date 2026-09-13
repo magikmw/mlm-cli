@@ -12,7 +12,7 @@
 # prints at the end.
 #
 # Usage:
-#   ./scripts/release.sh 0.2.0
+#   ./scripts/release.sh 0.2.0 
 
 set -euo pipefail
 
@@ -35,91 +35,35 @@ fi
 
 tag="v${new_version}"
 
-# --- 1. Preconditions -------------------------------------------------
-
-current_branch="$(git rev-parse --abbrev-ref HEAD)"
-if [ "$current_branch" != "main" ]; then
-    echo "error: not on 'main' (currently on '$current_branch')" >&2
-    exit 1
-fi
-
-if [ -n "$(git status --porcelain)" ]; then
-    echo "error: working tree is not clean" >&2
-    git status --short >&2
-    exit 1
-fi
-
-if git rev-parse "$tag" >/dev/null 2>&1; then
-    echo "error: tag '$tag' already exists" >&2
-    exit 1
-fi
-
-for tool in cargo git-cliff; do
-    command -v "$tool" >/dev/null 2>&1 || {
-        echo "error: required tool '$tool' not found on PATH" >&2
-        exit 1
-    }
-done
-
-current_version_line="$(grep -m1 '^version[[:space:]]*=' Cargo.toml)"
-echo "Releasing mlm ${new_version} (currently: ${current_version_line})"
-
-# --- 2. Bump the version in Cargo.toml ---------------------------------
-
-if command -v cargo-set-version >/dev/null 2>&1; then
-    cargo set-version "$new_version"
-else
-    # Fall back to a plain sed edit of the [package] version field if
-    # cargo-edit isn't installed. Only touches the first `version = "..."`
-    # line, which is the package version.
-    tmp="$(mktemp)"
-    awk -v newver="$new_version" '
-        BEGIN { done = 0 }
-        !done && /^version[[:space:]]*=/ {
-            print "version = \"" newver "\""
-            done = 1
-            next
-        }
-        { print }
-    ' Cargo.toml > "$tmp"
-    mv "$tmp" Cargo.toml
-fi
-
-# Keep Cargo.lock in sync without touching dependency versions.
-cargo update --workspace --offline 2>/dev/null || cargo update --workspace
-
-# --- 3. Regenerate CHANGELOG.md ----------------------------------------
-
-git-cliff --config cliff.toml --unreleased --tag "$tag" --prepend CHANGELOG.md
-
 # --- 4. Commit ----------------------------------------------------------
 
 git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "Release ${tag}
+git commit -m "Release ${tag}"
 
-Bump version to ${new_version} and regenerate CHANGELOG.md via git-cliff."
+cat <<EOF
+
+Bump version to ${new_version}.
+EOF
 
 # --- 5. Tag ---------------------------------------------------------------
 
 git tag -a "$tag" -m "mlm ${new_version}"
 
-# --- 6. Tell the human what to do next -----------------------------------
+# --- 6. Push commits and tags ---------------------------------------------
+
+git push origin main
+git push origin "${tag}"
+
+# --- 7. Let user know what's next -----------------------------------------
 
 cat <<EOF
 
-Done locally. Nothing has been pushed, released, or published.
-
-Review the commit and tag:
-  git show HEAD
-  git show ${tag}
-
-When you're ready to actually ship this release, run:
-
-  git push origin main
-  git push origin ${tag}
+Pushed to origin, triggered .github/workflows/release.yml.
 
 Pushing the tag triggers .github/workflows/release.yml, which builds all
 platform binaries, creates the GitHub Release (using CHANGELOG.md for the
 release notes), signs each artifact with minisign, and publishes to
-crates.io. Nothing in this script or in Claude has run any of that for you.
+crates.io.
+
+Track progress here: https://github.com/magikmw/mlm-cli/actions
 EOF
