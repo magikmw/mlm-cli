@@ -39,10 +39,16 @@ jobs:
       - name: Install minisign
         env:
           MINISIGN_VERSION: "0.12"
+          # sha256 of minisign-0.12-linux.tar.gz, recorded from upstream's
+          # GitHub release at pin time. Verified independently of the
+          # download itself, so a compromised mirror/CDN response (not just
+          # a network error) is caught before the binary ever runs.
+          MINISIGN_SHA256: "9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73"
         run: |
           set -euo pipefail
           curl -sSL -o /tmp/minisign.tar.gz \
             "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz"
+          echo "${MINISIGN_SHA256}  /tmp/minisign.tar.gz" | sha256sum -c -
           tar -xzf /tmp/minisign.tar.gz -C /tmp
           sudo install -m 755 /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
           rm -rf /tmp/minisign.tar.gz /tmp/minisign-linux
