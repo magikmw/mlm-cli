@@ -73,14 +73,13 @@ design assumes it's already true.
   (SPEC §7). An embedded U+2028/U+2029 passes through untouched — not
   a silent gap, a deliberate boundary.
 - **Applies to newly-written notes only — no backfill/migration.**
-  This is a pure insert-path change (§1: "no schema change"); any note
-  already stored before this ships can still contain a literal `\n`,
-  and stays that way until it's deleted/recreated or otherwise
-  rewritten. The rest of this spec's "a note body can never contain
-  `\n`" framing (§5) is therefore true for *anything written from this
-  point forward*, not an absolute guarantee over the whole table — §5
-  adds one defensive fallback specifically for pre-existing data that
-  still has an embedded newline.
+  This is a pure insert-path change (§1: "no schema change"). This
+  project has no installs/users predating this normalization, so there
+  is no pre-existing data to worry about in practice — a note body can
+  never contain `\n` from this point forward, full stop, not merely
+  "for anything written after this ships." §5's recreate-echo relies on
+  that guarantee directly (a `debug_assert!` there is a cheap tripwire
+  for a future regression, not a runtime fallback for legacy data).
 
 ## 3. CLI surface
 
@@ -219,16 +218,27 @@ design assumes it's already true.
   - Embedded `'` characters in the body are escaped for the printed
     line to stay valid: each `'` becomes `'"'"'` (standard POSIX
     close-quote/literal-quote/reopen-quote sequence).
-  - Multi-line bodies are ruled out by §2's prerequisite for any note
-    written after it lands — but §2 explicitly does **not** backfill
-    existing rows, so a note stored before §2 shipped can still carry
-    a literal `\n`. Defensive fallback for that case: if the deleted
-    body still contains `\n` (checked at echo time, not assumed away),
-    print a plain description instead of a ready-to-run command —
+  - Multi-line bodies are ruled out entirely by §2's prerequisite (this
+    project has no pre-existing data, so there is no legacy case to
+    defend against) — a stored body can never contain `\n`/`\r`.
+  - **Embedded backslash fallback**: there is no single-quoting scheme
+    that round-trips a literal `\` identically in both bash and fish —
+    verified that fish's single-quote parsing recognizes `\\`/`\'` as
+    escapes even inside `'...'`, where POSIX shells treat single quotes
+    as 100% literal with no escapes at all. A note body containing a
+    literal `\` (a Windows path, a regex, anything) would either
+    silently corrupt on replay under fish or fail to parse
+    (`quotes are not balanced`). This is a live, ongoing case — any
+    note typed from now on can trigger it, nothing to do with legacy
+    data. Fix: if the deleted body contains a literal `\` (checked at
+    echo time), print a plain description instead of a quoted command —
     `deleted note (2026-09-10): <first line of body>...` — rather than
-    emitting a broken or multi-line "command." This path should be
-    unreachable for anything written after §2 ships; it exists purely
-    to not silently mis-echo pre-existing data.
+    emitting a command that's broken in at least one common shell. No
+    shell detection is involved: the plain description is safe to print
+    as-is regardless of what shell is running, and the quoted-command
+    path is only ever used for bodies that don't contain a backslash,
+    where the existing single-quote scheme is provably safe in both
+    bash and fish.
 - Exit `0` on success.
 
 ## 6. CLI wiring (`src/cli.rs`)
@@ -350,11 +360,10 @@ New `delete_note`/`delete_punch` handlers, parameterised the same way
     `'` both, run through the recreate line and re-parsed via
     `Cli::try_parse_from`, must yield the exact original body back,
     unmodified. Not just a formatting/appearance check.
-  - **Legacy pre-normalization data**: a note body containing a
-    literal `\n` (simulating a pre-§2 row, inserted directly via
-    storage rather than through the normalized `note` command), once
-    deleted, produces the plain-description fallback (§5), not a
-    broken multi-line "command".
+  - **Embedded backslash**: a note body containing a literal `\`
+    (e.g. a Windows path or a regex), once deleted, produces the
+    plain-description fallback (§5), not a quoted command that would
+    misparse under fish.
   - **Future `--date` rejected**: `mlm delete note --date <a future
     date>` is a hard error, nothing deleted/listed — confirms the §3
     resolver choice, mirroring the equivalent `start`/`stop`/`note`
