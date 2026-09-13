@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local, Timelike};
 use clap::Parser;
-use mlm::cli::{Cli, Command, WeekAction};
+use mlm::cli::{Cli, Command, DeleteTarget, WeekAction};
 use mlm::{commands, db, status, week_target, week_view};
 
 fn main() {
@@ -45,6 +45,14 @@ fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
         Command::Start(a) => commands::start(&mut conn, now, a),
         Command::Stop(a) => commands::stop(&mut conn, now, a),
         Command::Note(a) => commands::note(&mut conn, now, a),
+        // `delete note`/`delete punch`: list mode (no id) or delete
+        // mode (id given), per Milestone 14. Both branches share one
+        // required subcommand enum (`DeleteTarget`, no `Option`
+        // wrapper, unlike `Week`'s `action`) so there is no `None` arm.
+        Command::Delete(args) => match &args.target {
+            DeleteTarget::Note(a) => commands::delete_note(&conn, now, a),
+            DeleteTarget::Punch(a) => commands::delete_punch(&conn, now, a),
+        },
         // `week`/`week target` full dispatch (Milestone 11's wiring
         // pass): `action: Some(Target(..))` routes to Milestone 8's
         // `week_target::run`; `action: None` renders the week view.
