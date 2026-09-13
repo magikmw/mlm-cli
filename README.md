@@ -59,6 +59,25 @@ x86_64, macOS Intel/Apple Silicon) are attached to each
 directly via [`cargo binstall mlm`](https://github.com/cargo-bins/cargo-binstall)
 too, signature-verified (see [`SIGNING.md`](SIGNING.md)).
 
+### From source
+
+To build the same optimized, thin-LTO release binary the GitHub
+releases ship, rather than `cargo install`ing from crates.io:
+
+```sh
+cargo install cargo-dist
+dist build --artifacts=local --target <your-triple>
+```
+
+`<your-triple>` is whichever of this project's five targets matches
+your machine (e.g. `x86_64-unknown-linux-gnu`,
+`x86_64-pc-windows-msvc`, `aarch64-apple-darwin`). Without `--target`,
+`dist` tries to plan a build for every configured target at once and
+refuses outright the moment one of them would need cross-compilation
+(it will not cross-compile to macOS, in particular). The built binary
+and packaged archive land under `target/<triple>/dist/mlm` and
+`target/distrib/`, respectively.
+
 ## Stack
 
 - [`clap`](https://docs.rs/clap) — argument parsing (derive API)
@@ -217,7 +236,10 @@ Fulfillment:   44h 35m
 Target:        45h 00m
 ```
 
-## Build
+## Build (local dev)
+
+Plain `cargo`, no `dist` needed — a debug build, for iterating on the
+code itself:
 
 ```sh
 cargo build
