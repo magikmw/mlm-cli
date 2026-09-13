@@ -27,6 +27,11 @@ pub enum Command {
     #[command(visible_alias = "n")]
     Note(NoteArgs),
 
+    /// Delete a punch or note by its ephemeral, per-listing position for a
+    /// date (run with no ID first to list and number that date's entries).
+    #[command(visible_alias = "del")]
+    Delete(DeleteArgs),
+
     /// Show a week's totals, or set its target.
     #[command(visible_alias = "w")]
     Week(WeekArgs),
@@ -93,6 +98,69 @@ pub struct NoteArgs {
         allow_hyphen_values = true
     )]
     pub body: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// `delete note|punch` (Milestone 14).
+// ---------------------------------------------------------------------------
+
+/// `mlm delete note|punch [ID] [--date DATE]`. Mirrors `WeekArgs`'
+/// top-level-command-with-its-own-subcommand-enum shape, but simpler:
+/// unlike `week`, there is no bare positional that could collide with
+/// the subcommand name, so — unlike `WeekArgs` —
+/// `args_conflicts_with_subcommands` is not needed: `note`/`punch` is
+/// always a required subcommand, there is no bare `mlm delete` to
+/// disambiguate against a fallback positional.
+#[derive(Args, Debug)]
+pub struct DeleteArgs {
+    #[command(subcommand)]
+    pub target: DeleteTarget,
+}
+
+/// `note` and `punch` targets for `delete`, each taking the same
+/// `[ID] [--date DATE]` argument shape.
+#[derive(Subcommand, Debug)]
+pub enum DeleteTarget {
+    /// Delete (or list) a note for a date.
+    #[command(visible_alias = "n")]
+    Note(DeleteEntryArgs),
+
+    /// Delete (or list) a punch for a date.
+    #[command(visible_alias = "p")]
+    Punch(DeleteEntryArgs),
+}
+
+/// Shared `[ID] [--date DATE]` shape for `delete note` and
+/// `delete punch`. Unlike `PunchArgs`/`NoteArgs`, there is no
+/// free-text trailing positional on this struct, so the
+/// backdated-punches spec §2.1 ordering footgun (`--date` must
+/// precede free note text or be silently absorbed into it) does not
+/// apply to parsing these arguments: once clap has consumed (at most)
+/// one token into `id`, every remaining token is still scanned
+/// normally for named flags, `--date`/`-d` included, regardless of
+/// where it appears relative to `id`.
+#[derive(Args, Debug)]
+pub struct DeleteEntryArgs {
+    /// 1-based position from the most recent listing for this date
+    /// (run with no ID to list instead of deleting). Position 0 and
+    /// anything past the current count are rejected once the app
+    /// resolves this against a fresh listing, not here.
+    ///
+    /// `allow_negative_numbers = true` is required despite the `u32`
+    /// value_parser: verified empirically against clap 4.6.6 that,
+    /// without it, a bare `-1` positional here is rejected as
+    /// `UnknownArgument` (clap tries it as a flag first) rather than
+    /// reaching the `u32` parser to fail as `ValueValidation`.
+    #[arg(value_name = "ID", allow_negative_numbers = true)]
+    pub id: Option<u32>,
+
+    /// Date to operate on: YYYY-MM-DD, or `-N` for N days before today
+    /// (e.g. `-1` = yesterday). Defaults to today. A malformed or future
+    /// date is rejected once the app resolves it with
+    /// `date::resolve_future_checked_date`, the same resolver
+    /// start/stop/note already use -- not here at the parsing level.
+    #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
+    pub date: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -370,5 +438,112 @@ mod tests {
                 "-2".to_string(),
             ]
         );
+    }
+
+    // --- delete: cli surface ---------------------------------------------
+
+    fn delete_target(cli: Cli) -> DeleteTarget {
+        match cli.command {
+            Command::Delete(DeleteArgs { target }) => target,
+            other => panic!("expected Command::Delete, got {other:?}"),
+        }
+    }
+
+    fn delete_note_args(target: DeleteTarget) -> DeleteEntryArgs {
+        match target {
+            DeleteTarget::Note(a) => a,
+            other => panic!("expected DeleteTarget::Note, got {other:?}"),
+        }
+    }
+
+    fn delete_punch_args(target: DeleteTarget) -> DeleteEntryArgs {
+        match target {
+            DeleteTarget::Punch(a) => a,
+            other => panic!("expected DeleteTarget::Punch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn delete_note_with_no_id_parses_as_list_mode() {
+        let a = delete_note_args(delete_target(parse(&["mlm", "delete", "note"]).unwrap()));
+        assert_eq!(a.id, None);
+    }
+
+    #[test]
+    fn delete_punch_with_no_id_parses_as_list_mode() {
+        let a = delete_punch_args(delete_target(parse(&["mlm", "delete", "punch"]).unwrap()));
+        assert_eq!(a.id, None);
+    }
+
+    /// Direct regression test for the milestone-14 plan §5 claim: unlike
+    /// `PunchArgs`/`NoteArgs`, `DeleteEntryArgs` has no free-text trailing
+    /// positional for `--date` to be swallowed into, so `id`/`--date`
+    /// parse identically regardless of order.
+    #[test]
+    fn delete_id_and_date_parse_the_same_regardless_of_order() {
+        let a = delete_note_args(delete_target(
+            parse(&["mlm", "delete", "note", "2", "--date", "-1"]).unwrap(),
+        ));
+        assert_eq!(a.id, Some(2));
+        assert_eq!(a.date.as_deref(), Some("-1"));
+
+        let b = delete_note_args(delete_target(
+            parse(&["mlm", "delete", "note", "--date", "-1", "2"]).unwrap(),
+        ));
+        assert_eq!(b.id, Some(2));
+        assert_eq!(b.date.as_deref(), Some("-1"));
+    }
+
+    #[test]
+    fn delete_del_alias_parses_like_delete() {
+        let cli = parse(&["mlm", "del", "note"]).unwrap();
+        assert!(matches!(cli.command, Command::Delete(_)));
+    }
+
+    #[test]
+    fn delete_note_n_alias_parses_like_note() {
+        let cli = parse(&["mlm", "delete", "n"]).unwrap();
+        assert!(matches!(delete_target(cli), DeleteTarget::Note(_)));
+    }
+
+    #[test]
+    fn delete_punch_p_alias_parses_like_punch() {
+        let cli = parse(&["mlm", "delete", "p"]).unwrap();
+        assert!(matches!(delete_target(cli), DeleteTarget::Punch(_)));
+    }
+
+    /// Rejecting `0` is `commands.rs`'s job (Task 3), not clap's -- this
+    /// test only pins clap's own permissiveness for a bare `u32` field.
+    #[test]
+    fn delete_id_zero_is_accepted_by_clap() {
+        let a = delete_note_args(delete_target(
+            parse(&["mlm", "delete", "note", "0"]).unwrap(),
+        ));
+        assert_eq!(a.id, Some(0));
+    }
+
+    /// Negative/non-numeric/overflow id rejected at the clap level
+    /// (milestone-14 plan, Task 2 acceptance criteria).
+    #[test]
+    fn delete_negative_id_is_rejected_by_clap() {
+        let err = parse(&["mlm", "delete", "note", "-1"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    /// Negative/non-numeric/overflow id rejected at the clap level
+    /// (milestone-14 plan, Task 2 acceptance criteria).
+    #[test]
+    fn delete_non_numeric_id_is_rejected_by_clap() {
+        let err = parse(&["mlm", "delete", "note", "abc"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    /// Negative/non-numeric/overflow id rejected at the clap level
+    /// (milestone-14 plan, Task 2 acceptance criteria). `4294967296` is
+    /// `u32::MAX + 1`.
+    #[test]
+    fn delete_id_past_u32_max_is_rejected_by_clap() {
+        let err = parse(&["mlm", "delete", "note", "4294967296"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
     }
 }
