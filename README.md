@@ -18,7 +18,8 @@ date plus a short note of what you did, stored in SQLite.
   surplus carries into the next week
 - Everything stored locally in SQLite — no account, no external
   service
-- Cross-platform: Linux and Windows (MSVC)
+- Cross-platform: Linux (x86_64 and ARM64), Windows (MSVC), and macOS
+  (Intel and Apple Silicon)
 
 ## Planned
 
@@ -51,7 +52,12 @@ cargo install mlm
 Needs a Rust toolchain (1.85+, edition 2024) — install one via
 [rustup](https://rustup.rs) if you don't have one. No other system
 dependency: `rusqlite`'s `bundled` feature compiles SQLite from
-source, so this works the same on Linux and Windows (MSVC).
+source, so this works the same on Linux, Windows (MSVC), and macOS.
+Prebuilt binaries for all five targets (Linux x86_64/ARM64, Windows
+x86_64, macOS Intel/Apple Silicon) are attached to each
+[release](https://github.com/magikmw/mlm-cli/releases) — installable
+directly via [`cargo binstall mlm`](https://github.com/cargo-bins/cargo-binstall)
+too, signature-verified (see [`SIGNING.md`](SIGNING.md)).
 
 ## Stack
 
@@ -59,7 +65,7 @@ source, so this works the same on Linux and Windows (MSVC).
 - [`rusqlite`](https://docs.rs/rusqlite) (bundled SQLite) — storage
 - [`chrono`](https://docs.rs/chrono) — time-of-day parsing / duration math
 - [`directories`](https://docs.rs/directories) — platform app-data path
-  (Linux, Windows/MSVC targets supported)
+  (Linux, Windows/MSVC, and macOS)
 - [`ratatui`](https://docs.rs/ratatui) + [`crossterm`](https://docs.rs/crossterm) —
   terminal dashboard (bar/sparkline charts, text-cell only, no bitmap
   graphics — portable over SSH and on Windows)
@@ -68,6 +74,7 @@ source, so this works the same on Linux and Windows (MSVC).
 
 - Linux: `~/.local/share/mlm/mlm.db`
 - Windows: `%APPDATA%\mlm\data\mlm.db`
+- macOS: `~/Library/Application Support/mlm/mlm.db`
 
 Override with the `MLM_DB_PATH` environment variable (mainly useful for
 tests/scripts, or running against a scratch database).
