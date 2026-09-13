@@ -125,6 +125,11 @@ pub enum TimeParseError {
         hour: u32,
         minute: u32,
     },
+    /// No `TIME` given where one was required: `--date` resolved to a
+    /// day other than today, so "default to now" has no meaning
+    /// (backdated-punches spec §3). This is a "missing input" error,
+    /// not a parse failure -- it carries no offending string.
+    Required,
 }
 
 /// Why a `DURATION` argument was rejected (§6.1).
@@ -146,6 +151,10 @@ impl std::fmt::Display for TimeParseError {
             Self::OutOfRange { input, .. } => write!(
                 f,
                 "time {input:?} is out of range: valid times are 00:00 through 23:59"
+            ),
+            Self::Required => write!(
+                f,
+                "TIME is required when --date targets a day other than today"
             ),
         }
     }
@@ -374,5 +383,33 @@ mod tests {
             assert!(msg.is_ascii(), "message not ASCII: {msg:?}");
             assert!(!msg.contains('\n'), "message has a newline: {msg:?}");
         }
+    }
+
+    #[test]
+    fn required_variant_renders_the_backdated_reason() {
+        let err = TimeParseError::Required;
+        let msg = err.to_string();
+        assert_eq!(
+            msg,
+            "TIME is required when --date targets a day other than today"
+        );
+        assert!(msg.is_ascii());
+        assert!(!msg.contains('\n'));
+    }
+
+    #[test]
+    fn required_variant_is_distinguishable_from_the_other_variants() {
+        assert_ne!(
+            TimeParseError::Required,
+            TimeParseError::InvalidFormat("x".to_string())
+        );
+        assert_ne!(
+            TimeParseError::Required,
+            TimeParseError::OutOfRange {
+                input: "x".to_string(),
+                hour: 1,
+                minute: 1
+            }
+        );
     }
 }
