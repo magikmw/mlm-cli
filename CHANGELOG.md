@@ -1,6 +1,13 @@
 # Changelog
 
 All notable changes to this project are documented in this file.
+
+## [0.1.4] - 2026-09-13
+
+### 💼 Other Changes
+
+- (ci) split release script for changelog review
+ 
 ## [0.1.3] - 2026-09-13
 
 ### 🚀 Features
