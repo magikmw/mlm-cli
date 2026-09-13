@@ -263,6 +263,27 @@ pub fn insert_punch<Tz: TimeZone>(
     Ok(conn.last_insert_rowid())
 }
 
+/// Collapse every maximal run of `\r`/`\n` in `s` to exactly one ASCII
+/// space; every other character (including other whitespace such as
+/// space/tab, and Unicode line separators U+2028/U+2029) passes through
+/// untouched (spec §2). Intended to run on an already-trimmed body, so it
+/// only ever needs to handle *embedded* runs, not leading/trailing ones.
+fn normalize_newlines(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' || c == '\n' {
+            while matches!(chars.peek(), Some('\r' | '\n')) {
+                chars.next();
+            }
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Insert a work-log note for a local calendar date (§2.3/§6.1).
 ///
 /// `body` is raw user text; rejected (§6.1) if empty or whitespace-only
@@ -278,7 +299,7 @@ pub fn insert_note(
     if body.trim().is_empty() {
         return Err(StorageError::EmptyNote);
     }
-    let stored = body.trim();
+    let stored = normalize_newlines(body.trim());
     let now_utc = now_utc
         .with_second(0)
         .expect("second 0 is always valid")
@@ -744,12 +765,177 @@ mod tests {
         assert_eq!(notes[0].body, "mlm: fixed migration runner bug");
     }
 
+    // N13
+    #[test]
+    fn embedded_newline_collapses_to_single_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\nline two",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
+    // N14
+    #[test]
+    fn embedded_carriage_return_newline_pair_collapses_to_one_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\r\nline two",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
+    // N15
+    #[test]
+    fn lone_embedded_carriage_return_collapses_to_single_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\rline two",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
+    // N16
+    #[test]
+    fn reversed_newline_carriage_return_pair_collapses_to_one_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\n\rline two",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
+    // N17
+    #[test]
+    fn run_of_several_newlines_and_carriage_returns_collapses_to_one_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\n\r\n\n\rline two",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
+    // N18
+    #[test]
+    fn newline_run_interrupted_by_plain_whitespace_keeps_both_runs_and_the_literal_space() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "a\n\n \nb",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "a   b");
+        assert_ne!(notes[0].body, "a b");
+    }
+
+    // N19
+    #[test]
+    fn unicode_line_separators_pass_through_untouched() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "line one\u{2028}line two\u{2029}line three",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one\u{2028}line two\u{2029}line three");
+    }
+
+    // N20
+    #[test]
+    fn leading_and_trailing_newlines_are_trimmed_not_spaced() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "\n\nline one\n\n",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one");
+    }
+
+    // N21
+    #[test]
+    fn regular_internal_whitespace_untouched_by_normalization() {
+        let conn = test_db();
+        insert_note(
+            &conn,
+            d(2026, 1, 15),
+            "did   a\tthing",
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "did   a\tthing");
+    }
+
+    // N23
+    #[test]
+    fn inline_note_on_punch_is_normalized_same_as_standalone_note() {
+        let mut conn = test_db();
+        let (_punch_id, note_id) = insert_punch_with_note(
+            &mut conn,
+            PunchKind::Start,
+            d(2026, 1, 15),
+            t(9, 0),
+            &TZ_UTC,
+            Some("line one\nline two"),
+            utc(2026, 1, 15, 9, 0, 0),
+        )
+        .expect("insert");
+        assert!(note_id.is_some());
+        let notes = notes_for_date(&conn, d(2026, 1, 15)).expect("read");
+        assert_eq!(notes[0].body, "line one line two");
+    }
+
     // --- 7.4 Empty / whitespace note rejection (E5) -----------------------
 
-    // N5
+    // N5 (also covers N22: whitespace/newline-only bodies still rejected)
     #[test]
     fn whitespace_only_notes_are_rejected_and_nothing_is_written() {
-        let cases = ["", " ", "   ", "\t", "\n", "\t \n \r ", "\u{00A0}"];
+        let cases = [
+            "",
+            " ",
+            "   ",
+            "\t",
+            "\n",
+            "\t \n \r ",
+            "\u{00A0}",
+            "\n \r\n \n",
+            "\r\n\r\n",
+        ];
         for body in cases {
             let conn = test_db();
             let err = insert_note(&conn, d(2026, 1, 15), body, utc(2026, 1, 15, 9, 0, 0));
