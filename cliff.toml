@@ -70,6 +70,18 @@ protect_breaking_commits = false
 # Assigns commits to groups. Order matters: first match wins. The final
 # ".*" entry is the "everything that isn't Conventional Commits" bucket.
 commit_parsers = [
+    # Internal process noise, never user-facing — skipped rather than
+    # grouped. This repo's development used a milestone-implementation
+    # + independent-adversarial-review + merge workflow; the review
+    # commits and merge commits document *how* the code got written,
+    # not what changed for someone using the tool. The early history
+    # used several different conventions for this ("review: ...",
+    # "docs(review): ...", "docs: ... review ...", plain "Add ...
+    # review ..." with no prefix at all) rather than one consistent
+    # prefix, so this matches on content, not just a leading token.
+    { message = "(?i)adversarial review", skip = true },
+    { message = "^Merge ", skip = true },
+    { message = "^report:", skip = true },
     { message = "^feat", group = "<!-- 0 -->🚀 Features" },
     { message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
     { message = "^docs?(\\(|:)", group = "<!-- 3 -->📚 Documentation" },
@@ -78,9 +90,7 @@ commit_parsers = [
     { message = "^style", group = "<!-- 5 -->🎨 Styling" },
     { message = "^test", group = "<!-- 6 -->🧪 Testing" },
     { message = "^chore|^ci", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
-    { message = "^review(\\(|:)", group = "<!-- 8 -->🔍 Reviews" },
     { message = "^revert", group = "<!-- 9 -->◀️ Revert" },
-    { message = "^Merge ", group = "<!-- 10 -->🔀 Merges" },
     { message = ".*", group = "<!-- 11 -->💼 Other Changes" },
 ]
 # Exclude commits that are not matched by any commit parser.
