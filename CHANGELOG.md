@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.1] - 2026-09-13
+
+### 🐛 Bug Fixes
+
+- *(ci)* Install minisign from upstream binary, not apt
+- *(ci)* Pin sha256 of downloaded minisign binary
+
 ## [0.1.0] - 2026-09-12
 
 Initial release.
