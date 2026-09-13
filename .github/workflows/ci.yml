@@ -75,3 +75,34 @@ jobs:
           echo "--- week ---"
           MLM_DB_PATH="$db" "$mlm_bin" week | tee "${RUNNER_TEMP}/week.out"
           grep -q "Target:" "${RUNNER_TEMP}/week.out"
+
+          # --- backdated punches (milestone 12): a fresh, separate db,
+          # kept independent of the seeded one above for determinism. ---
+          backdate_db="${RUNNER_TEMP}/mlm-ci-smoke-backdate.db"
+
+          echo "--- backdate: start/stop/note on a fixed absolute date ---"
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" start -d 2020-01-01 09:00
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" stop -d 2020-01-01 17:00
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" note -d 2020-01-01 "ci backdating smoke test"
+
+          echo "--- backdate: status on that absolute date ---"
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" status 2020-01-01 | tee "${RUNNER_TEMP}/status-backdate.out"
+          grep -q "Day total: 08h 00m" "${RUNNER_TEMP}/status-backdate.out"
+          grep -q "ci backdating smoke test" "${RUNNER_TEMP}/status-backdate.out"
+
+          # -N shorthand round-trip: let mlm itself resolve "3 days ago"
+          # on both the write and read side, so there's no bash-side
+          # relative-date arithmetic to get cross-platform-wrong.
+          echo "--- backdate: -N shorthand round-trip ---"
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" start -d -3 09:00
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" stop -d -3 17:00
+          MLM_DB_PATH="$backdate_db" "$mlm_bin" status -3 | tee "${RUNNER_TEMP}/status-shorthand.out"
+          grep -q "Day total: 08h 00m" "${RUNNER_TEMP}/status-shorthand.out"
+
+          # Future dates must be rejected outright on start/stop/note.
+          echo "--- backdate: future date is a hard error ---"
+          if MLM_DB_PATH="$backdate_db" "$mlm_bin" start -d 2099-01-01 09:00 2>"${RUNNER_TEMP}/future.err"; then
+            echo "expected start -d 2099-01-01 to fail, but it succeeded" >&2
+            exit 1
+          fi
+          grep -q "date is in the future" "${RUNNER_TEMP}/future.err"

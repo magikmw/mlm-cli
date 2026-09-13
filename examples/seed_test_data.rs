@@ -7,8 +7,12 @@
 //! seed_test_data`. Writes through the real `mlm::storage`/`mlm::db`
 //! insert functions, so every row is exactly what a real `start`/`stop`/
 //! `note`/`week target` invocation would have produced (correct
-//! per-instant UTC conversion, trimming, etc.) — just backdated, which
-//! the real CLI deliberately never allows (§1.2).
+//! per-instant UTC conversion, trimming, etc.) — including backdating,
+//! which the real CLI now also supports directly via `-d`/`--date` (see
+//! `docs/dev/specs/2026-09-13-backdated-punches.md`). This example still
+//! writes straight through `storage` rather than shelling out to the CLI
+//! once per row: that stays far faster and simpler when generating many
+//! weeks of data, regardless of what the CLI itself can now do.
 //!
 //! Usage:
 //!   cargo run --example seed_test_data -- [--weeks N] [--seed N] [--db PATH]
