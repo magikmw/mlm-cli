@@ -87,17 +87,22 @@ jobs:
 
           echo "--- backdate: status on that absolute date ---"
           MLM_DB_PATH="$backdate_db" "$mlm_bin" status 2020-01-01 | tee "${RUNNER_TEMP}/status-backdate.out"
-          grep -q "Day total: 08h 00m" "${RUNNER_TEMP}/status-backdate.out"
+          grep -qE "Day total: *08h 00m" "${RUNNER_TEMP}/status-backdate.out"
           grep -q "ci backdating smoke test" "${RUNNER_TEMP}/status-backdate.out"
 
           # -N shorthand round-trip: let mlm itself resolve "3 days ago"
           # on both the write and read side, so there's no bash-side
-          # relative-date arithmetic to get cross-platform-wrong.
+          # relative-date arithmetic to get cross-platform-wrong. Each
+          # invocation resolves "today" fresh from the wall clock, so a
+          # local-midnight rollover between the write and read calls
+          # here could in principle make -3 resolve to different days
+          # on each side; accepted as negligible residual risk given
+          # these run sequentially, well under a second apart.
           echo "--- backdate: -N shorthand round-trip ---"
           MLM_DB_PATH="$backdate_db" "$mlm_bin" start -d -3 09:00
           MLM_DB_PATH="$backdate_db" "$mlm_bin" stop -d -3 17:00
           MLM_DB_PATH="$backdate_db" "$mlm_bin" status -3 | tee "${RUNNER_TEMP}/status-shorthand.out"
-          grep -q "Day total: 08h 00m" "${RUNNER_TEMP}/status-shorthand.out"
+          grep -qE "Day total: *08h 00m" "${RUNNER_TEMP}/status-shorthand.out"
 
           # Future dates must be rejected outright on start/stop/note.
           echo "--- backdate: future date is a hard error ---"
