@@ -314,7 +314,7 @@ pub fn resolve(
     let today = now.date_naive();
     let target_date = match date_arg {
         None => today,
-        Some(s) => date::parse_date(s)?,
+        Some(s) => date::resolve_date(s, today)?,
     };
     let is_today = target_date == today;
 
@@ -1022,6 +1022,37 @@ mod tests {
         let conn = test_db();
         assert!(resolve(Some("2026-02-30"), now_thu_1800(), &conn).is_err());
         assert!(resolve(Some("13/02/2026"), now_thu_1800(), &conn).is_err());
+    }
+
+    #[test]
+    fn resolve_shorthand_matches_equivalent_absolute_date() {
+        let conn = test_db();
+        storage::insert_punch(&conn, PunchKind::Start, d(2026, 1, 5), t(8, 30), &Local)
+            .expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d(2026, 1, 5), t(14, 45), &Local)
+            .expect("insert");
+
+        // now_thu_1800() is 2026-02-12; 2026-01-05 is 38 days earlier.
+        let via_absolute = resolve(Some("2026-01-05"), now_thu_1800(), &conn).expect("resolve");
+        let via_shorthand = resolve(Some("-38"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(via_absolute.header, via_shorthand.header);
+        assert_eq!(
+            via_absolute.day_total_minutes,
+            via_shorthand.day_total_minutes
+        );
+        assert_eq!(via_shorthand.header, "Mon 2026-01-05");
+    }
+
+    #[test]
+    fn resolve_future_absolute_date_still_succeeds_and_renders_empty() {
+        let conn = test_db();
+        // now_thu_1800() is 2026-02-12; this stays permissive, unlike
+        // start/stop/note's future-date rejection.
+        let view = resolve(Some("2026-03-01"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.header, date::format_date_with_weekday(d(2026, 3, 1)));
+        assert!(view.stints.is_empty());
+        assert!(view.notes.is_empty());
+        assert_eq!(view.day_total_minutes, 0);
     }
 
     #[test]
