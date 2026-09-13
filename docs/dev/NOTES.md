@@ -206,9 +206,13 @@ into SPEC.md; logged here for the record.
     single-machine tool, SQLite's default locking trusted to fail
     safely rather than corrupt data, no WAL/busy-timeout tuning
     planned.
-35. **Note content policy**: no length cap, no charset restriction —
-    §7's plain-ASCII commitment is about rendered layout characters,
-    not what a user can type into a note body.
+35. **Note content policy**: no length cap, no charset restriction
+    beyond embedded `\r`/`\n` being collapsed to a single space rather
+    than preserved verbatim (so a stored body is always exactly one
+    line, applies to notes written from that point forward only, no
+    backfill of rows already stored) — §7's plain-ASCII commitment is
+    about rendered layout characters, not what a user can type into a
+    note body.
 
 ## More decisions (from implementation-plan review, round 6)
 
