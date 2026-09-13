@@ -39,6 +39,9 @@ pub enum Cause {
     /// the message can name a year the input itself may not contain (a
     /// bare `WW`'s year comes from `today`).
     NoSuchIsoWeek { iso_year: i32, weeks_in_year: u32 },
+    /// A resolved `DATE` is later than today's local calendar date.
+    /// Only ever paired with `ArgKind::Date` (backdated-punches spec §3).
+    Future,
 }
 
 /// A §6.1 hard error originating at the input edge.
@@ -80,6 +83,7 @@ impl std::fmt::Display for DateWeekError {
                     weeks_in_year,
                 },
             ) => write!(f, "{iso_year} has only {weeks_in_year} ISO weeks"),
+            (_, Cause::Future) => write!(f, "date is in the future"),
         }
     }
 }
@@ -139,6 +143,17 @@ pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekErro
         }
     }
     parse_date(s)
+}
+
+/// Thin wrapper around [`resolve_date`] adding the future-date rejection
+/// `start`/`stop`/`note` need (backdated-punches spec §3). `status` uses
+/// `resolve_date` directly and keeps accepting future dates.
+pub fn resolve_future_checked_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
+    let date = resolve_date(s, today)?;
+    if date > today {
+        return Err(DateWeekError::new(ArgKind::Date, s, Cause::Future));
+    }
+    Ok(date)
 }
 
 /// Canonical storage/display form: `YYYY-MM-DD`.
@@ -1097,5 +1112,67 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(!msg.contains("week number"), "{msg}");
+    }
+
+    // --- resolve_future_checked_date ------------------------------------
+
+    #[test]
+    fn future_checked_rejects_future_absolute_date() {
+        let today = d(2026, 2, 12);
+        let err = resolve_future_checked_date("2026-02-13", today).unwrap_err();
+        assert_eq!(err, date_err("2026-02-13", Cause::Future));
+    }
+
+    #[test]
+    fn future_checked_shorthand_is_never_mistaken_for_future() {
+        // A positive N-days-before-today shorthand can never itself
+        // resolve to the future, so exercise this via an already-future
+        // *absolute* date fed alongside a shorthand test of the boundary:
+        // -N always resolves to today or earlier, so there is no -N
+        // input that reaches the future branch -- this test instead
+        // pins that -1/-N shorthand is always accepted (never mistakenly
+        // rejected as "future").
+        let today = d(2026, 2, 12);
+        assert!(resolve_future_checked_date("-1", today).is_ok());
+        assert!(resolve_future_checked_date("-1000", today).is_ok());
+    }
+
+    #[test]
+    fn future_checked_accepts_today_and_past() {
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_future_checked_date("2026-02-12", today).unwrap(),
+            today
+        );
+        assert_eq!(
+            resolve_future_checked_date("2026-01-05", today).unwrap(),
+            d(2026, 1, 5)
+        );
+        assert_eq!(
+            resolve_future_checked_date("-1", today).unwrap(),
+            d(2026, 2, 11)
+        );
+    }
+
+    #[test]
+    fn future_checked_still_propagates_shape_and_range_errors() {
+        let today = d(2026, 2, 12);
+        assert_eq!(
+            resolve_future_checked_date("abc", today).unwrap_err(),
+            date_err("abc", Cause::Shape)
+        );
+        assert_eq!(
+            resolve_future_checked_date("-0", today).unwrap_err(),
+            date_err("-0", Cause::Shape)
+        );
+    }
+
+    #[test]
+    fn future_error_message_says_future() {
+        let today = d(2026, 2, 12);
+        let msg = resolve_future_checked_date("2026-02-13", today)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("future"), "{msg}");
     }
 }
