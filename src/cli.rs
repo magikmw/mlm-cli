@@ -34,7 +34,8 @@ pub enum Command {
     /// Show a date's stints, notes and totals (defaults to today).
     #[command(visible_alias = "d")]
     Status {
-        /// Date to show, YYYY-MM-DD. Defaults to today.
+        /// Date to show: YYYY-MM-DD, or `-N` for N days before today
+        /// (e.g. `-1` = yesterday). Defaults to today.
         date: Option<String>,
     },
 }
@@ -47,11 +48,21 @@ pub enum Command {
 /// `Vec` means "no note given" (§1.2/§1.3).
 #[derive(Args, Debug)]
 pub struct PunchArgs {
-    /// Time of day (HH:MM, HHMM or HH, 24h). Defaults to now.
+    /// Time of day (HH:MM, HHMM or HH, 24h). Defaults to now when
+    /// recording for today; required when `--date` targets another day.
     #[arg(value_name = "TIME")]
     pub time: Option<String>,
 
-    /// Optional work-log note recorded for today alongside the punch.
+    /// Date to record against: YYYY-MM-DD, or `-N` for N days before
+    /// today (e.g. `-1` = yesterday). Defaults to today. Must come
+    /// before NOTE text on the command line, or it is silently absorbed
+    /// into the note body instead of being parsed as this flag -- see
+    /// docs/dev/specs/2026-09-13-backdated-punches.md §2.1.
+    #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
+    pub date: Option<String>,
+
+    /// Optional work-log note recorded alongside the punch, against
+    /// today or, with `--date`, the resolved date.
     #[arg(
         value_name = "NOTE",
         trailing_var_arg = true,
@@ -64,7 +75,15 @@ pub struct PunchArgs {
 /// `start`/`stop`).
 #[derive(Args, Debug)]
 pub struct NoteArgs {
-    /// Work-log note text for today.
+    /// Date to record against: YYYY-MM-DD, or `-N` for N days before
+    /// today (e.g. `-1` = yesterday). Defaults to today. Must come
+    /// before NOTE text on the command line -- see
+    /// docs/dev/specs/2026-09-13-backdated-punches.md §2.1.
+    #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
+    pub date: Option<String>,
+
+    /// Work-log note text, against today or, with `--date`, the resolved
+    /// date.
     #[arg(
         value_name = "NOTE",
         required = true,
@@ -214,6 +233,13 @@ mod tests {
         }
     }
 
+    fn note_args(cli: Cli) -> NoteArgs {
+        match cli.command {
+            Command::Note(a) => a,
+            other => panic!("expected Command::Note, got {other:?}"),
+        }
+    }
+
     // T23
     #[test]
     fn parse_start_variants() {
@@ -233,28 +259,115 @@ mod tests {
     // T24
     #[test]
     fn parse_note_joins_tokens() {
-        let cli = parse(&["mlm", "note", "a", "b"]).unwrap();
-        match cli.command {
-            Command::Note(a) => assert_eq!(a.body, vec!["a".to_string(), "b".to_string()]),
-            other => panic!("expected Command::Note, got {other:?}"),
-        }
+        let a = note_args(parse(&["mlm", "note", "a", "b"]).unwrap());
+        assert_eq!(a.body, vec!["a".to_string(), "b".to_string()]);
     }
 
     // T25
     #[test]
     fn note_can_start_with_hyphen() {
-        let cli = parse(&["mlm", "note", "-ish", "progress"]).unwrap();
-        match cli.command {
-            Command::Note(a) => {
-                assert_eq!(a.body, vec!["-ish".to_string(), "progress".to_string()])
-            }
-            other => panic!("expected Command::Note, got {other:?}"),
-        }
+        let a = note_args(parse(&["mlm", "note", "-ish", "progress"]).unwrap());
+        assert_eq!(a.body, vec!["-ish".to_string(), "progress".to_string()]);
     }
 
     // T26
     #[test]
     fn log_subcommand_is_gone() {
         assert!(parse(&["mlm", "log"]).is_err());
+    }
+
+    // --- backdated-punches: --date/-d plumbing --------------------------
+
+    #[test]
+    fn start_accepts_long_and_short_date_flag_with_hyphen_value() {
+        let a = start_args(parse(&["mlm", "start", "--date", "-1", "9:00"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("-1"));
+        assert_eq!(a.time.as_deref(), Some("9:00"));
+
+        let a = start_args(parse(&["mlm", "start", "-d", "-1", "9:00"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("-1"));
+    }
+
+    #[test]
+    fn start_date_flag_accepts_absolute_date_before_or_after_time() {
+        let a = start_args(parse(&["mlm", "start", "--date", "2026-01-05", "9:00"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("2026-01-05"));
+        assert_eq!(a.time.as_deref(), Some("9:00"));
+
+        let a = start_args(parse(&["mlm", "start", "9:00", "--date", "2026-01-05"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("2026-01-05"));
+        assert_eq!(a.time.as_deref(), Some("9:00"));
+    }
+
+    #[test]
+    fn start_omitted_date_flag_is_none() {
+        let a = start_args(parse(&["mlm", "start", "9:00"]).unwrap());
+        assert_eq!(a.date, None);
+    }
+
+    #[test]
+    fn note_accepts_date_flag_before_body() {
+        let a = note_args(parse(&["mlm", "note", "--date", "-2", "fixed", "a", "bug"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("-2"));
+        assert_eq!(
+            a.body,
+            vec!["fixed".to_string(), "a".to_string(), "bug".to_string()]
+        );
+    }
+
+    /// Locks down the §2.1 clap footgun: once `--date` appears after
+    /// NOTE tokens have started, clap's trailing_var_arg no longer
+    /// re-scans for named flags, so `--date -1` is silently absorbed
+    /// into the note body instead of being parsed as the date flag.
+    /// This test exists so a future clap upgrade or arg refactor that
+    /// changes this behavior gets caught, not silently shipped.
+    #[test]
+    fn date_flag_after_note_text_is_absorbed_into_the_note_body() {
+        let a = start_args(
+            parse(&[
+                "mlm",
+                "start",
+                "9:00",
+                "kicked",
+                "off",
+                "migration",
+                "--date",
+                "-1",
+            ])
+            .unwrap(),
+        );
+        assert_eq!(a.date, None, "the flag was swallowed, not parsed");
+        assert_eq!(
+            a.note,
+            vec![
+                "kicked".to_string(),
+                "off".to_string(),
+                "migration".to_string(),
+                "--date".to_string(),
+                "-1".to_string(),
+            ]
+        );
+    }
+
+    /// Same §2.1 clap footgun as `date_flag_after_note_text_is_absorbed_into_the_note_body`,
+    /// but for `note`: `NoteArgs.body` has the identical
+    /// `trailing_var_arg = true, allow_hyphen_values = true` shape as
+    /// `PunchArgs.note`, so it carries the identical risk and needs its
+    /// own lock-down rather than relying on `start`'s test to stand in
+    /// for it.
+    #[test]
+    fn note_date_flag_after_body_text_is_absorbed_into_the_note_body() {
+        let a = note_args(parse(&["mlm", "note", "fixed", "a", "bug", "--date", "-2"]).unwrap());
+        assert_eq!(a.date, None, "the flag was swallowed, not parsed");
+        assert_eq!(
+            a.body,
+            vec![
+                "fixed".to_string(),
+                "a".to_string(),
+                "bug".to_string(),
+                "--date".to_string(),
+                "-2".to_string(),
+            ]
+        );
     }
 }
