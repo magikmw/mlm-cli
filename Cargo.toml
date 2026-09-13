@@ -49,6 +49,9 @@ tempfile = "3.27.0"
 algorithm = "minisign"
 pubkey = "RWTNO3Iugq4ICzcJhLwnwtOT1T0evn7RYI0951dfE+IkEyRykSvv0V/n"
 
+[profile.release]
+strip = true
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
