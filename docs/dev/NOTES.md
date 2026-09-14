@@ -88,6 +88,9 @@ incremental resumming through the day. Motivating the tool.
    produce stints. Precomputing/caching paired stints in the DB is
    possible later but not worth it for MVP — compute at read time.
 5. **Editing/deleting past entries**: deferred, not in MVP. Add-only.
+   (Superseded for deleting: `mlm delete note|punch` shipped in 0.3.0,
+   see `docs/dev/specs/2026-09-13-delete-punches-notes.md` — editing
+   is still deferred, correction path is delete-then-recreate.)
 6. **Timezone**: no explicit open question raised as blocking; assume
    single-machine local wall-clock time unless it comes up again.
 
