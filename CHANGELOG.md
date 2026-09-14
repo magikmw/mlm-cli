@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-09-14
+
+### 📚 Documentation
+
+- Fix stale 'editing or deleting' claims now that delete is implemented
+- Amend NOTES.md decision 5, delete shipped in 0.3.0
+
 ## [0.3.0] - 2026-09-14
 
 ### 🚀 Features
