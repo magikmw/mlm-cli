@@ -111,8 +111,9 @@ other than the default 40h.
 
 Every `start`/`stop`/`note`/`week target` call is silent on success —
 nothing prints unless something went wrong. `status` and `week` are
-the commands that produce output, so a `status` after punching in/out
-is how you confirm things landed correctly.
+the commands that produce output; `delete note`/`delete punch` are a
+narrow exception too (see below) — a `status` after punching in/out is
+still how you confirm things landed correctly.
 
 All commands include 1 character aliases for quick use.
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
@@ -256,6 +257,43 @@ Carry-in:      00h 00m
 Worked:        44h 35m
 Fulfillment:   44h 35m
 Target:        45h 00m
+```
+
+### `mlm delete|del note|n [ID] [-d/--date DATE]`
+
+List or delete today's (or another date's) notes. Run with no `ID` to
+list that date's notes numbered `1..N`; run again with a number to
+delete that entry — deleting prints a ready-to-run command to recreate
+it. `-d`/`--date` targets a different date the same way as
+`start`/`stop`/`note` (`YYYY-MM-DD` or `-N`), and defaults to today.
+
+```sh
+$ mlm delete note --date 2026-09-10
+1  fixed migration runner bug
+2  reviewed open PRs
+$ mlm delete note 1 --date 2026-09-10
+deleted. to recreate: mlm note --date 2026-09-10 'fixed migration runner bug'
+```
+
+**Stale-id caveat**: `ID` is always resolved against a fresh listing
+at the moment you run `delete`, not whatever listing you last looked
+at. If notes were added or removed for that date since you last ran
+`mlm delete note` with no `ID`, an old number may no longer point at
+the entry you think it does — worst case is deleting the wrong entry
+at that position, never a nonexistent one. Re-run with no `ID` right
+before deleting if you're not sure the listing is still fresh.
+
+### `mlm delete|del punch|p [ID] [-d/--date DATE]`
+
+Same list/delete shape as `delete note`, for punches instead —
+`-d`/`--date` and the stale-id caveat above both apply identically.
+
+```sh
+$ mlm delete punch
+1  start 09:00
+2  end 13:00
+$ mlm delete punch 2
+deleted. to recreate: mlm stop 13:00 --date 2026-09-10
 ```
 
 ## Build (local dev)

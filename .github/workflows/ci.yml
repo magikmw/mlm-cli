@@ -111,3 +111,143 @@ jobs:
             exit 1
           fi
           grep -q "date is in the future" "${RUNNER_TEMP}/future.err"
+
+          # --- delete note/punch (milestone 14): a fresh, separate db,
+          # kept independent of the seeded/backdated ones above so the
+          # ephemeral listing positions this section asserts on can't be
+          # perturbed by unrelated data. ---
+          delete_db="${RUNNER_TEMP}/mlm-ci-smoke-delete.db"
+
+          echo "--- delete: seed a punch and a note for today ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" start 09:00
+          MLM_DB_PATH="$delete_db" "$mlm_bin" stop 17:00
+          MLM_DB_PATH="$delete_db" "$mlm_bin" note "ci delete smoke test"
+
+          # List mode prints the raw stored PunchKind (`start`/`end`),
+          # not the CLI verb translation -- that translation only
+          # happens in the recreate line below, so `2` here is `end`,
+          # not `stop`.
+          echo "--- delete: bare 'delete punch' lists both punches numbered ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete punch | tee "${RUNNER_TEMP}/delete-punch-list.out"
+          grep -qE "^1 +start 09:00" "${RUNNER_TEMP}/delete-punch-list.out"
+          grep -qE "^2 +end 17:00" "${RUNNER_TEMP}/delete-punch-list.out"
+
+          echo "--- delete: bare 'delete note' lists the note numbered ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete note | tee "${RUNNER_TEMP}/delete-note-list.out"
+          grep -qE "^1 +ci delete smoke test" "${RUNNER_TEMP}/delete-note-list.out"
+
+          echo "--- delete: delete punch 1 (the start), confirm gone, capture recreate line ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete punch 1 | tee "${RUNNER_TEMP}/delete-punch-do.out"
+          grep -q "deleted. to recreate: mlm start 09:00" "${RUNNER_TEMP}/delete-punch-do.out"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-punch-delete.out"
+          if grep -q "09:00" "${RUNNER_TEMP}/status-after-punch-delete.out"; then
+            echo "expected 09:00 start punch to be gone from status after delete, but it's still there" >&2
+            exit 1
+          fi
+
+          echo "--- delete: run the punch recreate line for real, confirm restored ---"
+          recreate_punch="$(grep -o 'mlm start .*' "${RUNNER_TEMP}/delete-punch-do.out")"
+          inner="${mlm_bin} ${recreate_punch#mlm }"
+          MLM_DB_PATH="$delete_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-punch-restore.out"
+          grep -q "09:00" "${RUNNER_TEMP}/status-after-punch-restore.out"
+
+          echo "--- delete: delete punch 2 (the stop/End punch), confirm the recreate line says 'stop' not 'end' ---"
+          # Cross-consistency review finding (minor): Task 3 unit-tests
+          # PunchKind::as_str()'s "stop", not "end" bug directly, but no
+          # e2e path had previously exercised deleting/recreating the
+          # End-kind punch through the real dispatch/binary. This closes
+          # that gap -- if `punch_recreate_line` regresses to using
+          # `PunchKind::as_str()` verbatim (which yields "end", not the
+          # real `mlm end` command that doesn't exist), this grep catches
+          # it end-to-end, not just at the unit level.
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete punch 2 | tee "${RUNNER_TEMP}/delete-punch2-do.out"
+          grep -q "deleted. to recreate: mlm stop 17:00" "${RUNNER_TEMP}/delete-punch2-do.out"
+          if grep -q "mlm end " "${RUNNER_TEMP}/delete-punch2-do.out"; then
+            echo "recreate line used 'end' instead of 'stop' -- mlm has no 'end' subcommand" >&2
+            exit 1
+          fi
+          recreate_punch2="$(grep -o 'mlm stop .*' "${RUNNER_TEMP}/delete-punch2-do.out")"
+          inner="${mlm_bin} ${recreate_punch2#mlm }"
+          MLM_DB_PATH="$delete_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-punch2-restore.out"
+          grep -q "17:00" "${RUNNER_TEMP}/status-after-punch2-restore.out"
+
+          echo "--- delete: delete note 1, confirm gone, capture recreate line ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete note 1 | tee "${RUNNER_TEMP}/delete-note-do.out"
+          grep -q "deleted. to recreate: mlm note 'ci delete smoke test'" "${RUNNER_TEMP}/delete-note-do.out"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-note-delete.out"
+          if grep -q "ci delete smoke test" "${RUNNER_TEMP}/status-after-note-delete.out"; then
+            echo "expected note to be gone from status after delete, but it's still there" >&2
+            exit 1
+          fi
+
+          echo "--- delete: run the note recreate line for real, confirm restored ---"
+          recreate_note="$(grep -o "mlm note .*" "${RUNNER_TEMP}/delete-note-do.out")"
+          inner="${mlm_bin} ${recreate_note#mlm }"
+          MLM_DB_PATH="$delete_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-note-restore.out"
+          grep -q "ci delete smoke test" "${RUNNER_TEMP}/status-after-note-restore.out"
+
+          echo "--- delete: empty date list mode prints 'nothing to delete' and exits 0 ---"
+          MLM_DB_PATH="$delete_db" "$mlm_bin" delete note --date -1 | tee "${RUNNER_TEMP}/delete-empty.out"
+          grep -q "nothing to delete for" "${RUNNER_TEMP}/delete-empty.out"
+
+          # --- delete: out-of-range id (milestone 14), isolated single-entry db. ---
+          delete_oob_db="${RUNNER_TEMP}/mlm-ci-smoke-delete-oob.db"
+
+          echo "--- delete: seed a single punch for the out-of-range check ---"
+          MLM_DB_PATH="$delete_oob_db" "$mlm_bin" start 09:00
+
+          echo "--- delete: id 2 against a 1-entry date is rejected, nothing deleted ---"
+          if MLM_DB_PATH="$delete_oob_db" "$mlm_bin" delete punch 2 2>"${RUNNER_TEMP}/delete-oob.err"; then
+            echo "expected delete punch 2 (out of range) to fail, but it succeeded" >&2
+            exit 1
+          fi
+          MLM_DB_PATH="$delete_oob_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-oob.out"
+          grep -q "09:00" "${RUNNER_TEMP}/status-after-oob.out"
+
+          # --- delete: leading flag-lookalike note body (milestone 14),
+          # isolated so no other note on the same date can shift its
+          # ephemeral listing position. ---
+          delete_flag_db="${RUNNER_TEMP}/mlm-ci-smoke-delete-flag.db"
+
+          echo "--- delete: seed a note whose body starts with a flag-lookalike token ---"
+          MLM_DB_PATH="$delete_flag_db" "$mlm_bin" note "--verbose logging bug"
+
+          echo "--- delete: delete it, capture the quoted recreate line ---"
+          MLM_DB_PATH="$delete_flag_db" "$mlm_bin" delete note 1 | tee "${RUNNER_TEMP}/delete-flag-do.out"
+          grep -q "deleted. to recreate: mlm note '--verbose logging bug'" "${RUNNER_TEMP}/delete-flag-do.out"
+
+          echo "--- delete: run the flag-lookalike recreate line through a real shell, confirm exact body restored ---"
+          recreate_flag="$(grep -o "mlm note .*" "${RUNNER_TEMP}/delete-flag-do.out")"
+          inner="${mlm_bin} ${recreate_flag#mlm }"
+          MLM_DB_PATH="$delete_flag_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_flag_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-flag-restore.out"
+          grep -q -- "--verbose logging bug" "${RUNNER_TEMP}/status-after-flag-restore.out"
+
+          # --- delete: embedded-apostrophe note body (milestone 14 finding
+          # 10), isolated the same way as the flag-lookalike case above. ---
+          delete_quote_db="${RUNNER_TEMP}/mlm-ci-smoke-delete-quote.db"
+
+          echo "--- delete: seed a note whose body contains a literal apostrophe ---"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" note "it's a test"
+
+          echo "--- delete: delete it, capture the quoted recreate line ---"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" delete note 1 | tee "${RUNNER_TEMP}/delete-quote-do.out"
+
+          echo "--- delete: run the embedded-quote recreate line through a real shell, confirm exact body restored ---"
+          recreate_quote="$(grep -o "mlm note .*" "${RUNNER_TEMP}/delete-quote-do.out")"
+          inner="${mlm_bin} ${recreate_quote#mlm }"
+          MLM_DB_PATH="$delete_quote_db" bash -c "$inner"
+          MLM_DB_PATH="$delete_quote_db" "$mlm_bin" status | tee "${RUNNER_TEMP}/status-after-quote-restore.out"
+          grep -q -- "it's a test" "${RUNNER_TEMP}/status-after-quote-restore.out"
+
+          # Future dates must be rejected on delete too, mirroring the
+          # start/stop/note future-date check above.
+          echo "--- delete: future --date is a hard error ---"
+          if MLM_DB_PATH="$delete_db" "$mlm_bin" delete note --date 2099-01-01 2>"${RUNNER_TEMP}/delete-future.err"; then
+            echo "expected delete note --date 2099-01-01 to fail, but it succeeded" >&2
+            exit 1
+          fi
+          grep -q "date is in the future" "${RUNNER_TEMP}/delete-future.err"
