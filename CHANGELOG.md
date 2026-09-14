@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-09-14
+
+### 🚀 Features
+
+- *(cli)* Add `delete note`/`delete punch` (aliases `del`, `n`, `p`) — list a date's entries with `-d/--date`, delete by number, prints a ready-to-run command to recreate what was deleted
+
+### 🐛 Bug Fixes
+
+- Collapse embedded `\r`/`\n` in note bodies to a single space, keeping every stored note on one line
+
 ## [0.2.0] - 2026-09-13
 
 ### 🚀 Features
