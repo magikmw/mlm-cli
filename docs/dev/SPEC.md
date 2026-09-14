@@ -35,7 +35,10 @@ arithmetic and lets entries land in any order.
 
 ### 1.2 Non-goals (MVP — deferred/stretch, see `NOTES.md`)
 
-- Editing or deleting punches/notes after entry.
+- Editing a punch/note after entry (deleting is implemented — `mlm
+  delete note|punch`, see
+  `docs/dev/specs/2026-09-13-delete-punches-notes.md` — the correction
+  path is delete-then-recreate, not in-place edit).
 - Project tagging on notes/stints.
 - Terminal dashboard (ratatui) — deps are in, UI is not.
 - Shell prompt integration.

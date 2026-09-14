@@ -16,6 +16,9 @@ date plus a short note of what you did, stored in SQLite.
   target
 - `week target` — override a week's target hours; any shortfall or
   surplus carries into the next week
+- `delete note`/`delete punch` — list a date's entries and delete one
+  by number; prints a ready-to-run command to recreate what was
+  deleted
 - Everything stored locally in SQLite — no account, no external
   service
 - Cross-platform: Linux (x86_64 and ARM64), Windows (MSVC), and macOS
@@ -26,7 +29,9 @@ date plus a short note of what you did, stored in SQLite.
 Not implemented yet — see [`docs/dev/SPEC.md`](docs/dev/SPEC.md) §1.2
 for the full list and the reasoning behind each:
 
-- Editing or deleting a punch/note after it's entered
+- Editing a punch/note after it's entered (deleting is implemented —
+  see `delete note`/`delete punch` above; the correction path is
+  delete-then-recreate, not in-place edit)
 - Per-project tagging on notes/stints
 - A terminal dashboard (the deps are already in, the UI isn't built)
 - Shell prompt integration (current tracking state in PS1/starship)
