@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Cut a new mlm release.
 #
-# This script does the *local, reversible* half of a release: bump the
-# version, regenerate the changelog, commit, and create an annotated tag.
-#
-# It deliberately does NOT push anything, does NOT create a GitHub release,
-# and does NOT run `cargo publish`. Pushing the tag is what triggers
+# Run this only after `prep_release.sh` and a manual review of the
+# regenerated CHANGELOG.md — this script commits the version bump,
+# creates an annotated tag, and pushes both `main` and the tag to
+# `origin`. Pushing the tag is what triggers
 # .github/workflows/release.yml, which does the rest (builds, GitHub
-# Release, crates.io publish, artifact signing) — that's a separate, human
-# decision, made by actually running the `git push` commands this script
-# prints at the end.
+# Release, crates.io publish, artifact signing) — so running this
+# script IS the irreversible step (crates.io can't be unpublished,
+# the GitHub Release goes public), not just a local/reversible commit.
+# Does NOT run `cargo publish` itself and does NOT create the GitHub
+# Release directly — both happen inside the triggered workflow.
 #
 # Usage:
 #   ./scripts/release.sh 0.2.0 
