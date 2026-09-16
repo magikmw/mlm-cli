@@ -194,10 +194,26 @@ the default target (40h = 2400 minutes).
   it has no paired `start` to derive a duration from, so it shows up
   only as its own flagged anomaly line, never as time in a day/week
   sum.
-- **Daily target**: `status`-only pace hint, `today's week target ÷
-  5` (floor to the minute). Purely derived from the week's target —
-  no override, no storage, no interaction with carry. Used for the
-  "X left to daily target" and estimated-EOD figures (§7.1).
+- **Daily target**: `today's week target ÷ 5` (floor to the minute).
+  Purely derived from the week's target — no override, no storage.
+  Used only as the per-weekday increment for **required-by-day**
+  below; never displayed or compared on its own.
+- **Required-by-day**: `status`-only pace hint, `daily target ×
+  min(today's ISO weekday number, 5)` — Mon=1 … Fri=5 (same numbering
+  as the ISO week machinery already in use elsewhere, e.g. `week.rs`),
+  Sat/Sun both pin to 5. That pin is `5 × daily target`, i.e. `5 ×
+  floor(week target / 5)` — the week has no more workdays to spread
+  the target over by then, so the requirement stops growing, but it
+  is **not always exactly equal to** the week's own target: a target
+  override that isn't a multiple of 5 minutes loses up to 4 minutes
+  to the floor, same as any other day's `daily target`, so a Sat/Sun
+  `required` can sit a few minutes under the full target in that case.
+  Compared against the week's **fulfillment**
+  (`carry_in + worked`, §2.4 above) as of now — i.e. carry-in *does*
+  count here, same fulfillment figure the week-level `owed` uses, just
+  measured against a smaller, day-scoped slice of the target instead
+  of the whole week. Used for the "X left to `<required>` required by
+  end of `<weekday>`" and estimated-EOD figures (§7.1).
 
 ## 3. CLI surface
 
@@ -407,10 +423,17 @@ table; every value can legitimately go negative or exceed target in
 either direction.
 
 `status`'s "time still owed" (§3.5) is exactly this week's `owed`
-value evaluated as of now — no separate day-by-day pacing formula
-(e.g. spreading target evenly across weekdays); the original
-process's "how much I should still put in today" and this week-level
-`owed` are the same question once fulfillment is tracked continuously.
+value evaluated as of now, and is distinct from the required-by-day
+pace hint (§2.4, §7.1): `owed` measures fulfillment against the
+*whole* week's target and is only truly "due" at week's end, while
+required-by-day measures the same fulfillment against a day-scoped
+slice of that target — spreading it evenly across weekdays, per the
+original manual process's "how much I should still put in today"
+(NOTES.md). The two share the fulfillment number but not the target
+they're measured against, so they can and do disagree mid-week (e.g.
+comfortably under the week target while already behind today's
+slice, or vice versa) — both are correct answers to different
+questions, not a contradiction.
 
 ## 6. Error handling & validation
 
@@ -483,7 +506,7 @@ the week shown is the actual current week:
 ```
 Thu 2026-02-12
 
-Day total:     07h 25m (+ ongoing), 00h 35m left to 08h 00m daily target, est. EOD 18:35
+Day total:     07h 25m (+ ongoing), 02h 45m left to 32h 00m required by end of Thursday, est. EOD 20:45
 Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
@@ -502,17 +525,29 @@ Notes:
 - Day total is a tabular-format sum; ongoing time isn't folded into
   it live (avoids the total silently changing mid-read) — `(+
   ongoing)` just flags that an open stint isn't counted yet.
-- "X left to `<daily target>`" is a **display-only pace hint**, not a
-  stored/independent target: `daily target = today's week target ÷ 5`
-  (floor to the minute), always derived, never overridden on its own
-  (§2.4). Negative once the day total already meets/exceeds it — shown
-  the same signed way as any other summary value (§4.2).
+- "X left to `<required>` required by end of `<weekday>`" is a
+  **display-only pace hint** (§2.4), not a stored/independent target:
+  `required = daily target × min(today's ISO weekday number, 5)`,
+  always derived, never overridden on its own. `X = required −
+  fulfillment` (`carry_in + worked`, the same fulfillment the week
+  line's `owed` uses, §2.4/§5) — carry-in counts here, unlike the old
+  day-total figure it's compared next to. Negative once fulfillment
+  already meets/exceeds it — shown the same signed way as any other
+  summary value (§4.2). This gap is driven by *fulfillment*, not by
+  the "Day total" figure printed right before it on the same line —
+  the two can point opposite directions mid-day (e.g. day total still
+  climbing while the pace hint is already deep negative because of a
+  large carry-in), and that's expected: day total is "today, in
+  isolation," the pace hint is "today's slice of the whole week's
+  math."
 - **Estimated EOD** (`est. EOD HH:MM`) appears only when today has an
-  open stint: it's `now + (daily target − day total)`, i.e. "if you
-  keep going from right now, this is the clock time you'd hit today's
-  quota." Omitted entirely when there's no open stint (nothing to
-  project from) or replaced with `target already met` when the gap is
-  already zero or negative.
+  open stint: it's `now + (required − fulfillment)`, i.e. "if you
+  keep going from right now, this is the clock time you'd close out
+  today's slice of the week's pacing." Fulfillment here still excludes
+  the open stint's live minutes (§2.4), same as everywhere else.
+  Omitted entirely when there's no open stint (nothing to project
+  from) or replaced with `target already met` when the gap is already
+  zero or negative.
 - Week line reports the week containing `DATE` (§3.5), and its
   framing follows the same ongoing-vs-not split as `mlm week` (§7.2):
   "`<owed>` left by end of `<weekday>`" when that week is the actual
@@ -692,6 +727,17 @@ or less directly.
 - **F9** — Estimated EOD, all three states: open stint with quota
   remaining (shows a clock time), open stint with quota already met
   (shows `target already met`), no open stint (line omitted).
+- **F9b** — Pace hint with a large carry-in: seed a week with a
+  carry-in big enough that `required − fulfillment` is already
+  negative on day 1 despite day total being small/zero; confirm the
+  pace hint (and est. EOD, if an open stint) reads off *fulfillment*
+  and goes negative/`target already met` independently of day total,
+  while the plain "Day total" figure right next to it is unaffected.
+  Also cover a Sat/Sun `status`: `required` pins to `5 × daily
+  target` (`min(weekday, 5)` = 5). Include a target override that
+  isn't a multiple of 5 minutes (e.g. `33h 31m`) and confirm the
+  Sat/Sun `required` is `5 × floor(target/5)`, a few minutes under
+  the override itself, not silently rounded up to match it.
 - **F10** — `status DATE` for a past date in a different, closed week:
   no daily-target/est.-EOD lines, week line uses the plain `Total
   still owed`/`Total ahead` form for *that* week, not today's (§3.5,

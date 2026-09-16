@@ -310,6 +310,43 @@ SPEC.md and PLAN.md:
     tiebreak step) so it's visible without digging through review
     files.
 
+## More decisions (round 9 — user bug report on real usage)
+
+52. **Decision 17 reversed: daily pace hint is now carry-inclusive**.
+    User reported the `status` pace hint didn't match their original
+    manual process (NOTES.md "Current manual process": "hours still
+    owed by end of current day, given the above [carry]"). Discovery
+    traced it to decision 17 (round 4) and the §5 note it introduced
+    ("no separate day-by-day pacing formula... the original process's
+    'how much I should still put in today' and week-level `owed` are
+    the same question") — that reasoning was wrong: the manual
+    process's day figure was carry-inclusive but day-scoped, distinct
+    from the week-level `owed`, and the two decisions had silently
+    dropped the carry-in half of it. Renamed the concept
+    **required-by-day** (SPEC.md §2.4, §7.1): `daily target ×
+    min(ISO weekday, 5)` compared against the same `carry_in +
+    worked` fulfillment the week's `owed` uses, instead of against
+    plain same-day-only "day total." §5's explanatory note rewritten
+    to state the two figures answer different questions and can
+    diverge. Decisions 17/19 (round 4) and the day-by-day-pacing
+    rejection in §5 are superseded by this entry.
+53. **Adversarial review of decision 52 folded**: stale `est. EOD`
+    sample number fixed (18:35 → 20:45, re-derived from the new
+    `required − fulfillment` gap, not the old day-total one).
+    Sat/Sun `required` reworded — it's `5 × daily target`
+    (`5 × floor(week target / 5)`), not always exactly the week
+    target, since a non-multiple-of-5 override loses up to 4 minutes
+    to the floor same as any other day. F9b extended to cover a
+    non-multiple-of-5 override on a Sat/Sun `status`. ISO weekday
+    numbering cross-referenced to the existing convention already in
+    use in the week-accounting code.
+54. **Milestone-15 task plan decisions**: weekday-name string carried
+    on `StatusView` (not nested inside `DailyTargetHint`) — simpler
+    threading to the render site. New F9b edge cases (large carry-in,
+    Sat/Sun cap, non-multiple-of-5 override) tested at the `resolve()`
+    level against a real DB fixture, not at the render level, since
+    that's the layer that actually exercises the formula.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
