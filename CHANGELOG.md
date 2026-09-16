@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.2] - 2026-09-16
+
+### 🐛 Bug Fixes
+
+- `status`'s daily pace hint (and its estimated-EOD projection) now includes carry-in from previous weeks, comparing fulfillment against a per-weekday-prorated slice of the target instead of a flat carry-free daily target
+- Pace hint reads "X over" instead of a bare negative number once fulfillment is past the required-by-day figure
+
 ## [0.3.1] - 2026-09-14
 
 ### 📚 Documentation
