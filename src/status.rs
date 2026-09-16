@@ -130,9 +130,15 @@ fn day_total_line(view: &StatusView) -> String {
         s.push_str(" (+ ongoing)");
     }
     if let Some(hint) = &view.daily_target {
+        let (word, magnitude) = if hint.gap_minutes >= 0 {
+            ("left to", hint.gap_minutes)
+        } else {
+            ("over", -hint.gap_minutes)
+        };
         s.push_str(&format!(
-            ", {} left to {} required by end of {}",
-            format_minutes(hint.gap_minutes),
+            ", {} {} {} required by end of {}",
+            format_minutes(magnitude),
+            word,
             format_minutes(hint.required_minutes),
             view.weekday_name.as_deref().unwrap_or_default()
         ));
@@ -565,9 +571,11 @@ mod tests {
         });
         view.weekday_name = Some("Thursday".to_string());
         let out = render(&view);
-        assert!(out.contains(
-            "Day total:     08h 30m, -00h 30m left to 08h 00m required by end of Thursday"
-        ));
+        assert!(
+            out.contains(
+                "Day total:     08h 30m, 00h 30m over 08h 00m required by end of Thursday"
+            )
+        );
         assert!(!out.contains("(+ ongoing)"));
         assert!(!out.contains("est. EOD"));
         assert!(!out.contains("target already met"));
@@ -632,12 +640,24 @@ mod tests {
             let out = render(&view);
             assert!(out.contains(", target already met"), "gap {gap}: {out}");
             assert!(!out.contains("est. EOD"), "gap {gap}: {out}");
-            assert!(
-                out.contains("left to 08h 00m required by end of Thursday"),
-                "gap {gap}"
-            );
-            if gap < 0 {
-                assert!(out.contains(&format!("{} left to", format_minutes(gap))));
+            if gap >= 0 {
+                assert!(
+                    out.contains("00h 00m left to 08h 00m required by end of Thursday"),
+                    "gap {gap}: {out}"
+                );
+                assert!(!out.contains("over 08h 00m required"), "gap {gap}: {out}");
+            } else {
+                assert!(
+                    out.contains(&format!(
+                        "{} over 08h 00m required by end of Thursday",
+                        format_minutes(-gap)
+                    )),
+                    "gap {gap}: {out}"
+                );
+                assert!(
+                    !out.contains("left to 08h 00m required"),
+                    "gap {gap}: {out}"
+                );
             }
         }
     }
@@ -1140,7 +1160,7 @@ mod tests {
             out.contains("Day total:     00h 00m,"),
             "day total line: {out}"
         );
-        assert!(out.contains("-25h 20m left to 08h 00m required by end of Monday"));
+        assert!(out.contains("25h 20m over 08h 00m required by end of Monday"));
     }
 
     #[test]
