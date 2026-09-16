@@ -212,8 +212,8 @@ the default target (40h = 2400 minutes).
   (`carry_in + worked`, §2.4 above) as of now — i.e. carry-in *does*
   count here, same fulfillment figure the week-level `owed` uses, just
   measured against a smaller, day-scoped slice of the target instead
-  of the whole week. Used for the "X left to `<required>` required by
-  end of `<weekday>`" and estimated-EOD figures (§7.1).
+  of the whole week. Used for the "X left to/over `<required>`
+  required by end of `<weekday>`" and estimated-EOD figures (§7.1).
 
 ## 3. CLI surface
 
@@ -525,16 +525,22 @@ Notes:
 - Day total is a tabular-format sum; ongoing time isn't folded into
   it live (avoids the total silently changing mid-read) — `(+
   ongoing)` just flags that an open stint isn't counted yet.
-- "X left to `<required>` required by end of `<weekday>`" is a
-  **display-only pace hint** (§2.4), not a stored/independent target:
-  `required = daily target × min(today's ISO weekday number, 5)`,
-  always derived, never overridden on its own. `X = required −
-  fulfillment` (`carry_in + worked`, the same fulfillment the week
-  line's `owed` uses, §2.4/§5) — carry-in counts here, unlike the old
-  day-total figure it's compared next to. Negative once fulfillment
-  already meets/exceeds it — shown the same signed way as any other
-  summary value (§4.2). This gap is driven by *fulfillment*, not by
-  the "Day total" figure printed right before it on the same line —
+- "X left to `<required>` required by end of `<weekday>`" (fulfillment
+  under `required`) or "X over `<required>` required by end of
+  `<weekday>`" (fulfillment at/above it) is a **display-only pace
+  hint** (§2.4), not a stored/independent target: `required = daily
+  target × min(today's ISO weekday number, 5)`, always derived, never
+  overridden on its own. `gap = required − fulfillment` (`carry_in +
+  worked`, the same fulfillment the week line's `owed` uses, §2.4/§5)
+  — carry-in counts here, unlike the old day-total figure it's
+  compared next to. `X` is always `gap`'s absolute value; which of the
+  two words prints is what carries the sign — a word switch, not an
+  inline `-` (matching decision 18's closed-week "Total still owed" /
+  "Total ahead" split, §7.2, rather than §4.2's bare-signed-number
+  convention used elsewhere). `gap == 0` counts as "left to" (X =
+  `00h 00m`), matching every other "reached exactly" case in this
+  spec. This gap is driven by *fulfillment*, not by the "Day total"
+  figure printed right before it on the same line —
   the two can point opposite directions mid-day (e.g. day total still
   climbing while the pace hint is already deep negative because of a
   large carry-in), and that's expected: day total is "today, in
@@ -731,8 +737,9 @@ or less directly.
   carry-in big enough that `required − fulfillment` is already
   negative on day 1 despite day total being small/zero; confirm the
   pace hint (and est. EOD, if an open stint) reads off *fulfillment*
-  and goes negative/`target already met` independently of day total,
-  while the plain "Day total" figure right next to it is unaffected.
+  and switches to the "X over `<required>`" wording (or `target
+  already met` for est. EOD) independently of day total, while the
+  plain "Day total" figure right next to it is unaffected.
   Also cover a Sat/Sun `status`: `required` pins to `5 × daily
   target` (`min(weekday, 5)` = 5). Include a target override that
   isn't a multiple of 5 minutes (e.g. `33h 31m`) and confirm the
