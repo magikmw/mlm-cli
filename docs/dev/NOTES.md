@@ -310,6 +310,9 @@ SPEC.md and PLAN.md:
     tiebreak step) so it's visible without digging through review
     files.
 
+51. **Multi-week-format stretch**: deferred entirely. Not designing
+    for it now; revisit only if it becomes a real ask.
+
 ## More decisions (round 9 — user bug report on real usage)
 
 52. **Decision 17 reversed: daily pace hint is now carry-inclusive**.
@@ -350,6 +353,3 @@ SPEC.md and PLAN.md:
 ## Open questions (still need answers)
 
 None currently — all resolved.
-
-51. **Multi-week-format stretch**: deferred entirely. Not designing
-    for it now; revisit only if it becomes a real ask.

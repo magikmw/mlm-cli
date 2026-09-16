@@ -182,7 +182,7 @@ before today (e.g. `-1` = yesterday), and defaults to today.
 $ mlm status
 Sat 2026-09-12
 
-Day total:     07h 25m (+ ongoing), 00h 35m left to 08h 00m daily target, est. EOD 23:39
+Day total:     07h 25m (+ ongoing), -04h 35m left to 40h 00m required by end of Saturday, est. EOD target already met
 Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
@@ -194,7 +194,7 @@ Notes:
   - fixed migration runner bug
 ```
 
-The daily-target pace hint and estimated-EOD line only show up when
+The required-by-day pace hint and estimated-EOD line only show up when
 `DATE` is today (they need "now" to mean anything). A past date's
 status just shows that day's total and its week's numbers:
 
