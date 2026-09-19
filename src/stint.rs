@@ -69,6 +69,15 @@ pub struct DayStints {
 }
 
 impl DayStints {
+    /// The one definition of "has an anomaly": more than one trailing open
+    /// stint, or at least one orphaned end. Used both when `classify()`
+    /// first builds a `DayStints` and when `classify_at()` recomputes the
+    /// field after a boundary splice mutates `open`/`orphaned_ends`, so the
+    /// two can never drift apart.
+    fn compute_has_anomaly(open: &[OpenStint], orphaned_ends: &[OrphanedEnd]) -> bool {
+        open.len() > 1 || !orphaned_ends.is_empty()
+    }
+
     /// Cheap O(1) has-any-anomaly signal (Milestone 11's per-row `[!]`).
     pub fn has_anomaly(&self) -> bool {
         self.has_anomaly
@@ -164,7 +173,7 @@ pub fn classify(punches: &[Punch], now: DateTime<Utc>) -> DayStints {
         })
         .collect();
 
-    let has_anomaly = open.len() > 1 || !orphaned_ends.is_empty();
+    let has_anomaly = DayStints::compute_has_anomaly(&open, &orphaned_ends);
 
     DayStints {
         completed,
@@ -289,13 +298,13 @@ pub fn classify_at(
     // orphan. The completed stint itself belongs to prev's own view
     // (produced by prev's own classify_at call at the caller level) — never
     // added here.
-    if splice_candidate(prev.open.len(), &day, punches).is_some() {
+    if splice_candidate(prev.open.len(), &day, punches) {
         day.orphaned_ends.remove(0);
     }
 
     // (day, next) as the (A, A+1) pair: if it fires, day gains the
     // completed stint and loses the matched open entry.
-    if splice_candidate(day.open.len(), &next, next_punches).is_some() {
+    if splice_candidate(day.open.len(), &next, next_punches) {
         let open = day.open.remove(0);
         let end = next
             .orphaned_ends
@@ -309,32 +318,27 @@ pub fn classify_at(
         });
     }
 
-    day.has_anomaly = day.open.len() > 1 || !day.orphaned_ends.is_empty();
+    day.has_anomaly = DayStints::compute_has_anomaly(&day.open, &day.orphaned_ends);
     day
 }
 
-/// Returns `Some(0)` (the only possible index, since `earlier_open_count`
-/// is gated at exactly 1) when `earlier_open_count` is 1, `later` has
-/// exactly one orphaned end, and that orphan is `later_punches`'s
-/// chronologically first punch (boundary-stint-pairing spec §4.1's
-/// three-part gate). `None` otherwise — no splice.
+/// Returns `true` when `earlier_open_count` is 1, `later` has exactly one
+/// orphaned end, and that orphan is `later_punches`'s chronologically first
+/// punch (boundary-stint-pairing spec §4.1's three-part gate). `false`
+/// otherwise — no splice.
 ///
 /// Takes `later_punches` raw (not just the already-computed `later`)
 /// because the "chronologically first punch" check needs the same
-/// `(at_utc, kind, id)` sort `classify()` uses internally, which
+/// `(at_utc, kind, id)` ordering `classify()` uses internally, which
 /// `DayStints` does not expose.
-fn splice_candidate(
-    earlier_open_count: usize,
-    later: &DayStints,
-    later_punches: &[Punch],
-) -> Option<usize> {
+fn splice_candidate(earlier_open_count: usize, later: &DayStints, later_punches: &[Punch]) -> bool {
     if earlier_open_count != 1 || later.orphaned_ends.len() != 1 {
-        return None;
+        return false;
     }
-    let mut sorted_later: Vec<Punch> = later_punches.to_vec();
-    sorted_later.sort_by_key(|q| (q.at_utc, q.kind, q.id));
-    let first = sorted_later.first()?;
-    (first.id == later.orphaned_ends[0].punch.id).then_some(0)
+    later_punches
+        .iter()
+        .min_by_key(|q| (q.at_utc, q.kind, q.id))
+        .is_some_and(|first| first.id == later.orphaned_ends[0].punch.id)
 }
 
 #[cfg(test)]
@@ -785,7 +789,11 @@ mod tests {
         assert!(!d.is_ongoing());
     }
 
-    // --- T10: cross-midnight is two separate dates (accepted limitation) -
+    // --- T10: plain classify() treats cross-midnight halves as two
+    // independent dates, each with its own anomaly signal in isolation.
+    // Resolving them into one splice pair is classify_at()'s job (see its
+    // own tests below); this test only pins classify()'s per-date behavior,
+    // unchanged by this changeset. ---
 
     #[test]
     fn cross_midnight_halves_are_two_separate_anomalies() {
