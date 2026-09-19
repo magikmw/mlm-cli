@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.3] - 2026-09-19
+
+### 🐛 Bug Fixes
+
+- A `stop`/`start` typed at the exact same instant, back-to-back between two real stints, no longer zero-pairs and silently drops the earlier stint's time — it now closes the stint that was already open, as expected
+- A session spanning midnight (`start` before, `stop` after) now merges into one clean stint on the day it started, instead of splitting into a dangling open stint and an unrelated flagged anomaly the next day
+
+### 📚 Documentation
+
+- `README.md` gains a "Known issues" section, split out from "Planned" (non-goals), listing rough edges in current behavior that aren't yet fixed
+
 ## [0.3.2] - 2026-09-16
 
 ### 🐛 Bug Fixes
