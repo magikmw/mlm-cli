@@ -41,13 +41,23 @@ for the full list and the reasoning behind each:
   (`status`'s `DATE` argument already accepts `-N` — see
   [`docs/dev/specs/2026-09-13-backdated-punches.md`](docs/dev/specs/2026-09-13-backdated-punches.md))
 
-### Known limitations
+### Known issues
 
-- A session spanning midnight splits into two pieces instead of one
-  clean stint (pairing is strictly per calendar date)
-- A `stop`/`start` typed at the exact same instant, back-to-back
-  between two real stints, can mis-pair (tracked, not yet fixed —
-  see `docs/dev/SPEC.md` §1.2/§4.3)
+Shipped, working-as-designed behavior that's rough or confusing in a
+way worth fixing later — not the same as [Planned](#planned) above,
+which is future scope, not committed to yet. Full list and reasoning:
+[`docs/dev/SPEC.md`](docs/dev/SPEC.md) §1.2a.
+
+- A stint spanning midnight has no visual cue it crosses two dates,
+  and the later date shows no trace of the punch recorded against it
+- Whether a stint reaching into the next day auto-resolves or gets
+  left flagged depends on an internal rule the output doesn't explain
+- `[!]` anomaly flags describe the problem but not how to fix it
+- An open stint's live duration is measured against real wall-clock
+  time, so a backdated punch can show an alarming-looking number
+- `start --help`/`stop --help` cite an internal repo-only doc path
+- `status`'s "fulfillment" can show a confusing negative number from
+  carry-in debt with no explanation on that screen
 
 ## Install
 
