@@ -103,8 +103,27 @@ the actual cross-date resolution:
 
 ## Deviations
 
-None. All four fixes landed as scoped; no additional findings surfaced
-during the pass beyond the stale-comment one already named in the task.
+- **`splice_candidate`'s "no first punch" path, reworked for the
+  coverage gate.** First attempt used a `let Some(first) = ... else {
+  return false; }` for the `min_by_key` result (mirroring the old
+  `sorted_later.first()?` early return). The pre-commit coverage gate
+  caught that this turned an always-unreachable branch (an orphaned end
+  in `later.orphaned_ends` implies `later_punches` is non-empty, so
+  `min_by_key` can never return `None` once the earlier guard passes)
+  into its own never-executed source line, dropping line coverage from
+  98.9556% to 98.9411% — a real regression the gate is designed to catch,
+  not a flaky threshold. Rewrote as a single expression,
+  `later_punches.iter().min_by_key(...).is_some_and(|first| ...)`,
+  which keeps the dead branch as an inlined default rather than a
+  standalone statement — same shape as the original `?`-operator version,
+  and coverage came back exactly to baseline (98.9556135770235%,
+  unchanged) on the second commit attempt. Behavior is identical to the
+  `let-else` version; this was a coverage-instrumentation-shape issue,
+  not a logic change.
+
+Otherwise no deviations. All four fixes landed as scoped; no additional
+findings surfaced during the pass beyond the stale-comment one already
+named in the task.
 
 ## Status
 
