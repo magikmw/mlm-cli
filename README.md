@@ -26,8 +26,7 @@ date plus a short note of what you did, stored in SQLite.
 
 ## Planned
 
-Not implemented yet — see [`docs/dev/SPEC.md`](docs/dev/SPEC.md) §1.2
-for the full list and the reasoning behind each:
+Not implemented yet:
 
 - Editing a punch/note after it's entered (deleting is implemented —
   see `delete note`/`delete punch` above; the correction path is
@@ -38,15 +37,12 @@ for the full list and the reasoning behind each:
 - Non-ISO week conventions
 - 12-hour (AM/PM) time input — 24h only for now
 - `+N`/`-N` relative week notation for `week`'s week-id argument
-  (`status`'s `DATE` argument already accepts `-N` — see
-  [`docs/dev/specs/2026-09-13-backdated-punches.md`](docs/dev/specs/2026-09-13-backdated-punches.md))
+  (`status`'s `DATE` argument already accepts `-N`)
 
 ### Known issues
 
-Shipped, working-as-designed behavior that's rough or confusing in a
-way worth fixing later — not the same as [Planned](#planned) above,
-which is future scope, not committed to yet. Full list and reasoning:
-[`docs/dev/SPEC.md`](docs/dev/SPEC.md) §1.2a.
+Shipped behavior that's rough or confusing in a way worth fixing
+later:
 
 - A stint spanning midnight has no visual cue it crosses two dates,
   and the later date shows no trace of the punch recorded against it
@@ -155,9 +151,7 @@ $ mlm start --date -1 09:00 "forgot to punch in yesterday"
 command line. `NOTE` is a trailing variadic that swallows everything
 after it, including a later `--date` flag — `mlm start 09:00 wrapped
 up --date -1` silently records `--date -1` as part of the note text
-instead of parsing it as the date flag. See
-[`docs/dev/specs/2026-09-13-backdated-punches.md`](docs/dev/specs/2026-09-13-backdated-punches.md)
-§2.1.
+instead of parsing it as the date flag.
 
 ### `mlm stop|s [TIME] [NOTE...] [-d/--date DATE]`
 

@@ -60,11 +60,11 @@ project's history — both are now fixed; see §4.3 and
 
 ### 1.2a Known issues to revisit
 
-Not deferred features — shipped, working-as-designed behavior that's
-rough or confusing in a way worth fixing later. Distinguished from
-§1.2 because a "known issue" reads very differently to a user hitting
-it than a "non-goal" does: one is "we haven't built this yet," the
-other is "this works, but expect a rough edge here." Surfaced by a
+Shipped, working-as-designed behavior that's rough or confusing in a
+way worth fixing later. Kept separate from §1.2 because a "known
+issue" reads very differently to a user hitting it than a "non-goal"
+does: one is "we haven't built this yet," the other is "this works,
+but expect a rough edge here." Surfaced by a
 first-time-user UX pass run against the boundary-stint-pairing
 changeset (`docs/dev/plans/reports/boundary-stint-pairing-ux-check.md`
 has full transcripts); several predate that changeset and were simply
@@ -425,9 +425,8 @@ insert time (no editing/validation in MVP — see §1.2):
 ### 4.3.1 Boundary splice (cross-midnight)
 
 Pairing above is scoped to one calendar date, by design — the
-algorithm never looks past the literal adjacent date, and the rule
-below stays mechanical rather than becoming a second heuristic. For
-two literal adjacent calendar dates `A` and `A+1`: if `A`'s own
+algorithm never looks past the literal adjacent date. For two literal
+adjacent calendar dates `A` and `A+1`: if `A`'s own
 classification leaves exactly one trailing open `start`, and `A+1`'s
 own classification has exactly one orphaned `end` that is also `A+1`'s
 chronologically first punch of the date, they're spliced into one
