@@ -437,6 +437,59 @@ SPEC.md and PLAN.md:
     at end of file rather than grouped after the backdate block —
     accepted per the plan's own recommendation.
 
+59. **Final review (Opus-escalated, explicit approval) of the shipped
+    boundary-stint-pairing changeset**
+    (`docs/dev/plans/reports/final-review.md`, 6 findings,
+    ship-with-followups): verified §3/§4 correct by mutation testing
+    (four targeted breaks, each caught by exactly the intended test)
+    and by hand-running the release binary against every spec worked
+    example, including a three-week boundary/padding-day scenario —
+    all matched. Findings: the SPEC.md/README §6 doc pass was still
+    pending at review time (expected, done as part of this same
+    round — see decision 60); a few more stale E15/"accepted
+    limitation" references beyond §6's original checklist; a
+    non-portable `\s` in the new CI grep (BSD/macOS greps read it
+    literally, a silent false-negative-safe vacuous match, never a
+    false failure); two cosmetic `stint.rs` nits (`splice_candidate`
+    returning an `Option<usize>` that can only ever be `Some(0)`, and
+    `has_anomaly`'s recomputation duplicating `classify()`'s
+    expression instead of sharing one definition); and one
+    informational note that the locked spec's own rationale sentence
+    for the round-2 `debug_assert` fix is technically imprecise
+    (`debug_assert!` *is* compiled out in release; the fix was still
+    correct and necessary for debug/test builds) — not worth reopening
+    the spec over, per the reviewer's own call.
+60. **Fresh-eyes UX check surfaced findings a spec-compliance review
+    structurally cannot catch**
+    (`docs/dev/plans/reports/boundary-stint-pairing-ux-check.md`, 9
+    findings): dispatched a separate agent with the spec, changeset
+    plan, and this decision log explicitly withheld — told to read
+    only what a real installed-binary user could (`README.md`,
+    `--help`) and role-play scenarios, judged against "would a
+    stranger be confused," not against any document. Found real gaps
+    the final review's spec-conformance lens couldn't have: a spliced
+    cross-midnight stint has no visual cue it crosses two dates; the
+    date receiving the actual `stop` punch shows zero trace of it now
+    (previously at least visible as a flagged orphan); and the
+    sharpest one — whether an unclosed stint reaching into the next
+    day silently merges or gets flagged-and-left-unmerged depends on
+    an internal 1:1-ambiguity gate (§4.3.1) the user has no way to
+    observe, undocumented anywhere in output or `--help`. These three
+    trace directly to spec §7's deliberate "no new markers, additive
+    later if wanted" call — a locked-spec-behavior question, so
+    surfaced to the user rather than folded silently. Decision: keep
+    §7's design as shipped for this changeset (accepted, deliberate
+    KISS tradeoff); split SPEC.md §1.2 into **§1.2 Non-goals**
+    (deliberate future scope) and a new **§1.2a Known issues to
+    revisit** (shipped-but-rough behavior, not committed to fix) since
+    conflating "haven't built this" with "this works but expect a
+    rough edge" made triage harder and read worse to a user hitting a
+    known issue. All 9 UX findings plus the changeset's own §4.3.1
+    residual case now live in §1.2a; README gained a matching "Known
+    issues" section pointing at it, replacing the old "Known
+    limitations" section (which only ever listed the two now-fixed
+    defects).
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

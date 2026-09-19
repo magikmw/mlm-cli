@@ -35,6 +35,9 @@ arithmetic and lets entries land in any order.
 
 ### 1.2 Non-goals (MVP — deferred/stretch, see `NOTES.md`)
 
+Deliberately out of scope: future features not committed to, not
+things known to be broken or confusing today. See §1.2a for that.
+
 - Editing a punch/note after entry (deleting is implemented — `mlm
   delete note|punch`, see
   `docs/dev/specs/2026-09-13-delete-punches-notes.md` — the correction
@@ -49,32 +52,53 @@ arithmetic and lets entries land in any order.
   punch/note against a date other than today, are no longer non-goals —
   both are implemented; see
   `docs/dev/specs/2026-09-13-backdated-punches.md`.)
-- Stints spanning midnight: pairing is strictly per calendar `date`
-  (§4.3), so a session like `start 23:30` / `stop 00:45` the next day
-  splits in two rather than one clean overnight stint: day one is left
-  with a permanently-open `start` (an ordinary, non-anomalous single
-  trailing start per §4.3 — indistinguishable from any other open
-  stint on its own) and day two gets a flagged orphaned-`end` anomaly.
-  In `week`'s view (§7.2) the stale day-one start is additionally
-  silent — no `(ongoing)` marker (it isn't today, or isn't in the
-  requested week) and no `[!]` (it's not an anomaly) — it just renders
-  as a plain total excluding that stint's live minutes. Accepted as a
-  known MVP limitation — fixing it means pairing across date
-  boundaries, a real complexity jump for a rare case.
-- **Same-instant `end`/`start` boundary between two real stints** —
-  known defect in the current §4.3 tie-break, deferred rather than
-  fixed at implementation time (Milestone 5, see its review). Typing
-  `stop 09:00` then `start 09:00` back-to-back (no gap between two
-  genuine stints) currently mis-pairs: the tie-break added for E14
-  (kind before id at an identical instant) pairs the boundary's
-  `start` with the coincident `end` into a zero-length stint instead
-  of closing the *preceding* open stint, silently dropping that
-  stint's worked minutes with no anomaly raised. A correct fix needs
-  per-instant-group handling (close an already-open start before
-  pairing any remaining tied `end`/`start` as an isolated E14 pair) —
-  more than a tie-break tweak, so it's deferred rather than patched
-  in place. §4.3 below still documents the current (defective for
-  this case) behavior as implemented.
+
+Stints spanning midnight, and a same-instant `end`/`start` boundary
+between two real stints, were both non-goals through this point in the
+project's history — both are now fixed; see §4.3 and
+`docs/dev/specs/2026-09-19-boundary-stint-pairing.md`.
+
+### 1.2a Known issues to revisit
+
+Not deferred features — shipped, working-as-designed behavior that's
+rough or confusing in a way worth fixing later. Distinguished from
+§1.2 because a "known issue" reads very differently to a user hitting
+it than a "non-goal" does: one is "we haven't built this yet," the
+other is "this works, but expect a rough edge here." Surfaced by a
+first-time-user UX pass run against the boundary-stint-pairing
+changeset (`docs/dev/plans/reports/boundary-stint-pairing-ux-check.md`
+has full transcripts); several predate that changeset and were simply
+never written down before.
+
+- A cross-midnight completed stint (e.g. `23:30-00:45`) has no visual
+  cue that it spans two calendar days — legible once you notice
+  end < start and read the duration, but nothing points it out.
+- The calendar date that received the actual `stop` punch of a
+  cross-midnight stint shows **zero trace of it** in `status` — the
+  punch is fully absorbed into the previous date's stint with no
+  footnote on the date it was actually typed against.
+- Whether an unclosed stint reaching into the next day silently merges
+  or gets flagged and left unmerged depends on an internal
+  1:1-unambiguous gate (§4.3) the user has no way to observe — nothing
+  in `--help`, `status`, or `week` explains why the same-looking
+  situation sometimes resolves silently and sometimes doesn't.
+- `[!]` anomaly flags (`status` and `week`) name the problem but give
+  no remedy guidance — no pointer to `delete`, no suggested next step.
+- Whether a lone unclosed `start` gets flagged depends on whether a
+  *second* one also exists that date (one is the ordinary open-stint
+  case, two-or-more is E7) — the same surface signal ("still open, no
+  stop yet") is silent in one case and loudly flagged in the other,
+  and the distinction isn't explained anywhere.
+- An open stint's live duration is computed against real wall-clock
+  "now" — for a backdated punch (`-d`, a first-class feature) this can
+  read as alarming ("443h 06m, ongoing") with no caption clarifying
+  it's elapsed-since-real-now, not a computed total or a bug.
+- `start --help`/`stop --help` cite an internal repo-only doc path
+  (`docs/dev/specs/2026-09-13-backdated-punches.md §2.1`) that a user
+  who only has the installed binary can't open.
+- `status`'s "fulfillment" line can show a confusing negative number
+  driven by carry-in debt from a prior week, with no "carry-in" context
+  on that screen — only `week`'s separate output explains it.
 
 ### 1.3 Terminology
 
@@ -345,19 +369,25 @@ data and gives wrong answers otherwise. Algorithm:
    `id`-order would let a `stop` entered before a same-instant `start`
    produce an orphan and a dangling open stint instead of the clean
    zero-length pairing E14 requires.
-
-   **Known defect (§1.2 non-goals), deferred, documented here as
-   currently implemented, not as correct**: this same tiebreak
-   mis-pairs a same-instant `end`/`start` that's actually a boundary
-   between two real stints (e.g. `stop 09:00` then `start 09:00` back
-   to back) — it zero-pairs the boundary instead of closing the
-   stint that was already open, silently dropping that stint's time
-   with no anomaly. A correct fix requires per-instant-group handling
-   (close an already-open `start` before pairing any remaining tied
-   `end`/`start` as an isolated E14 case), not a tiebreak change.
-2. Scan in that order keeping a stack of unmatched `start`s: a
-   `start` pushes; an `end` pops the *most recently pushed* unmatched
-   `start` and pairs with it, forming a stint.
+2. Scan the sorted punches **one same-instant group at a time**, not
+   as one flat pass: within a group sharing an `at_utc`, every `end`
+   in the group first tries to pop the stack as carried in from
+   *strictly earlier* groups (closing a `start` that was already
+   open, before any of this group's own `start`s exist on the stack);
+   only then does the group's `start`s get pushed, and only then do
+   any `end`s left over from the first step (nothing was open before
+   them) pop against those same-group `start`s — producing the E14
+   zero-length pair, or an ordinary orphaned `end` if the group has
+   more `end`s than `start`s to pair against. This is what lets a
+   genuine boundary between two real stints — `stop 09:00` then
+   `start 09:00` back to back, no gap — close the *preceding* open
+   stint correctly instead of zero-pairing the tied instant and
+   silently dropping that stint's time (fixed in
+   `docs/dev/specs/2026-09-19-boundary-stint-pairing.md` §3; every
+   group of size 1, i.e. no tie at all, reduces to the plain LIFO scan
+   below unchanged).
+3. Outside a tied group, an `end` simply pops the *most recently
+   pushed* unmatched `start` and pairs with it, forming a stint.
 
 Worked example (matches the motivating case): starts entered at
 `09:00` and `14:00`, ends entered at `18:00` and `13:00`, in that
@@ -391,6 +421,32 @@ insert time (no editing/validation in MVP — see §1.2):
   this is exactly why step 1's tie-break sorts `start` before `end`
   at a shared instant, regardless of entry order, so the pair always
   matches cleanly rather than depending on which was typed first.
+
+### 4.3.1 Boundary splice (cross-midnight)
+
+Pairing above is scoped to one calendar date, by design — the
+algorithm never looks past the literal adjacent date, and the rule
+below stays mechanical rather than becoming a second heuristic. For
+two literal adjacent calendar dates `A` and `A+1`: if `A`'s own
+classification leaves exactly one trailing open `start`, and `A+1`'s
+own classification has exactly one orphaned `end` that is also `A+1`'s
+chronologically first punch of the date, they're spliced into one
+completed stint — `A`'s `start` paired with `A+1`'s `end`, its minutes
+landing on `A` (the day the stint started), not `A+1`. Neither date
+shows an anomaly for it once spliced. See
+`docs/dev/specs/2026-09-19-boundary-stint-pairing.md` §4 for the full
+rule and `classify_at`'s exact contract.
+
+Anything short of that exact 1:1, first-punch shape is left completely
+alone, rendered exactly as an ordinary open stint / orphaned end today
+— never guessed at, never partially resolved. In particular: **a
+genuinely carried-over orphan sharing its date with one unrelated
+stray orphan elsewhere that day still doesn't splice** (the
+`orphaned_ends.len() == 1` gate fails), so this section's fix isn't an
+unconditional guarantee against every possible day's data, only the
+ordinary case. This residual case, plus the fact that a spliced stint
+carries no visual marker distinguishing it from an ordinary same-date
+stint (deliberate — see §1.2a), are the known rough edges here.
 
 ## 5. Week accounting — worked example
 
@@ -648,14 +704,18 @@ to it.)
   are empty (`00h 00m`) — consistent shape, easy to scan for gaps.
   `(ongoing)` marks a date whose open stint's date equals today, and
   only when the requested week is the current one — not just "any
-  date with an open stint." This distinction matters because of the
-  cross-midnight limitation (§1.2, E15): a session split across
-  midnight leaves a stale, permanently-open `start` on the *earlier*
-  date, which is an ordinary single-trailing-start under §4.3 (not an
-  anomaly) but is **not** what `(ongoing)` is for. That stale date
-  renders as a plain total excluding the open stint's live minutes,
-  with no `(ongoing)` and no `[!]` marker — an accepted, silent
-  consequence of §1.2's limitation, not a bug in this rule.
+  date with an open stint." This distinction still matters for the
+  §4.3.1 residual case: when a cross-midnight session's earlier date
+  *doesn't* qualify for the boundary splice (not the ordinary 1:1,
+  first-punch shape — e.g. two dangling starts that date), it's left
+  with a stale, permanently-open `start`, an ordinary
+  single-trailing-start under §4.3 (not an anomaly) but **not** what
+  `(ongoing)` is for. That stale date renders as a plain total
+  excluding the open stint's live minutes, with no `(ongoing)` and no
+  `[!]` marker — an accepted, silent consequence of §4.3.1's "1:1 or
+  nothing" scope, not a bug in this rule. The ordinary case (a clean
+  cross-midnight session) now splices into one completed stint on the
+  earlier date instead of reaching this fallback at all.
 - Field order below the headline is fixed: carry-in, worked,
   fulfillment, target — `still owed` isn't repeated down here since
   the headline already states it plainly.
@@ -799,11 +859,15 @@ or less directly.
 - **E14** — A `start`/`end` pair at the identical instant: legal,
   zero-length stint (`00h 00m`), not flagged as an anomaly (§4.3).
 - **E15** — A session crossing midnight (`start 23:30`, `stop 00:45`
-  the next day): splits in two rather than one clean stint — an
-  ordinary (non-anomalous) open `start` on day one, plus a flagged
-  orphaned-`end` anomaly on day two. In `week`'s view, day one's stale
-  open stint is silent (no `(ongoing)`, no `[!]`, §7.2). Accepted MVP
-  limitation (§1.2), not a bug to fix.
+  the next day): splices into one clean completed stint on the earlier
+  date (§4.3.1) when the shape is unambiguous (one open `start` that
+  date, one orphaned `end` — the next date's first punch — on the
+  next). The later date shows nothing for it: no stint, no anomaly, no
+  footnote (§1.2a notes this as a known rough edge, not a bug). Outside
+  that exact shape — e.g. two dangling starts on the earlier date —
+  falls back to the pre-splice behavior: an ordinary (non-anomalous)
+  open `start` on day one, silent in `week`'s view (no `(ongoing)`, no
+  `[!]`, §7.2), plus a flagged orphaned-`end` anomaly on day two.
 
 ---
 

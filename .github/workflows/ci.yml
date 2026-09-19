@@ -251,3 +251,31 @@ jobs:
             exit 1
           fi
           grep -q "date is in the future" "${RUNNER_TEMP}/delete-future.err"
+
+          # --- midnight-spanning splice (boundary-stint-pairing spec):
+          # a fresh, separate db, kept independent of the others above
+          # so the two straddled dates can't collide with unrelated data. ---
+          midnight_db="${RUNNER_TEMP}/mlm-ci-smoke-midnight.db"
+
+          echo "--- midnight: start/stop straddling midnight via -d ---"
+          MLM_DB_PATH="$midnight_db" "$mlm_bin" start -d 2020-01-01 23:30
+          MLM_DB_PATH="$midnight_db" "$mlm_bin" stop -d 2020-01-02 00:45
+
+          echo "--- midnight: status on the start date shows the completed total ---"
+          MLM_DB_PATH="$midnight_db" "$mlm_bin" status 2020-01-01 | tee "${RUNNER_TEMP}/status-midnight-start.out"
+          grep -qE "Day total: *01h 15m" "${RUNNER_TEMP}/status-midnight-start.out"
+          if grep -q '\[!\]' "${RUNNER_TEMP}/status-midnight-start.out"; then
+            echo "expected no anomaly on the start date, but one was rendered" >&2
+            exit 1
+          fi
+
+          echo "--- midnight: status on the end date shows no anomaly ---"
+          MLM_DB_PATH="$midnight_db" "$mlm_bin" status 2020-01-02 | tee "${RUNNER_TEMP}/status-midnight-end.out"
+          if grep -q '\[!\]' "${RUNNER_TEMP}/status-midnight-end.out"; then
+            echo "expected no orphaned-end anomaly on the end date, but one was rendered" >&2
+            exit 1
+          fi
+          if grep -q "00:45" "${RUNNER_TEMP}/status-midnight-end.out"; then
+            echo "expected the spliced stint not to appear as its own line on the end date" >&2
+            exit 1
+          fi

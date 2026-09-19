@@ -297,7 +297,10 @@ fn build_ledger(
             let week = WeekId::from_date(date);
             data_weeks.insert(week);
             if !day_punches.is_empty() {
-                let classified = stint::classify(&day_punches, now_utc);
+                let prev_punches = storage::punches_for_date(conn, date.pred_opt().unwrap())?;
+                let next_punches = storage::punches_for_date(conn, date.succ_opt().unwrap())?;
+                let classified =
+                    stint::classify_at(&prev_punches, &day_punches, &next_punches, now_utc);
                 *worked_by_week.entry(week).or_insert(0) += classified.completed_minutes();
             }
         }
@@ -334,9 +337,11 @@ pub fn resolve(
 
     let punches = storage::punches_for_date(conn, target_date)?;
     let notes = storage::notes_for_date(conn, target_date)?;
+    let prev_punches = storage::punches_for_date(conn, target_date.pred_opt().unwrap())?;
+    let next_punches = storage::punches_for_date(conn, target_date.succ_opt().unwrap())?;
 
     let now_utc = now.with_timezone(&Utc);
-    let day = stint::classify(&punches, now_utc);
+    let day = stint::classify_at(&prev_punches, &punches, &next_punches, now_utc);
 
     let day_total_minutes = day.completed_minutes();
     let has_open_stint = day.is_ongoing();
@@ -1126,6 +1131,97 @@ mod tests {
             !out.lines().any(|l| l.starts_with("  ") && l.contains('(')),
             "no stint/duration line should render: {out}"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // midnight-spanning splice (boundary-stint-pairing spec §4.3):
+    // `resolve`/`build_ledger` now fetch neighbor-date punches and call
+    // `stint::classify_at` instead of `stint::classify`.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn resolve_midnight_splice_earlier_date_shows_completed_stint_no_anomaly() {
+        let conn = test_db();
+        let d1 = d(2026, 2, 9);
+        let d2 = d(2026, 2, 10);
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 30), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.day_total_minutes, 75);
+        assert!(view.anomaly_lines.is_empty());
+        assert_eq!(view.stints.len(), 1);
+        assert_eq!(view.stints[0].start, t(23, 30));
+        assert_eq!(view.stints[0].end, StintEnd::At(t(0, 45)));
+    }
+
+    #[test]
+    fn resolve_midnight_splice_later_date_shows_no_orphan_anomaly() {
+        let conn = test_db();
+        let d1 = d(2026, 2, 9);
+        let d2 = d(2026, 2, 10);
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 30), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view = resolve(Some("2026-02-10"), now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            view.anomaly_lines.is_empty(),
+            "the 00:45 orphan is consumed by the splice: {:?}",
+            view.anomaly_lines
+        );
+        assert!(
+            view.stints.is_empty(),
+            "the spliced stint belongs to D, never D+1's own list"
+        );
+        assert_eq!(view.day_total_minutes, 0);
+    }
+
+    // Direct regression companion: confirms the new call site doesn't
+    // accidentally always splice -- only ever mechanically, per Task 1's
+    // 1:1 gate. `D` has two trailing opens (E7, not 1:1), so `D+1`'s
+    // single `End 00:30` cannot close either of them and stays a genuine
+    // orphaned end (note: this is a deliberate deviation from the task
+    // plan's stated expectation of "no anomaly on that side either" --
+    // `render::Anomalies::has_any()`/`detail_lines()` flag ANY orphaned
+    // end regardless of open-stint count, as
+    // `resolve_e7_multi_open_and_e8_orphaned_end_via_anomalies_only`
+    // above already establishes for the same-date case; see the task 2
+    // completion report for the full explanation).
+    #[test]
+    fn resolve_midnight_boundary_still_flags_non_1to1_shapes() {
+        let conn = test_db();
+        let d1 = d(2026, 2, 9);
+        let d2 = d(2026, 2, 10);
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(22, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 30), &Local).expect("insert");
+
+        let view_d1 = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view_d1.anomaly_lines.len(), 1);
+        assert!(view_d1.anomaly_lines[0].contains("2 open stints"));
+        assert_eq!(view_d1.day_total_minutes, 0);
+
+        let view_d2 = resolve(Some("2026-02-10"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view_d2.day_total_minutes, 0);
+        assert_eq!(view_d2.anomaly_lines.len(), 1);
+        assert!(view_d2.anomaly_lines[0].contains("orphaned end at 00:30"));
+    }
+
+    #[test]
+    fn resolve_midnight_splice_reflected_in_week_line() {
+        let conn = test_db();
+        // Both dates fall inside week 2026-07 (Mon 2026-02-09 .. Sun
+        // 2026-02-15), the same week `today()` (Thu 2026-02-12) is in.
+        let d1 = d(2026, 2, 9);
+        let d2 = d(2026, 2, 10);
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 30), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
+        // The recovered 75 minutes is the week's entire `worked`/
+        // `fulfillment` -- no other data seeded, no prior week's carry.
+        let expected = current_week_acct(2400 - 75, 75, 2400);
+        assert_eq!(view.week_line, week_line(&expected, today()));
     }
 
     // -----------------------------------------------------------------
