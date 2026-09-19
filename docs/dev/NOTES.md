@@ -350,6 +350,93 @@ SPEC.md and PLAN.md:
     level against a real DB fixture, not at the render level, since
     that's the layer that actually exercises the formula.
 
+## More decisions (round 10 — boundary stint pairing spec)
+
+55. **Same-instant tie-break and cross-midnight splice designed as one
+    changeset** (`docs/dev/specs/2026-09-19-boundary-stint-pairing.md`):
+    both of SPEC.md §1.2's deferred stint-pairing defects trace to the
+    same root — `stint::classify` only ever looks at a single calendar
+    date and its tie-break was only ever patched for the isolated
+    zero-length case. Fixed together, no global/cross-history scan:
+    (a) within a tied instant group, an `end` now closes an
+    already-open `start` from before that instant first, before
+    pairing any leftover tied `start`/`end` zero-length — a strict
+    generalization, every non-tied group (nearly all real data)
+    behaves exactly as before; (b) a new `classify_at(prev, day, next,
+    now)` sits on top of the unchanged `classify()` and splices a
+    midnight-spanning stint only on an exact 1:1 match — `day`'s one
+    trailing open, literal next date's one orphaned `end`, and that
+    orphan must be the next date's chronologically first punch (not
+    merely its only orphan — rejects an unrelated late-day stray
+    orphan being mistaken for a carried-over stint). Minutes land on
+    the day the stint started, not the day it crossed into. Anything
+    short of that exact shape (2+ opens, 2+ orphans, a gap day with no
+    punches in between) stays flagged exactly as today — deliberate
+    "mechanical fix only" scope guardrail, not a heuristic that guesses
+    among candidates.
+56. **Adversarial review of decision 55 folded**
+    (`docs/dev/plans/reports/boundary-stint-pairing-review.md`, 7
+    findings, ship-with-followups): fixed a wrong NOTES.md citation
+    backing the spec's own scope rationale (now cites SPEC.md §4.3
+    directly), corrected "three" to "four" `classify()` call sites,
+    added README.md's "Known limitations" section to the doc-update
+    checklist, added a `debug_assert!` requirement to `classify_at`
+    mirroring `classify()`'s own date-consistency check, named the
+    residual case where a legitimate carried-over orphan sharing its
+    date with one unrelated stray orphan still doesn't splice (1:1
+    guardrail working as designed, just not previously called out),
+    added a test case for the §3/§4 mechanisms interacting at the same
+    boundary, and extended the `worked_minutes` call site's
+    perf-justification note to match `build_ledger`'s.
+
+57. **Round 2 adversarial review of decision 55/56 folded**
+    (`docs/dev/plans/reports/boundary-stint-pairing-review-round2.md`,
+    2 findings, needs-rework): round 1's fix for the missing
+    `classify_at` debug_assert (decision 56) indexed `punches[0]`
+    unguarded — a plain slice index, not compiled out in release like
+    the rest of a `debug_assert!`, so it panicked on every idle day
+    bordering a worked one, i.e. the ordinary case once `classify_at`
+    replaces `classify()` everywhere. Fixed: gate on `punches.first()`,
+    mirroring `classify()`'s own closure-based safety property, and a
+    §5.2 test case pins the empty-`punches` shape down. Separately,
+    `DbWeekData::worked_minutes`'s widened 9-day fetch would have kept
+    its current `by_date.values().sum()` pattern, which — once the
+    fetch widens past the week's own 7 dates — sums in adjacent weeks'
+    padding-day buckets too, both leaking an unrelated stint into the
+    wrong week's total and double-counting it into the neighboring
+    week's own total. Spec §4.3 now requires summing over `week.dates()`
+    explicitly (matching `build_rows`'s existing pattern), and §5.3
+    gains a fixture with a real stint on a padding day specifically,
+    since the existing `c7`/`c8` multi-week tests use fully-idle
+    padding and wouldn't have caught this.
+
+58. **Task plan judgment calls resolved (boundary stint pairing, Tasks
+    1 & 2)**: Task 1's three findings were informational only (a
+    clippy cognitive-complexity gate to re-check once code exists;
+    confirmation that `DayStints::has_anomaly`'s private field needs no
+    restructuring since `classify_at` lives in the same module; one
+    extra positive-control test added beyond the spec's literal
+    bullets to pin the tie-break/splice eligibility boundary) — no
+    changes needed. Task 2's four: (1) rewriting
+    `b2_bucketing_does_not_pair_across_midnight`
+    (`src/week_view.rs:613-635`) in place, since its assertions encode
+    the exact old per-date-only behavior this changeset removes —
+    accepted, this is the spec's intended behavior change surfacing in
+    an existing test, not scope creep; (2) `build_ledger`'s prev/next
+    fetches placed inside the existing `if !day_punches.is_empty()`
+    branch rather than unconditionally every iteration — accepted, an
+    idle day's `punches` is empty so `classify_at` can't produce a
+    splice for it regardless of what its neighbors hold, making the
+    fetch-only-when-needed version equivalent in outcome to fetching
+    always, not a deviation from the contract; (3) `build_rows`/
+    `worked_minutes`'s neighbor-bucket lookups chain
+    `pred_opt()`/`succ_opt()` straight into `unwrap_or_default()`
+    instead of an explicit `.unwrap()` first — accepted, strictly safer
+    (never panics even at chrono's theoretical date-range edge) and
+    identical in every real-world case; (4) CI e2e smoke block appended
+    at end of file rather than grouped after the backdate block —
+    accepted per the plan's own recommendation.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
