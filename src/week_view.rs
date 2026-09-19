@@ -115,10 +115,14 @@ pub fn render_week(view: &WeekView) -> String {
     out
 }
 
-/// Contract 4: bucket `punches` by their `date` column, then pair each of
-/// the week's 7 dates independently via `stint::classify` — one call per
-/// date, never a whole week's punches in one call, which is what keeps
-/// cross-midnight pairing out of scope (E15).
+/// Contract 4: bucket `punches` by their `date` column, then classify
+/// each of the week's 7 dates independently via `stint::classify_at`,
+/// looking up each date's immediate neighbors (`date.pred_opt()`/
+/// `date.succ_opt()`) in the same bucket map — `punches` is expected to
+/// already span one day past each end of the week (boundary-stint-pairing
+/// spec §4.3's widened `punches_in_range` fetch in `build_week_view`), so
+/// a midnight-spanning stint that starts or ends just outside the week's
+/// own 7 dates still resolves correctly at the boundary date it touches.
 fn build_rows(
     dates: [NaiveDate; 7],
     punches: &[Punch],
@@ -133,7 +137,15 @@ fn build_rows(
     std::array::from_fn(|i| {
         let date = dates[i];
         let bucket = by_date.get(&date).cloned().unwrap_or_default();
-        let day = stint::classify(&bucket, now_utc);
+        let prev_bucket = date
+            .pred_opt()
+            .and_then(|d| by_date.get(&d).cloned())
+            .unwrap_or_default();
+        let next_bucket = date
+            .succ_opt()
+            .and_then(|d| by_date.get(&d).cloned())
+            .unwrap_or_default();
+        let day = stint::classify_at(&prev_bucket, &bucket, &next_bucket, now_utc);
 
         // Landmine 2: go through `render::Anomalies` exclusively, never
         // `day.has_anomaly()`/`day.anomalies()` directly.
@@ -181,14 +193,30 @@ impl WeekData for DbWeekData<'_> {
 
     fn worked_minutes(&self, week: WeekId) -> i64 {
         let (start, end) = week.span();
-        let punches = storage::punches_in_range(self.conn, start, end).unwrap_or_default();
+        let padded_start = start.pred_opt().unwrap();
+        let padded_end = end.succ_opt().unwrap();
+        let punches =
+            storage::punches_in_range(self.conn, padded_start, padded_end).unwrap_or_default();
         let mut by_date: HashMap<NaiveDate, Vec<Punch>> = HashMap::new();
         for p in punches {
             by_date.entry(p.date).or_default().push(p);
         }
-        by_date
-            .values()
-            .map(|bucket| stint::classify(bucket, self.now_utc).completed_minutes())
+
+        week.dates()
+            .into_iter()
+            .map(|date| {
+                let bucket = by_date.get(&date).cloned().unwrap_or_default();
+                let prev_bucket = date
+                    .pred_opt()
+                    .and_then(|d| by_date.get(&d).cloned())
+                    .unwrap_or_default();
+                let next_bucket = date
+                    .succ_opt()
+                    .and_then(|d| by_date.get(&d).cloned())
+                    .unwrap_or_default();
+                stint::classify_at(&prev_bucket, &bucket, &next_bucket, self.now_utc)
+                    .completed_minutes()
+            })
             .sum()
     }
 }
@@ -212,7 +240,8 @@ pub fn build_week_view(
     let (start, end) = week.span();
     let dates = week.dates();
 
-    let punches = storage::punches_in_range(conn, start, end)?;
+    let punches =
+        storage::punches_in_range(conn, start.pred_opt().unwrap(), end.succ_opt().unwrap())?;
     let rows = build_rows(dates, &punches, today, now_utc);
 
     let data = DbWeekData { conn, now_utc };
@@ -610,9 +639,10 @@ Target:        40h 00m
         }
     }
 
-    // B2 (E15)
+    // B2 (superseded E15 -- now the ordinary midnight-splice case,
+    // boundary-stint-pairing spec §4.3)
     #[test]
-    fn b2_bucketing_does_not_pair_across_midnight() {
+    fn b2_bucketing_now_splices_across_midnight() {
         use PunchKind::{End, Start};
         let tue = d(2026, 2, 10);
         let wed = d(2026, 2, 11);
@@ -625,13 +655,40 @@ Target:        40h 00m
         );
         let tue_row = &rows[1];
         let wed_row = &rows[2];
-        assert_eq!(tue_row.minutes, 0);
-        assert!(
-            !tue_row.has_anomaly,
-            "a single open stint is not an anomaly"
+        assert_eq!(
+            tue_row.minutes, 75,
+            "23:30-00:45 spans midnight, lands on Tue"
         );
-        assert_eq!(wed_row.minutes, 0);
-        assert!(wed_row.has_anomaly, "orphaned end must flag an anomaly");
+        assert!(!tue_row.has_anomaly, "clean splice, no anomaly");
+        assert_eq!(wed_row.minutes, 0, "the spliced stint never appears on Wed");
+        assert!(!wed_row.has_anomaly, "the orphan is consumed by the splice");
+    }
+
+    // B9: a splice landing exactly on the week's own boundary (Sunday ->
+    // next Monday) still lands on the correct row, with no 8th row to
+    // accidentally leak into.
+    #[test]
+    fn b9_week_boundary_splice_lands_in_correct_weeks_rows_only() {
+        use PunchKind::{End, Start};
+        let sun = d(2026, 2, 15);
+        let next_mon = d(2026, 2, 16);
+        let punches = vec![
+            punch(1, sun, (23, 0), Start),
+            punch(2, next_mon, (0, 20), End),
+        ];
+        let rows = build_rows(
+            week_dates(),
+            &punches,
+            d(2026, 2, 9),
+            now_utc(2026, 2, 16, 1, 0),
+        );
+        assert_eq!(rows.len(), 7);
+        let sun_row = &rows[6];
+        assert_eq!(
+            sun_row.minutes, 80,
+            "23:00-00:20 spans midnight, lands on Sun"
+        );
+        assert!(!sun_row.has_anomaly);
     }
 
     // B3
@@ -909,6 +966,100 @@ Target:        40h 00m
                 assert!(!r.has_anomaly, "unexpected anomaly on row {i}");
             }
         }
+    }
+
+    // C13: a splice landing exactly on a week boundary attributes minutes
+    // to the starting week's view only, end to end through `build_week_view`
+    // (real `punches_in_range`-widened fetch, not just the unit-level
+    // `build_rows` call `b9` above already covers).
+    #[test]
+    fn c13_week_boundary_splice_end_to_end_lands_in_starting_weeks_view_only() {
+        let conn = new_test_db();
+        let week7 = wk(2026, 7); // Mon 2026-02-09 .. Sun 2026-02-15
+        let week8 = wk(2026, 8); // Mon 2026-02-16 .. Sun 2026-02-22
+        let sun = week7.dates()[6];
+        let next_mon = week8.dates()[0];
+        storage::insert_punch(&conn, PunchKind::Start, sun, t(23, 0), &TZ_UTC).unwrap();
+        storage::insert_punch(&conn, PunchKind::End, next_mon, t(0, 20), &TZ_UTC).unwrap();
+
+        let now = now_utc(2026, 2, 16, 1, 0);
+        let view7 =
+            build_week_view(&conn, week7, Local.from_utc_datetime(&now.naive_utc())).unwrap();
+        assert_eq!(
+            view7.rows[6].minutes, 80,
+            "Sunday row carries the spliced minutes"
+        );
+        assert!(!view7.rows[6].has_anomaly);
+        assert_eq!(view7.worked_minutes, 80);
+
+        let view8 =
+            build_week_view(&conn, week8, Local.from_utc_datetime(&now.naive_utc())).unwrap();
+        assert_eq!(
+            view8.rows[0].minutes, 0,
+            "the spliced stint never lands on next Monday"
+        );
+        assert!(
+            !view8.rows[0].has_anomaly,
+            "the orphan is consumed by the splice"
+        );
+        assert_eq!(view8.worked_minutes, 0);
+    }
+
+    // C14: `DbWeekData::worked_minutes` padding-day isolation (round 2
+    // finding 2) -- a real, unrelated (non-spliced) stint on the calendar
+    // date just outside the week's own 7 dates, but inside
+    // `worked_minutes`'s widened 9-day fetch, must appear in only its own
+    // week's figures, never leaked into or double-counted with a
+    // neighboring week. `c7`/`c8` above seed only fully-idle padding
+    // weeks and cannot distinguish the old `by_date.values().sum()` bug
+    // from the fix -- this fixture can.
+    #[test]
+    fn c14_worked_minutes_padding_day_isolation() {
+        let conn = new_test_db();
+        let week = wk(2026, 7); // Mon 2026-02-09 .. Sun 2026-02-15
+        let dates = week.dates();
+
+        // An ordinary, unrelated, fully self-contained stint on the
+        // padding day immediately BEFORE the week's own span (outside
+        // `week`'s own 7 dates, but inside `worked_minutes`'s widened
+        // 9-day fetch). No splice involved.
+        let padding_before = dates[0].pred_opt().unwrap(); // 2026-02-08
+        storage::insert_punch(&conn, PunchKind::Start, padding_before, t(9, 0), &TZ_UTC).unwrap();
+        storage::insert_punch(&conn, PunchKind::End, padding_before, t(11, 0), &TZ_UTC).unwrap(); // 120m
+
+        // Same on the padding day immediately AFTER the week's span.
+        let padding_after = dates[6].succ_opt().unwrap(); // 2026-02-16
+        storage::insert_punch(&conn, PunchKind::Start, padding_after, t(9, 0), &TZ_UTC).unwrap();
+        storage::insert_punch(&conn, PunchKind::End, padding_after, t(10, 30), &TZ_UTC).unwrap(); // 90m
+
+        // One ordinary in-week stint too, so the assertion isn't just "0
+        // in, 0 out" -- confirms the real week total is exactly the
+        // in-week figure, neither padding day's minutes folded in.
+        storage::insert_punch(&conn, PunchKind::Start, dates[2], t(9, 0), &TZ_UTC).unwrap(); // Wed
+        storage::insert_punch(&conn, PunchKind::End, dates[2], t(17, 0), &TZ_UTC).unwrap(); // 480m
+
+        let now = now_utc(2026, 2, 15, 20, 0);
+        let data = DbWeekData {
+            conn: &conn,
+            now_utc: now,
+        };
+        let this_week = data.worked_minutes(week);
+        assert_eq!(this_week, 480, "padding-day stints must not leak in");
+
+        // And the mirror check: each padding day's own week sees ITS
+        // stint, undiminished and un-doubled.
+        let week_before = WeekId::from_date(padding_before); // wk 2026-06
+        let week_after = WeekId::from_date(padding_after); // wk 2026-08
+        assert_eq!(data.worked_minutes(week_before), 120);
+        assert_eq!(data.worked_minutes(week_after), 90);
+
+        // Total across the three adjacent weeks equals the sum of the
+        // three independent stints exactly once each -- the direct
+        // anti-double-count assertion.
+        assert_eq!(
+            data.worked_minutes(week_before) + this_week + data.worked_minutes(week_after),
+            120 + 480 + 90
+        );
     }
 
     // C10
