@@ -489,6 +489,108 @@ SPEC.md and PLAN.md:
     issues" section pointing at it, replacing the old "Known
     limitations" section (which only ever listed the two now-fixed
     defects).
+61. **Boundary & context disclosure cues changeset scoped, then cut
+    down** (`docs/dev/specs/2026-09-20-boundary-context-cues.md`):
+    started as a fix for six of §1.2a's seven known issues (bullets
+    1,2,3,5,6,7), grouped because all six were the same root cause —
+    `status`/`week` computing correct state and rendering it without
+    disclosing context (a spliced stint's date span, which date a
+    punch was typed against, the carry-in component of a negative
+    figure) or without documenting an existing rule (the §4.3.1
+    splice-vs-flag gate, the lone-unclosed-`start` distinction).
+    Bullet 4 (anomaly remedy pointers) was excluded from the start —
+    different mechanism (advice generation, not disclosure of an
+    existing fact) and a different review failure mode. Bullets 3 and
+    5 were then also cut mid-review: their only proposed fix was
+    adding explanatory prose to README/`--help`, which doesn't help a
+    user confused *at the moment* they hit the gate in `status`/`week`
+    output, and a stronger in-band fix risked exposing internal gate
+    mechanics or drifting into bullet-4's remedy-pointer territory —
+    left undecided rather than shipped as a weak doc-only fix. Final
+    scope: bullets 1, 2, 6, 7 only, all render-only. Early drafts also
+    used single-character inline markers (`+1` concatenated onto a
+    stint's end time, `[~]` as a standalone anomaly-slot line) —
+    replaced with suffixes in the existing duration-parenthetical/
+    date-header slots after review found they broke the stint list's
+    fixed-width alignment and read as cryptic; the backdated
+    open-stint caption was similarly narrowed from "always show live
+    duration with a caption" to "show duration only for yesterday,
+    otherwise just `(unclosed)`" since an untethered hundreds-of-hours
+    figure is noise, not information.
+    Adversarial review (`docs/dev/plans/reports/boundary-context-cues-review.md`,
+    needs-rework, 6 findings) caught: an em dash in one example
+    violating SPEC.md §7's plain-ASCII rule; a wrong arithmetic result
+    in a second worked example (42h00m, not 52h00m); an over-broad
+    claim that the carry-in expansion applies to closed-week framing
+    too, when closed weeks show no fulfillment parenthetical at all
+    today (narrowed to current-week only); and an undeclared
+    user-visible gap — the receiving-date header suffix (§3) has no
+    `week`-side equivalent, a new status/week asymmetry the spec
+    didn't name (now declared explicitly, accepted as out of scope for
+    this changeset). All six findings folded into the spec directly.
+62. **boundary-context-cues changeset plan (phase 5/6) reworked after
+    review** (`docs/dev/plans/boundary-context-cues-plan.md`,
+    `docs/dev/plans/reports/boundary-context-cues-plan-review.md`,
+    needs-rework, 4 findings + 1 undeclared gap): the plan's original
+    2-task split (Task 1 `render.rs`, Task 2 `status.rs`) turned out
+    to be a planning error, not a real seam — Task 1 merged alone
+    under its own exclusive-file boundary would leave `status.rs`'s
+    two existing `status_week_line` call sites failing to compile,
+    since Rust has no optional positional arguments and Task 1 doesn't
+    own the file that calls it. Collapsed to a single task owning both
+    files. Also fixed: §3's planned extra "predecessor's predecessor"
+    punch fetch was unneeded scope creep (proved via `stint.rs`'s
+    splice-direction code that a plain `classify(prev_punches, now)`
+    already gives the correct signal, since the (prev,day) splice
+    direction never touches `day.open`); §4's day-age signal gained an
+    explicit delivery mechanism (a field on `StintLine`, mirroring
+    how §2's span flag is already delivered, instead of being left
+    unspecified). The review's undeclared-gap finding — §4's stint-line
+    caption change contradicts Day total's unconditional `(+ ongoing)`
+    wording for a stale backdated stint (one line says "ongoing," the
+    next says the duration is unreliable) — was put to the user rather
+    than silently accepted or fixed: chose to fix it, extending §4 to
+    give Day total a matching `(+ unclosed)` form for the
+    two-or-more-days-back case (spec updated, see its Status line).
+    Plan review went three more rounds after that (round 2, round 3,
+    round 4 — same reports directory): round 2 caught that the §3
+    splice check as planned would silently never fire (reusing the
+    already-spliced `day` variable in scope at `status.rs:344` instead
+    of a fresh `classify()` call) and that its `splice_candidate` gate
+    is module-private in `stint.rs` with no plan-stated visibility
+    fix; round 3 caught that the day-age value's plan-stated delivery
+    ("copied from the `StatusView` value at construction time") is an
+    impossible order of operations (`StintLine`s are built before
+    `StatusView` exists) plus a wrong test-extension target (5 of 6
+    new literals never pass through `render.rs`'s
+    `t33_every_produced_string_is_ascii`) and two smaller precision
+    gaps (`now`/`now_utc` naming, an unsourced `worked` figure); round
+    4 verified all of round 3's fixes against real source and found
+    nothing further — green. Net effect on the plan: collapsed from
+    its original 2-task split (a planning error — Task 1 alone would
+    leave `status.rs` not compiling) to 1 task; `splice_candidate`
+    widened to `pub(crate)` as a named, deliberate exception to
+    "no new public API"; the day-age value is one local hoisted before
+    stint-line construction and threaded into `build_stint_lines`'s
+    signature, stored separately on both `StintLine` and `StatusView`;
+    `worked` for §5's printed line is derived by subtraction inside
+    `status_week_line`, not passed as a second parameter. Round 4
+    (`.../boundary-context-cues-plan-review-round4.md`): green, no
+    further findings — plan locked.
+63. **boundary-context-cues Task 1 low-level plan** written
+    (`docs/dev/plans/boundary-context-cues-task-1-status-render.md`,
+    exact signatures for `status_week_line`, `splice_candidate`'s
+    `pub(crate)` widening, `StintLine`/`StatusView`'s new fields,
+    `build_stint_lines`'s new parameter). Two judgment calls made and
+    accepted rather than re-escalated: `open_stint_age` is
+    `Option<OpenStintAge>` on `StintLine` (`None` for completed
+    stints, since age is meaningless there — explicit over an
+    arbitrary always-populated default); a future-dated open stint
+    (`target_date > today`, never discussed by spec or the four review
+    rounds) falls into `TwoOrMoreDaysBack` via the `else` arm of the
+    today/yesterday/else chain — defensible (a future stint's "age" is
+    nonsensical either way, and `(unclosed)` avoids printing a
+    misleading duration) and cheap to change if a reviewer disagrees.
 
 ## Open questions (still need answers)
 
