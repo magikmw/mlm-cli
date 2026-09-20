@@ -78,16 +78,30 @@ pub fn status_week_line(
     owed_minutes: i64,
     fulfillment_minutes: i64,
     target_minutes: i64,
+    carry_in_minutes: i64,
     today: NaiveDate,
 ) -> String {
     let label = format!("Week {}:", week);
     let headline = week_headline(week, owed_minutes, today);
     let parenthetical = match week_framing(week, today) {
-        WeekFraming::Current => format!(
-            " (fulfillment {} / target {})",
-            format_minutes(fulfillment_minutes),
-            format_minutes(target_minutes)
-        ),
+        WeekFraming::Current => {
+            let worked_minutes = fulfillment_minutes - carry_in_minutes;
+            if carry_in_minutes == 0 {
+                format!(
+                    " (fulfillment {} / target {})",
+                    format_minutes(fulfillment_minutes),
+                    format_minutes(target_minutes)
+                )
+            } else {
+                format!(
+                    " (fulfillment {} = worked {} + carry-in {} / target {})",
+                    format_minutes(fulfillment_minutes),
+                    format_minutes(worked_minutes),
+                    format_minutes(carry_in_minutes),
+                    format_minutes(target_minutes)
+                )
+            }
+        }
         WeekFraming::Closed => String::new(),
     };
     format!(
@@ -217,16 +231,57 @@ mod tests {
     #[test]
     fn t5_f11_status_week_line_uses_todays_weekday() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 645, 1755, 2400, TODAY()),
+            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
             "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
         );
+    }
+
+    // ---- §5: carry-in inline ----
+
+    #[test]
+    fn t34_carry_in_zero_is_byte_identical_to_current_output() {
+        assert_eq!(
+            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
+            "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
+        );
+    }
+
+    #[test]
+    fn t35_carry_in_deficit_worked_example() {
+        assert_eq!(
+            status_week_line(wk(2026, 7), 645, 1755, 2400, -130, TODAY()),
+            "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)"
+        );
+    }
+
+    #[test]
+    fn t36_carry_in_fulfillment_goes_negative_worked_example() {
+        assert_eq!(
+            status_week_line(wk(2026, 7), 2520, -120, 2400, -300, TODAY()),
+            "Week 2026-07:  42h 00m left by end of Thursday (fulfillment -02h 00m = worked 03h 00m + carry-in -05h 00m / target 40h 00m)"
+        );
+    }
+
+    #[test]
+    fn t37_carry_in_surplus_worked_example() {
+        assert_eq!(
+            status_week_line(wk(2026, 7), 0, 2400, 2400, 50, TODAY()),
+            "Week 2026-07:  00h 00m left by end of Thursday (fulfillment 40h 00m = worked 39h 10m + carry-in 00h 50m / target 40h 00m)"
+        );
+    }
+
+    #[test]
+    fn t38_carry_in_gains_no_parenthetical_on_a_closed_week() {
+        let line = status_week_line(wk(2026, 2), 100, 999, 999, -130, TODAY());
+        assert_eq!(line, "Week 2026-02:  Total still owed: 01h 40m");
+        assert!(!line.contains("carry-in"));
     }
 
     // ---- 4.4 F10: past date shows plain total ----
 
     #[test]
     fn t6_f10_status_week_line_past_week_is_plain_total() {
-        let line = status_week_line(wk(2026, 2), 100, 999, 999, TODAY());
+        let line = status_week_line(wk(2026, 2), 100, 999, 999, 0, TODAY());
         assert_eq!(line, "Week 2026-02:  Total still owed: 01h 40m");
         for weekday in [
             "Monday",
@@ -573,8 +628,9 @@ mod tests {
             week_headline(wk(2026, 6), 0, TODAY()),
             week_headline(wk(2026, 6), -50, TODAY()),
             week_headline(wk(2026, 7), -150, TODAY()),
-            status_week_line(wk(2026, 7), 645, 1755, 2400, TODAY()),
-            status_week_line(wk(2026, 2), 100, 999, 999, TODAY()),
+            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
+            status_week_line(wk(2026, 2), 100, 999, 999, 0, TODAY()),
+            status_week_line(wk(2026, 7), 645, 1755, 2400, -130, TODAY()),
         ];
         for h in headlines {
             assert!(h.is_ascii(), "{h}");
