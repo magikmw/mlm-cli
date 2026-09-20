@@ -13,9 +13,9 @@ spec.
 
 ## Current state
 
-All commands (`start`, `stop`, `note`, `status`, `week`, `week
-target`) are implemented, tested, and match `docs/dev/SPEC.md`. Remaining
-stretch ideas (not implemented):
+All commands (`start`, `stop`, `note`, `delete`, `status`, `week`,
+`week target`) are implemented, tested, and match `docs/dev/SPEC.md`.
+Remaining stretch ideas (not implemented):
 
 - dashboard layout/widgets (ratatui: `Chart`/`Sparkline`/`BarChart`)
 - shell prompt integration — needs a fast, side-effect-free "status"
@@ -44,15 +44,18 @@ real logic instead of re-deriving it — new top-level modules go in
 
 ## Documentation
 
-`docs/dev/SPEC.md` and `docs/dev/NOTES.md` are the only live docs —
-they must be self-contained. Never send a reader (user or agent) from
-`--help` text, `README.md`, or `SPEC.md`/`NOTES.md` themselves out to
-`docs/dev/plans/`, `docs/dev/specs/`, or any other in-dev working doc
-for behavior detail. When a changeset's working spec/plan/report
-settles something real, fold the actual content into `SPEC.md` (or
-`NOTES.md` for process/background) directly, then archive the working
-doc (banner it as historical, per `docs/dev/README.md`) — don't leave
-it as a link target.
+`docs/dev/SPEC.md` and `docs/dev/NOTES.md` are the only live docs
+under `docs/dev/` (`docs/SIGNING.md` is separately live, for release
+signing) — SPEC.md/NOTES.md must be self-contained. Never send a
+reader (user or agent) from `--help` text, `README.md`, or
+`SPEC.md`/`NOTES.md` themselves out to `docs/dev/plans/`,
+`docs/dev/specs/`, or any other in-dev working doc **for behavior
+detail**. When a changeset's working spec/plan/report settles
+something real, fold the actual content into `SPEC.md` (or `NOTES.md`
+for process/background) directly, then archive the working doc
+(banner it as historical — see `docs/dev/README.md` for the archive
+convention itself; that meta-reference is process, not behavior
+detail, so it's not what this rule forbids).
 
 ## Conventions
 
@@ -66,6 +69,7 @@ it as a link target.
 ## Verifying changes
 
 ```sh
+cargo fmt
 cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
@@ -102,10 +106,12 @@ real logic modules instead of re-deriving them), any new top-level
 module goes in `src/lib.rs`'s `pub mod` list, not `src/main.rs`'s —
 `main.rs` is just the thin CLI entry point now.
 
-## Pre-commit quality gate (CRAP-ish: complexity + coverage)
+## Pre-commit quality gate (CRAP-ish: format + complexity + coverage)
 
-There's a git hook that blocks commits on two things:
+There's a git hook that blocks commits on three things:
 
+- **Formatting**: `cargo fmt --check` must be clean — run `cargo fmt`
+  and re-stage if it fails. No threshold to tune.
 - **Complexity**: any function whose cognitive complexity (via
   `cargo clippy`'s `clippy::cognitive_complexity` lint) exceeds the
   threshold in `clippy.toml` (`cognitive-complexity-threshold`,
@@ -117,10 +123,10 @@ There's a git hook that blocks commits on two things:
   up automatically. A drop fails the commit. The baseline is never
   lowered automatically.
 
-Both checks degrade to a clean pass (not an error) when there's
+All three checks degrade to a clean pass (not an error) when there's
 nothing to measure yet — an empty/near-empty codebase, or missing
-optional tooling (`cargo-llvm-cov`, `jq`) just produces a `SKIP` line
-for that check rather than blocking the commit.
+optional tooling (`rustfmt`, `cargo-llvm-cov`, `jq`) just produces a
+`SKIP` line for that check rather than blocking the commit.
 
 One-time setup per clone (hooks live in `.githooks/`, not `.git/hooks`,
 so this has to be opted into explicitly):
