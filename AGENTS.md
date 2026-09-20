@@ -42,6 +42,18 @@ real logic instead of re-deriving it — new top-level modules go in
 - `src/main.rs` — CLI entry point: parses args, dispatches, exit code
 - `examples/seed_test_data.rs` — dev-only test-data generator (below)
 
+## Documentation
+
+`docs/dev/SPEC.md` and `docs/dev/NOTES.md` are the only live docs —
+they must be self-contained. Never send a reader (user or agent) from
+`--help` text, `README.md`, or `SPEC.md`/`NOTES.md` themselves out to
+`docs/dev/plans/`, `docs/dev/specs/`, or any other in-dev working doc
+for behavior detail. When a changeset's working spec/plan/report
+settles something real, fold the actual content into `SPEC.md` (or
+`NOTES.md` for process/background) directly, then archive the working
+doc (banner it as historical, per `docs/dev/README.md`) — don't leave
+it as a link target.
+
 ## Conventions
 
 - Keep platform paths going through `directories`, don't hardcode

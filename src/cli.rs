@@ -62,8 +62,7 @@ pub struct PunchArgs {
     /// Date to record against: YYYY-MM-DD, or `-N` for N days before
     /// today (e.g. `-1` = yesterday). Defaults to today. Must come
     /// before NOTE text on the command line, or it is silently absorbed
-    /// into the note body instead of being parsed as this flag -- see
-    /// docs/dev/specs/2026-09-13-backdated-punches.md §2.1.
+    /// into the note body instead of being parsed as this flag.
     #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
     pub date: Option<String>,
 
@@ -83,8 +82,7 @@ pub struct PunchArgs {
 pub struct NoteArgs {
     /// Date to record against: YYYY-MM-DD, or `-N` for N days before
     /// today (e.g. `-1` = yesterday). Defaults to today. Must come
-    /// before NOTE text on the command line -- see
-    /// docs/dev/specs/2026-09-13-backdated-punches.md §2.1.
+    /// before NOTE text on the command line.
     #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
     pub date: Option<String>,
 

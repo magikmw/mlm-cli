@@ -51,7 +51,6 @@ later:
 - `[!]` anomaly flags describe the problem but not how to fix it
 - An open stint's live duration is measured against real wall-clock
   time, so a backdated punch can show an alarming-looking number
-- `start --help`/`stop --help` cite an internal repo-only doc path
 - `status`'s "fulfillment" can show a confusing negative number from
   carry-in debt with no explanation on that screen
 
@@ -126,7 +125,7 @@ the commands that produce output; `delete note`/`delete punch` are a
 narrow exception too (see below) — a `status` after punching in/out is
 still how you confirm things landed correctly.
 
-All commands include 1 character aliases for quick use.
+Every command has a 1 character alias, except `delete` (`del`).
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
 
 ### `mlm start|s [TIME] [NOTE...] [-d/--date DATE]`
@@ -153,7 +152,7 @@ after it, including a later `--date` flag — `mlm start 09:00 wrapped
 up --date -1` silently records `--date -1` as part of the note text
 instead of parsing it as the date flag.
 
-### `mlm stop|s [TIME] [NOTE...] [-d/--date DATE]`
+### `mlm stop|e [TIME] [NOTE...] [-d/--date DATE]`
 
 Record an end punch for today, or another day with `--date`. Same
 argument shape and TIME-required-when-backdated rule as `start`

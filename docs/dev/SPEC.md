@@ -39,9 +39,8 @@ Deliberately out of scope: future features not committed to, not
 things known to be broken or confusing today. See §1.2a for that.
 
 - Editing a punch/note after entry (deleting is implemented — `mlm
-  delete note|punch`, see
-  `docs/dev/specs/2026-09-13-delete-punches-notes.md` — the correction
-  path is delete-then-recreate, not in-place edit).
+  delete note|punch`; the correction path is delete-then-recreate, not
+  in-place edit).
 - Project tagging on notes/stints.
 - Terminal dashboard (ratatui) — deps are in, UI is not.
 - Shell prompt integration.
@@ -50,13 +49,11 @@ things known to be broken or confusing today. See §1.2a for that.
 - `+N`/`-N` relative week notation for `week`'s week-id argument.
   (`status`'s `DATE` argument's own `-N` shorthand, and logging a
   punch/note against a date other than today, are no longer non-goals —
-  both are implemented; see
-  `docs/dev/specs/2026-09-13-backdated-punches.md`.)
+  both are implemented.)
 
 Stints spanning midnight, and a same-instant `end`/`start` boundary
 between two real stints, were both non-goals through this point in the
-project's history — both are now fixed; see §4.3 and
-`docs/dev/specs/2026-09-19-boundary-stint-pairing.md`.
+project's history — both are now fixed; see §4.3.
 
 ### 1.2a Known issues to revisit
 
@@ -66,9 +63,8 @@ issue" reads very differently to a user hitting it than a "non-goal"
 does: one is "we haven't built this yet," the other is "this works,
 but expect a rough edge here." Surfaced by a
 first-time-user UX pass run against the boundary-stint-pairing
-changeset (`docs/dev/plans/reports/boundary-stint-pairing-ux-check.md`
-has full transcripts); several predate that changeset and were simply
-never written down before.
+changeset; several predate that changeset and were simply never
+written down before.
 
 - A cross-midnight completed stint (e.g. `23:30-00:45`) has no visual
   cue that it spans two calendar days — legible once you notice
@@ -93,9 +89,6 @@ never written down before.
   "now" — for a backdated punch (`-d`, a first-class feature) this can
   read as alarming ("443h 06m, ongoing") with no caption clarifying
   it's elapsed-since-real-now, not a computed total or a bug.
-- `start --help`/`stop --help` cite an internal repo-only doc path
-  (`docs/dev/specs/2026-09-13-backdated-punches.md §2.1`) that a user
-  who only has the installed binary can't open.
 - `status`'s "fulfillment" line can show a confusing negative number
   driven by carry-in debt from a prior week, with no "carry-in" context
   on that screen — only `week`'s separate output explains it.
@@ -382,10 +375,8 @@ data and gives wrong answers otherwise. Algorithm:
    genuine boundary between two real stints — `stop 09:00` then
    `start 09:00` back to back, no gap — close the *preceding* open
    stint correctly instead of zero-pairing the tied instant and
-   silently dropping that stint's time (fixed in
-   `docs/dev/specs/2026-09-19-boundary-stint-pairing.md` §3; every
-   group of size 1, i.e. no tie at all, reduces to the plain LIFO scan
-   below unchanged).
+   silently dropping that stint's time (every group of size 1, i.e.
+   no tie at all, reduces to the plain LIFO scan below unchanged).
 3. Outside a tied group, an `end` simply pops the *most recently
    pushed* unmatched `start` and pairs with it, forming a stint.
 
@@ -429,12 +420,31 @@ algorithm never looks past the literal adjacent date. For two literal
 adjacent calendar dates `A` and `A+1`: if `A`'s own
 classification leaves exactly one trailing open `start`, and `A+1`'s
 own classification has exactly one orphaned `end` that is also `A+1`'s
-chronologically first punch of the date, they're spliced into one
-completed stint — `A`'s `start` paired with `A+1`'s `end`, its minutes
-landing on `A` (the day the stint started), not `A+1`. Neither date
-shows an anomaly for it once spliced. See
-`docs/dev/specs/2026-09-19-boundary-stint-pairing.md` §4 for the full
-rule and `classify_at`'s exact contract.
+chronologically first punch of the date (sorted by the same
+`(at_utc, kind, id)` order step 1 above uses for tie-breaks — literally
+punch index 0 for that date, not merely "the date's only orphan"),
+they're spliced into one completed stint — `A`'s `start` paired with
+`A+1`'s `end`, its minutes landing on `A` (the day the stint started),
+not `A+1`. Neither date shows an anomaly for it once spliced.
+
+`classify()` itself stays the pure, single-date primitive. A second
+function implements the splice:
+
+```rust
+pub fn classify_at(
+    prev_punches: &[Punch],
+    punches: &[Punch],
+    next_punches: &[Punch],
+    now: DateTime<Utc>,
+) -> DayStints
+```
+
+Classifies `punches` (one calendar date) same as `classify()`, then
+resolves an unambiguous midnight-spanning stint against its immediate
+neighbors per the rule above. `prev_punches`/`next_punches` are the
+literal adjacent calendar dates' punches (pass `&[]` when a neighbor
+has no data — an empty slice already classifies correctly as "nothing
+open, nothing orphaned").
 
 Anything short of that exact 1:1, first-punch shape is left completely
 alone, rendered exactly as an ordinary open stint / orphaned end today
@@ -750,8 +760,7 @@ error (§6.1) still prints its message to stderr as usual. `status` and
 punch` are a narrow, deliberate exception to the write-command-silence
 rule above rather than a repeal of it — list mode prints that date's
 numbered entries (or `nothing to delete for <date>.` when there are
-none), and a successful delete prints a ready-to-run recreate command
-(`docs/dev/specs/2026-09-13-delete-punches-notes.md` §5).
+none), and a successful delete prints a ready-to-run recreate command.
 
 ## 8. User flows (test basis)
 
