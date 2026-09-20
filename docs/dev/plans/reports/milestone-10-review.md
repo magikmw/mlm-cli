@@ -1,5 +1,8 @@
 # Milestone 10 — Independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent pass, not the implementer. Scope: `src/status.rs`,
 `src/cli.rs`, `src/main.rs`, `tests/status_cli.rs` against
 `plans/milestone-10-status-command.md`, the implementer's own report,

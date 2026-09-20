@@ -1,5 +1,8 @@
 # Milestone 7 completion report — `start`, `stop`, `note` commands
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 - `src/cli.rs`: replaced the scaffold's `Command::Start { note }`,

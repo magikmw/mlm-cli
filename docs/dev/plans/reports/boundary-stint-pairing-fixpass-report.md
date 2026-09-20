@@ -1,5 +1,8 @@
 # Boundary stint pairing — fix pass report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Small, bounded fix pass addressing findings 3, 4, and 5 from
 `docs/dev/plans/reports/final-review.md`, plus one stale comment found
 during a follow-up `SPEC.md` doc sweep (originally flagged in finding 2

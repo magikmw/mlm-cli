@@ -1,5 +1,8 @@
 # Adversarial review — required-by-day pace hint (decision 52)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Scope: SPEC.md §2.4 (Daily target / Required-by-day bullets), §5's note
 after the worked example, §7.1 (status sample + pace-hint/est.-EOD
 bullets), F9b, NOTES.md decision 52. Adjacent files read for

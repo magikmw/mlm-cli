@@ -1,5 +1,8 @@
 # Independent adversarial review: wave-3 integration swap (Milestones 5/6)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewed commit `f8a01c9` on branch `integration-swap`, against
 `plans/reports/integration-swap-report.md`, `PLAN.md` contracts 8/9,
 `src/storage.rs`, `src/date.rs`, `src/stint.rs`, `src/week.rs`.

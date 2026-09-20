@@ -1,5 +1,8 @@
 # Milestone 9 — Shared rendering helpers (implementation plan)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Status**: plan only, no code written. Ready to hand to a TDD subagent.
 
 **Spec basis**: SPEC.md §7.1, §7.2, §7.3, §4.2, §5; NOTES.md decisions

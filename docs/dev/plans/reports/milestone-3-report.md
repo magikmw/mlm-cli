@@ -1,5 +1,8 @@
 # Milestone 3 — Schema and migrations: completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Branch**: `milestone-3`. **Files touched**: `src/db.rs` (full rewrite),
 `Cargo.toml` (`[dev-dependencies]` only), `Cargo.lock` (dep resolution).
 Nothing else — `cli.rs`, `time.rs`, `main.rs` untouched.

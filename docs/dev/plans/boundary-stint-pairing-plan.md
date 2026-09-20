@@ -1,5 +1,8 @@
 # Plan: boundary stint pairing
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Spec**: `docs/dev/specs/2026-09-19-boundary-stint-pairing.md` (locked,
 two adversarial review rounds folded in). This plan is scope-of-work
 only — no algorithm detail beyond what the spec already pins.

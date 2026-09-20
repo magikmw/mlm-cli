@@ -1,5 +1,8 @@
 # Boundary stint pairing — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
+
 **Baseline**: written against `v0.3.2`.
 
 **Status**: locked — two adversarial review rounds folded in:

@@ -1,5 +1,8 @@
 # Milestone 9 — Independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent pass, not the implementer. Scope: `src/render.rs`
 against `plans/milestone-9-shared-rendering.md`, the implementer's own
 report, SPEC.md §7.1-7.3, NOTES.md decisions 18/25/26/32, and PLAN.md

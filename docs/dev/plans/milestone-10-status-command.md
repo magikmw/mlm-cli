@@ -1,5 +1,8 @@
 # Milestone 10 — `status` command and rendering
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Implementation plan. Detailed enough that a TDD subagent can write tests
 first without further clarification.
 

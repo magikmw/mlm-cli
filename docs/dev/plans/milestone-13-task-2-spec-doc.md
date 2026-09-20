@@ -1,5 +1,8 @@
 # Milestone 13 — Task 2 low-level plan: `docs/dev/SPEC.md` §2.3 and `docs/dev/NOTES.md` decision 35 wording
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Scope:** Documentation only. Two files, one spot each: the `notes.body`
 row inside the `**notes**` table in `docs/dev/SPEC.md` §2.3 ("Tables"),
 and decision 35 ("Note content policy") in `docs/dev/NOTES.md`'s

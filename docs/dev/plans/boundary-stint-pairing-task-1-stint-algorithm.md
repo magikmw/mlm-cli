@@ -1,5 +1,8 @@
 # Task 1 low-level plan: `src/stint.rs` — tie-break reorder + `classify_at`
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 ## What was read for this plan
 
 - `docs/dev/plans/boundary-stint-pairing-plan.md` (full) — changeset

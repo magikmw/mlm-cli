@@ -1,5 +1,8 @@
 # Milestone 11 — Independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent pass, not the implementer. Scope: `src/week_view.rs`
 (the only new module) and `src/main.rs`'s dispatch arm, against
 `plans/milestone-11-week-command.md`, the implementer's own report

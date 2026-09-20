@@ -1,5 +1,8 @@
 # Milestone 11 — `week` command and rendering
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Status**: design plan, ready to hand to a TDD subagent.
 **Spec sections**: SPEC.md §3.6, §7.2, §7.3, §4.2, §2.4, §6.2, §6.3, plus
 flows F6, F8b, E13, E3.

@@ -1,5 +1,8 @@
 # Milestone 14, Task 2 — low-level plan: `src/cli.rs` `delete` CLI surface
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Scope:** `src/cli.rs` only. Clap-level plumbing: new `Command::Delete`
 variant, new `DeleteArgs`/`DeleteTarget`/`DeleteEntryArgs` types, their
 doc comments/attributes, and their tests. No storage/commands/main

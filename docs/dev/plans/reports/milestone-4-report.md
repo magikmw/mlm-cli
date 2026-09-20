@@ -1,5 +1,8 @@
 # Milestone 4 report — Punch and note storage
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 `src/storage.rs` (new), registered via `mod storage;` in `src/main.rs`.

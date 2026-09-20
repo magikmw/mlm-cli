@@ -1,5 +1,8 @@
 # Review: 2026-09-19-boundary-stint-pairing.md
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Adversarial review against v0.3.2 source (`src/stint.rs`, `src/status.rs`,
 `src/week_view.rs`, `src/storage.rs`, `docs/dev/SPEC.md`, `docs/dev/NOTES.md`,
 `README.md`).

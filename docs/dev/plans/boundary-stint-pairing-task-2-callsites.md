@@ -1,5 +1,8 @@
 # Task 2 low-level plan: call-site rewiring (`src/status.rs`, `src/week_view.rs`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Read in full before writing this plan**:
 - `docs/dev/plans/boundary-stint-pairing-plan.md` (changeset plan, all
   317 lines)

@@ -1,5 +1,8 @@
 # Milestone 13 — Note-body newline normalization (implementation plan)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Goal:** Extend the existing note-body trim-before-storage step so
 that any embedded `\r`/`\n` in a note body is collapsed to a single
 space, everywhere a note is written (`note` command and the inline

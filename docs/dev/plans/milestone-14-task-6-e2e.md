@@ -1,5 +1,8 @@
 # Milestone 14 — Task 6 low-level plan: e2e smoke test
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Scope:** `.github/workflows/ci.yml` only. Extends the existing `e2e
 smoke test (seed + status + week)` step's shell script. No new file,
 no Rust test file, no changes to any other file. This plan proposes

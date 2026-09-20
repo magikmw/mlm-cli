@@ -1,5 +1,8 @@
 # Milestone 13, Task 1 — low-level implementation plan
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 `src/storage.rs`: normalize embedded newlines in note bodies.
 
 **Parent plan:** `docs/dev/plans/milestone-13-note-body-normalization.md`

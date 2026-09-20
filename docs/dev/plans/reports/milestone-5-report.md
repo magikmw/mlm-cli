@@ -1,5 +1,8 @@
 # Milestone 5 — Stint pairing: completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Branch**: `milestone-5` · **Files touched**: `src/stint.rs` (new),
 `src/main.rs` (one `mod stint;` line). Nothing else.
 

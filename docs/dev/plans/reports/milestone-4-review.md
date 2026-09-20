@@ -1,5 +1,8 @@
 # Milestone 4 review — Punch and note storage
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Independent adversarial review. Verified against SPEC.md §2.1/§2.3/§6.1,
 PLAN.md's pinned interface contracts (8, 10), the merged real APIs in
 `src/db.rs`/`src/time.rs`/`src/date.rs`, and `src/stint.rs`'s Punch/PunchKind

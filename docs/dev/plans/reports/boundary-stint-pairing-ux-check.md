@@ -1,5 +1,8 @@
 # Boundary stint pairing — first-time-user UX check
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Role-played as a fresh user of `mlm`, built from `cargo build --release`, driving the
 binary directly (`./target/release/mlm`) against scratch SQLite DBs
 (`MLM_DB_PATH=/tmp/mlm-ux-check.db` and a second `/tmp/mlm-ux-check2.db`). No spec/plan

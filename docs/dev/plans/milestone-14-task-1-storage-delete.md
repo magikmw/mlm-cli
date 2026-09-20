@@ -1,5 +1,8 @@
 # Milestone 14 — Task 1 low-level plan: `storage.rs` delete-by-id
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Scope:** `src/storage.rs` only. Implements `delete_punch`/`delete_note`
 plus the new `StorageError::NotFound` variant and its tests. No other
 file changes. This is a plan, not a diff — no code has been written or

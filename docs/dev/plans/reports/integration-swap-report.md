@@ -1,5 +1,8 @@
 # Wave-3 integration swap: Milestones 5 and 6
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Swapped the wave-1 test-only fixture stand-ins for the real wave-2 types,
 per PLAN.md contracts 8 (Punch/PunchKind) and 9 (WeekId).
 

@@ -1,5 +1,8 @@
 # Milestone 3 — independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Reviewer**: fresh read of `src/db.rs` @ `433b456` (branch `milestone-3`),
 against `plans/milestone-3-schema-migrations.md`, `PLAN.md` (Milestone 3 +
 contracts 7/8/10), and `SPEC.md` §2.1/§2.2/§2.3/§6.1/§6.2. Nothing was

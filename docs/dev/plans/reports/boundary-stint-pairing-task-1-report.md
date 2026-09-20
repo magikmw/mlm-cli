@@ -1,5 +1,8 @@
 # Task 1 completion report: `src/stint.rs` — tie-break reorder + `classify_at`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Branch**: `worktree-agent-a735aac3dcc2ebf66`, rebased onto `boundary-stint-pairing`'s
 tip (`d24e2de`) before starting — the worktree was created slightly behind
 that branch (at `50e3e6a`, its parent), so a `git rebase boundary-stint-pairing`

@@ -1,5 +1,8 @@
 # Milestone 9 — Shared rendering helpers: completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 New module `src/render.rs` (declared via `mod render;` in `src/main.rs`,

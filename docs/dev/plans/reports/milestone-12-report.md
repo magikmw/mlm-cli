@@ -1,5 +1,8 @@
 # Milestone 12 — Documentation: completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## Scope
 
 Documented the real, final CLI behavior (`start`, `stop`, `note`, `status`,

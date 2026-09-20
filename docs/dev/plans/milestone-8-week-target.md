@@ -1,5 +1,8 @@
 # Milestone 8 — `mlm week target [WEEK_ID] DURATION`
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Implementation plan, written to be handed straight to a TDD subagent.
 Spec sources: SPEC.md §3.7 (command), §3.6 (WEEK_ID forms), §4.2
 (DURATION input grammar), §2.3 (`week_targets` table), §6.1 (hard

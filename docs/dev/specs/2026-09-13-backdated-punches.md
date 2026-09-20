@@ -1,5 +1,8 @@
 # Backdated punches — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
+
 **Baseline**: written against `v0.1.5`.
 
 **Status**: implemented — see

@@ -1,5 +1,8 @@
 # Milestone 4 — Punch and note storage (implementation plan)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Status**: design only, written against PLAN.md's pinned interface contracts.
 Milestones 1 (TIME parsing) and 3 (schema) are being designed in parallel, so
 everything this plan needs from them is stated as an **assumption** in §0 and

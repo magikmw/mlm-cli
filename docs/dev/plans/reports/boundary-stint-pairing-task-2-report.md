@@ -1,5 +1,8 @@
 # Task 2 completion report: call-site rewiring (`src/status.rs`, `src/week_view.rs`)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Branch**: `worktree-agent-a881fe57d02eaa8c4`. The worktree was behind
 `boundary-stint-pairing`'s current tip (at `50e3e6a`, its grandparent) when
 started — `git rebase boundary-stint-pairing` was run first (fast-forward,

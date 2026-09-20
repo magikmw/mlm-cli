@@ -1,5 +1,8 @@
 # Milestone 14 — Delete punches/notes (implementation plan)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Goal:** Add `mlm delete note|punch [ID] [--date DATE]` — list mode
 (no `ID`, numbers that date's entries `1..N`) and delete mode (`ID`
 given, deletes by ephemeral position and echoes a ready-to-run recreate

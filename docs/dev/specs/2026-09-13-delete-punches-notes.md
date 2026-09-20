@@ -1,5 +1,8 @@
 # Delete punches/notes — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
+
 **Baseline**: written against `v0.2.0`.
 
 **Status**: draft — adversarially reviewed twice, once directly against

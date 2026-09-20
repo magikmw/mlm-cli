@@ -1,5 +1,8 @@
 # Cross-cutting verification report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Wave-5 verification-only pass over the merged `mlm` codebase (branch
 `cross-cutting-verification`). No new behavior was added; findings below
 per PLAN.md's "Cross-cutting concerns" section.

@@ -1,5 +1,8 @@
 # Milestone 2 — Calendar date and week-id parsing/formatting
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Implementation plan.** Detailed enough for a TDD subagent to start writing
 tests with no further clarification. Unlike `PLAN.md`, concrete types and
 signatures *are* in scope here.

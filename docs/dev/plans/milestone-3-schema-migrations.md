@@ -1,5 +1,8 @@
 # Milestone 3 — Schema and migrations: implementation plan
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Status**: ready to hand to a TDD subagent.
 **Spec basis**: SPEC.md §2.1, §2.2, §2.3, §6.1, §6.2, §8.2 (E6).
 **Plan basis**: PLAN.md "Milestone 3", interface contracts 1 and 7.

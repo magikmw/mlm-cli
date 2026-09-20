@@ -1,5 +1,8 @@
 # Final review — boundary stint pairing (`v0.3.2` → `boundary-stint-pairing`)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Reviewed**: `git diff v0.3.2...boundary-stint-pairing`, every changed
 line, plus a by-hand build-and-run of the release binary against the
 spec's worked examples.

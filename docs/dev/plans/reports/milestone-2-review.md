@@ -1,5 +1,8 @@
 # Milestone 2 — independent adversarial code review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent agent (did not write the code). Target: commit
 `9953b37` on branch `milestone-2` (`src/date.rs`, `src/main.rs` `mod date;`).
 Sources of truth read: `plans/milestone-2-date-week.md`,

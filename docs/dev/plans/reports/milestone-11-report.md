@@ -1,5 +1,8 @@
 # Milestone 11 — `week` command and rendering — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 A new module, `src/week_view.rs`, containing:

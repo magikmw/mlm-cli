@@ -1,5 +1,8 @@
 # Milestone 1 — independent adversarial code review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent pass, did not write the code. Read against
 `plans/milestone-1-time-duration.md`, `plans/reports/milestone-1-report.md`,
 `PLAN.md` §"Milestone 1", and SPEC.md §3.1/§4.1/§4.2/§6.1.

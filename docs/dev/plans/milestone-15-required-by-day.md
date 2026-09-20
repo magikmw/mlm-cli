@@ -1,5 +1,8 @@
 # Milestone 15 — carry-inclusive required-by-day pace hint
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 ## Goal
 
 `status`'s daily pace hint (the "X left to `<required>` required by end of

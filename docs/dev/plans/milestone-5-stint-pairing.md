@@ -1,5 +1,8 @@
 # Milestone 5 — Stint pairing (implementation plan)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Spec basis**: SPEC.md §4.3 (nearest-match/LIFO pairing + named edge
 cases), §1.3 (stint / open stint definitions), §2.4 (orphaned `end`
 contributes nothing to totals; open-stint live minutes never enter

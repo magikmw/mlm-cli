@@ -1,5 +1,8 @@
 # Milestone 10 — `status` command and rendering — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 - **`src/status.rs`** (new module): the full three-layer split from the

@@ -1,5 +1,8 @@
 # Milestone 7 — `start`, `stop`, `note` commands
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Implementation plan for the three write commands. Written to be handed
 straight to a TDD subagent: every decision that would otherwise need a
 clarifying question is made here, and the ones that genuinely need a

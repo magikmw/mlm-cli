@@ -1,5 +1,8 @@
 # Milestone 12 — Independent adversarial review (documentation)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewed fresh, adversarially, against `plans/reports/milestone-12-report.md`,
 PLAN.md's Milestone 12 acceptance criteria, `README.md`, `AGENTS.md`, and
 `src/cli.rs`. Built the binary, ran `cargo build` / `cargo test` / `cargo

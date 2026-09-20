@@ -1,5 +1,8 @@
 # Release pipeline setup report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Date: 2026-09-13
 
 ## Summary

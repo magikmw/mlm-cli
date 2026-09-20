@@ -1,5 +1,8 @@
 # Independent adversarial review: cross-cutting verification pass (wave 5)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewed branch `cross-cutting-verification` at commit `2240c53` against
 `plans/reports/cross-cutting-verification-report.md`'s claims for the 7
 cross-cutting properties in `PLAN.md`. Verification performed independently

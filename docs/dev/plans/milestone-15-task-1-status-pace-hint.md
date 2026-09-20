@@ -1,5 +1,8 @@
 # Milestone 15, Task 1 — low-level plan: carry-inclusive required-by-day in `status`
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 ## What was read
 
 - `docs/dev/plans/milestone-15-required-by-day.md` (full) — the changeset

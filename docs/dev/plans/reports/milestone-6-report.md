@@ -1,5 +1,8 @@
 # Milestone 6 — Week accounting: completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Branch: `milestone-6`. Scope touched: new `src/week.rs` + one `mod week;`
 line in `src/main.rs`. Nothing else.
 

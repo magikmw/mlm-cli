@@ -1,4 +1,7 @@
 # Milestone 14, Task 3 — low-level plan: `src/commands.rs` list/delete
+
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 handlers and the recreate-echo
 
 **Scope:** `src/commands.rs` only. New `delete_note`/`delete_punch`

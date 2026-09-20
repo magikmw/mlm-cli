@@ -1,5 +1,8 @@
 # mlm — implementation plan
 
+> **Archived — historical implementation plan, fully executed.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Scope of work only: no code, no pseudocode, no concrete function/type/SQL
 names. Each milestone below is meant to be handed to a TDD subagent
 (tests first, implement to green) followed by an independent adversarial

@@ -1,5 +1,8 @@
 # Milestone 8 — `week target` command — independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewed fresh against SPEC.md §3.7/§3.6/§4.2/§2.3/§6.1, PLAN.md's
 contract 7 and the Milestone 8 canonical-shape guidance, and the
 already-merged real APIs in `src/date.rs`, `src/time.rs`, `src/db.rs`.

@@ -1,5 +1,8 @@
 # Milestone 1 — Time-of-day and duration parsing/formatting
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Implementation plan for a TDD subagent. Scope, per PLAN.md: replace
 `src/time.rs`'s placeholder with the real `TIME`/`DURATION` parsers and
 the canonical duration formatter. Pure string-in/value-out logic — no

@@ -1,5 +1,8 @@
 # Milestone 1 — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Scope: `src/time.rs` only. No other file touched (`src/main.rs` already
 had `mod time;`, so no change was needed there).
 

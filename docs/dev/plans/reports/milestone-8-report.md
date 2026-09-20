@@ -1,5 +1,8 @@
 # Milestone 8 — `week target` command — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 ## What was implemented
 
 - `src/cli.rs`: added `Command::Week(WeekArgs)`, `WeekArgs`, `WeekAction`,

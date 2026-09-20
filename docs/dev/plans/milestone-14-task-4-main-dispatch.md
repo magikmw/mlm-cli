@@ -1,5 +1,8 @@
 # Milestone 14, Task 4 — low-level plan: `src/main.rs` dispatch wiring
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 **Scope:** `src/main.rs` only. Add one new `match` arm to `dispatch()`
 routing `Command::Delete` to Task 3's `commands::delete_note`/
 `commands::delete_punch` handlers, plus whatever `use` adjustments that

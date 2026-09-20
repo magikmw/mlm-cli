@@ -1,5 +1,8 @@
 # Final review — milestone-15 "carry-inclusive required-by-day pace hint"
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Scope: `git diff 03b98b2..HEAD` (baseline v0.3.1 → merged HEAD), commits
 `7d40cdc` (status: carry-inclusive required-by-day pace hint) and
 `a1d94cf` (docs: spec milestone-15) under merge `790d985`. Full

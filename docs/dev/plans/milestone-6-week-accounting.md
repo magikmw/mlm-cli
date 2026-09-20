@@ -1,5 +1,8 @@
 # Milestone 6 — Week accounting (target, carry, fulfillment)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
+
 Implementation plan for a TDD subagent. Tests first, implement to green.
 Everything below is concrete enough to start writing tests immediately;
 where a decision is genuinely open it is called out in §8 (Risks) with a

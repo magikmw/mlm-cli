@@ -1,4 +1,7 @@
 # Milestone 14 — Task 5 low-level plan: `docs/dev/SPEC.md` §7.4 +
+
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 `docs/dev/NOTES.md` + `README.md`
 
 **Scope:** Documentation only, three files: `docs/dev/SPEC.md` §7.4,

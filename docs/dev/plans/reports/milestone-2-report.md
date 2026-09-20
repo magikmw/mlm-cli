@@ -1,5 +1,8 @@
 # Milestone 2 — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Branch**: `milestone-2`. **Files touched**: `src/date.rs` (new),
 `src/main.rs` (added `mod date;` only). No other module touched.
 

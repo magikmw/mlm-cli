@@ -1,5 +1,8 @@
 # Milestone 7 adversarial review — `start`, `stop`, `note` commands
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: independent read of the diff (`git show --stat HEAD` confirms
 only `src/cli.rs`, `src/commands.rs`, `src/main.rs`, and the report were
 touched — no scope creep into `src/db.rs`, `src/time.rs`, `src/date.rs`,

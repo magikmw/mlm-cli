@@ -1,5 +1,8 @@
 # Milestone 5 — Stint pairing: independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 **Reviewed**: `bc19fda` on branch `milestone-5` (worktree
 `/home/magikmw/projects/mlm-wt-milestone-5`), against `SPEC.md` §4.3/§1.3,
 `PLAN.md` contracts 2/6/8, and `plans/milestone-5-stint-pairing.md`.

@@ -1,5 +1,8 @@
 # Milestone 6 — independent adversarial review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
+
 Reviewer: fresh read of `src/week.rs` on branch `milestone-6` (commit
 `25adbfb`), against SPEC.md §1.1/§1.3/§2.3/§2.4/§5, NOTES.md decisions
 3/37/38, PLAN.md contracts 3/6/9/10/11, and
