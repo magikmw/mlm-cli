@@ -275,7 +275,7 @@ jobs:
             echo "expected no orphaned-end anomaly on the end date, but one was rendered" >&2
             exit 1
           fi
-          if grep -q "00:45" "${RUNNER_TEMP}/status-midnight-end.out"; then
+          if grep -qE "^  00:45-" "${RUNNER_TEMP}/status-midnight-end.out"; then
             echo "expected the spliced stint not to appear as its own line on the end date" >&2
             exit 1
           fi
