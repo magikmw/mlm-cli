@@ -591,6 +591,53 @@ SPEC.md and PLAN.md:
     today/yesterday/else chain — defensible (a future stint's "age" is
     nonsensical either way, and `(unclosed)` avoids printing a
     misleading duration) and cheap to change if a reviewer disagrees.
+64. **boundary-context-cues merged (commit `c28977d` on branch
+    `boundary-context-cues`); final review and fresh-eyes UX check
+    run in parallel.** Final review
+    (`docs/dev/plans/reports/boundary-context-cues-final-review.md`,
+    ship-with-followups, 3 findings): code correct, every spec worked
+    example reproduced by hand, security clean; the task plan's
+    future-dated-open-stint ambiguity turned out moot (an existing
+    input guard already rejects future `DATE`s at write time, so the
+    case can't occur). Findings: F1 (medium) — the spec's own §7
+    SPEC.md/NOTES.md doc updates never landed, since Task 1 was scoped
+    code-only and nothing else in the changeset did them, leaving
+    SPEC.md §4.3.1 asserting the literal opposite of what shipped; F2
+    (low) — `stint_line()` computed and discarded a value, matching
+    the same tuple twice; F3 (low) — one end-to-end test asserted by
+    substring rather than exact string, so a transposed
+    `WeekAccounting` field would've passed silently (values verified
+    correct by hand regardless).
+    Fresh-eyes UX check ("returning user" tier —
+    `docs/dev/plans/reports/../fresh-eyes-report.md`, run from a
+    sandbox outside the repo containing only the built binary and
+    README, 9 findings): two are this changeset's own new copy — the
+    three-tier open-stint caption/Day-total wording (by design, but
+    flagged the "elapsed since now" phrase as reading backwards) and
+    nothing else new. The other seven are pre-existing behavior this
+    changeset didn't cause: two (README claiming the midnight-cue and
+    inline-fulfillment-explanation gaps still exist, when this
+    changeset just fixed them) were stale-doc symptoms, folded into
+    the F1 fix below. Five are genuinely pre-existing UX gaps, newly
+    written down: a multi-day-old forgotten `stop` is invisible
+    everywhere except the exact date it started (including `week`'s
+    per-day table) — called the strongest finding of the exercise; a
+    past (closed) date/week's output uses an undocumented, differently-
+    shaped sentence than the README's only examples; `est. EOD` can
+    point at tomorrow with no date shown; the day-total and week-total
+    lines can show an identical figure with redundant-looking phrasing
+    on the week's last weekday; "Total still owed" reads punitive for
+    what's otherwise neutral vocabulary.
+    Decisions, put to the user and agreed: fix F1 (this entry — SPEC.md
+    §1.2a/§4.3.1/§7.1/§7.2 updated, README "Known issues" updated), F2,
+    and F3 now, as part of this changeset; reword the "elapsed since
+    now" caption to "duration as of right now" now, since it's this
+    changeset's own new copy; add the five genuinely-pre-existing
+    fresh-eyes findings to SPEC.md §1.2a as new known issues rather
+    than fixing them here — real UX gaps, but unrelated to what this
+    changeset touched, left for a future changeset's own triage. F2/F3/
+    caption-reword dispatched as a follow-up implementation task on the
+    `boundary-context-cues` branch (not yet landed as of this entry).
 
 ## Open questions (still need answers)
 

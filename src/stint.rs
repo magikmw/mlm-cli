@@ -331,7 +331,11 @@ pub fn classify_at(
 /// because the "chronologically first punch" check needs the same
 /// `(at_utc, kind, id)` ordering `classify()` uses internally, which
 /// `DayStints` does not expose.
-fn splice_candidate(earlier_open_count: usize, later: &DayStints, later_punches: &[Punch]) -> bool {
+pub(crate) fn splice_candidate(
+    earlier_open_count: usize,
+    later: &DayStints,
+    later_punches: &[Punch],
+) -> bool {
     if earlier_open_count != 1 || later.orphaned_ends.len() != 1 {
         return false;
     }

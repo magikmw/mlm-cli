@@ -44,15 +44,25 @@ Not implemented yet:
 Shipped behavior that's rough or confusing in a way worth fixing
 later:
 
-- A stint spanning midnight has no visual cue it crosses two dates,
-  and the later date shows no trace of the punch recorded against it
 - Whether a stint reaching into the next day auto-resolves or gets
   left flagged depends on an internal rule the output doesn't explain
 - `[!]` anomaly flags describe the problem but not how to fix it
-- An open stint's live duration is measured against real wall-clock
-  time, so a backdated punch can show an alarming-looking number
-- `status`'s "fulfillment" can show a confusing negative number from
-  carry-in debt with no explanation on that screen
+- Whether a lone unclosed `start` gets flagged depends on whether a
+  *second* one also exists that date — the difference is just how
+  many, but it isn't explained anywhere
+- A forgotten `stop` from several days ago is invisible everywhere
+  except a `status` query against the exact date it started — no
+  warning on today's `status`, on any date in between, or in `week`'s
+  per-day table
+- `status`/`week`'s output for a past (closed) date/week uses a
+  different, undocumented sentence shape (`Total still owed: Xh Ym`)
+  than the current-week examples above
+- `est. EOD HH:MM` can point at tomorrow with no date shown
+- On the last weekday of the week, the day-total and week-total lines
+  can show the identical figure with different wording, reading as
+  redundant
+- "Total still owed" reads more punitive than intended for a week that
+  simply ended under target
 
 ## Install
 

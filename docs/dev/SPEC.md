@@ -14,7 +14,7 @@ fixes applied**.
 week-over-week hours-owed calculation) with a tool that does the
 arithmetic and lets entries land in any order.
 
-### 1.1 Goals (MVP)
+### 1.1 Goals
 
 - Record start/end time punches for the current date, entered in any
   order.
@@ -33,7 +33,7 @@ arithmetic and lets entries land in any order.
 - Persist everything in SQLite, normalized, in the platform app-data
   directory, with schema migrations from the first release.
 
-### 1.2 Non-goals (MVP — deferred/stretch, see `NOTES.md`)
+### 1.2 Non-goals (deferred/stretch, see `NOTES.md`)
 
 Deliberately out of scope: future features not committed to, not
 things known to be broken or confusing today. See §1.2a for that.
@@ -45,11 +45,11 @@ things known to be broken or confusing today. See §1.2a for that.
 - Terminal dashboard (ratatui) — deps are in, UI is not.
 - Shell prompt integration.
 - Non-ISO week conventions.
-- 12h (AM/PM) time input — MVP is `HH:MM`/`HHMM`/`HH`, 24h only.
-- `+N`/`-N` relative week notation for `week`'s week-id argument.
-  (`status`'s `DATE` argument's own `-N` shorthand, and logging a
-  punch/note against a date other than today, are no longer non-goals —
-  both are implemented.)
+- 12h (AM/PM) time input — accepted input is `HH:MM`/`HHMM`/`HH`, 24h only.
+- `+N`/`-N` relative week notation for `week`'s week-id argument. (This
+  is distinct from `status`'s `DATE` argument and `start`/`stop`/
+  `note`'s `--date` flag, both of which already accept a `-N` shorthand
+  — §3.4a, §3.5.)
 
 Stints spanning midnight, and a same-instant `end`/`start` boundary
 between two real stints, were both non-goals through this point in the
@@ -57,22 +57,10 @@ project's history — both are now fixed; see §4.3.
 
 ### 1.2a Known issues to revisit
 
-Shipped, working-as-designed behavior that's rough or confusing in a
-way worth fixing later. Kept separate from §1.2 because a "known
-issue" reads very differently to a user hitting it than a "non-goal"
-does: one is "we haven't built this yet," the other is "this works,
-but expect a rough edge here." Surfaced by a
-first-time-user UX pass run against the boundary-stint-pairing
-changeset; several predate that changeset and were simply never
-written down before.
+Shipped, working-as-designed behavior that's rough or confusing, not
+committed to a fix. Kept separate from §1.2: a non-goal isn't built
+yet, a known issue works but has a rough edge.
 
-- A cross-midnight completed stint (e.g. `23:30-00:45`) has no visual
-  cue that it spans two calendar days — legible once you notice
-  end < start and read the duration, but nothing points it out.
-- The calendar date that received the actual `stop` punch of a
-  cross-midnight stint shows **zero trace of it** in `status` — the
-  punch is fully absorbed into the previous date's stint with no
-  footnote on the date it was actually typed against.
 - Whether an unclosed stint reaching into the next day silently merges
   or gets flagged and left unmerged depends on an internal
   1:1-unambiguous gate (§4.3) the user has no way to observe — nothing
@@ -85,13 +73,32 @@ written down before.
   case, two-or-more is E7) — the same surface signal ("still open, no
   stop yet") is silent in one case and loudly flagged in the other,
   and the distinction isn't explained anywhere.
-- An open stint's live duration is computed against real wall-clock
-  "now" — for a backdated punch (`-d`, a first-class feature) this can
-  read as alarming ("443h 06m, ongoing") with no caption clarifying
-  it's elapsed-since-real-now, not a computed total or a bug.
-- `status`'s "fulfillment" line can show a confusing negative number
-  driven by carry-in debt from a prior week, with no "carry-in" context
-  on that screen — only `week`'s separate output explains it.
+- A multi-day-old forgotten `stop` is invisible everywhere except the
+  exact calendar date it started: `status` for today, `status` for any
+  date in between, and `week`'s per-day table (that date's row just
+  reads `00h 00m`) all show zero trace of it. Nothing says "you have an
+  open punch from N days ago" anywhere except a `status` query against
+  that exact date.
+- `status`/`week`'s output for a past (closed) date/week uses a
+  different sentence shape (`Total still owed: Xh Ym`, no
+  fulfillment/target breakdown) than the current-week form the README
+  only ever shows examples of (`X left by end of <weekday>
+  (fulfillment.../target...)`) — a user who has only read the README's
+  examples hits an undocumented format the first time they check a
+  past date/week.
+- `est. EOD HH:MM` (§7.1) can point at tomorrow with no date shown —
+  "EOD" reads as "later today," but the shown clock time can require
+  working through the night into the next calendar date, and nothing
+  in the string distinguishes the two.
+- On the last weekday of the ISO week, the day-total pace hint
+  ("... required by end of `<weekday>`") and the week line ("...
+  left by end of `<weekday>`") quote the identical figure with
+  different introductory phrasing — correct, but reads as a redundant
+  repeated number on that one day.
+- "`Total still owed`" (the closed-week/closed-date headline, §7.1/§7.2)
+  reads as punitive/debt-like for a week that simply ended under
+  target, inconsistent with the tool's otherwise neutral vocabulary
+  ("fulfillment," "carry-in," "shortfall/surplus" per the README).
 
 ### 1.3 Terminology
 
@@ -106,7 +113,7 @@ written down before.
 - **Note**: a short free-text work-log entry for a date, independent
   of punches.
 - **Week**: identified by an (ISO year, ISO week number) tuple, e.g.
-  `2026-07`. Always Monday-start for MVP.
+  `2026-07`. Always Monday-start.
 - **Target**: the number of minutes a week is expected to reach.
   Fixed at 40h by default; can be overridden per week to an absolute
   value. Not affected by carry (see **Fulfillment**).
@@ -155,8 +162,8 @@ crate — ordered SQL migrations embedded in the binary, applies
 whatever's pending on `connect()` — instead of a hand-rolled runner.
 
 Single-user, single-machine tool — concurrent access from two `mlm`
-invocations at once is out of scope for MVP; SQLite's default locking
-is trusted to fail safely (as a §6.1 DB error) rather than corrupt
+invocations at once is out of scope; SQLite's default locking is
+trusted to fail safely (as a §6.1 DB error) rather than corrupt
 anything, but no explicit WAL/busy-timeout tuning is planned.
 
 ### 2.3 Tables
@@ -178,7 +185,7 @@ Index on `date` (and probably `at_utc` for ordering within a date).
 |---|---|---|
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
 | `date` | `TEXT NOT NULL` | local calendar date, `YYYY-MM-DD` — a note is attached to a day, not an instant, so no `at_utc` here |
-| `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); embedded `\r`/`\n` are collapsed to a single space rather than preserved verbatim, so a stored body is always exactly one line (this collapse never affects whether a body counts as empty — that check happens first, against the pre-normalization text, and rejects a whitespace-only body, including one that's only newlines, before either step touches it, §6.1); project-name prefix stays *in* the text for MVP (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction beyond that newline collapse — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
+| `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); embedded `\r`/`\n` are collapsed to a single space rather than preserved verbatim, so a stored body is always exactly one line (this collapse never affects whether a body counts as empty — that check happens first, against the pre-normalization text, and rejects a whitespace-only body, including one that's only newlines, before either step touches it, §6.1); project-name prefix stays *in* the text (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction beyond that newline collapse — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
 | `created_at_utc` | `TEXT NOT NULL` | minute-granular like every other stored instant (§4.1) — not a source of sub-minute precision. Two notes inserted in the same minute are disambiguated by `id ASC` as the actual tiebreaker; this column orders coarsely, `id` breaks remaining ties |
 
 **`week_targets`** — sparse overrides only; a week with no row uses
@@ -249,13 +256,15 @@ Accepted for any `TIME` argument, 24h only (§1.2):
 | `HHMM` | `0905`, `1730` | hour and minute, no separator |
 | `HH` | `9`, `17` | hour, minute defaults to `:00` |
 
-### 3.2 `mlm start [TIME] [NOTE]`
+### 3.2 `mlm start [TIME] [NOTE] [--date DATE]`
 
-Insert a `start` punch for today.
+Insert a `start` punch, for today unless `--date` says otherwise
+(§3.4a).
 
 - `TIME` optional (§3.1). Defaults to now.
 - `NOTE` optional, free text — if given, also inserts a note row for
-  today in the same call (convenience for "starting work on X").
+  the target date in the same call (convenience for "starting work on
+  X").
 - Positional order is strict and never sniffed: `TIME`, when given, is
   always the first positional argument. A value in that position that
   fails to parse as `TIME` is a hard error (§6.1, E1) — it is never
@@ -264,14 +273,29 @@ Insert a `start` punch for today.
 - No chronology requirement: a start punch can be inserted at any
   time value relative to existing punches for the day.
 
-### 3.3 `mlm stop [TIME] [NOTE]`
+### 3.3 `mlm stop [TIME] [NOTE] [--date DATE]`
 
 Same shape as `start`, inserts an `end` punch.
 
-### 3.4 `mlm note NOTE`
+### 3.4 `mlm note NOTE [--date DATE]`
 
-Insert a work-log note for today, independent of punches — for
-end-of-day or next-day notes with no punch attached.
+Insert a work-log note, for today unless `--date` says otherwise
+(§3.4a), independent of punches — for end-of-day or next-day notes
+with no punch attached.
+
+### 3.4a Backdating with `--date`/`-d`
+
+`start`, `stop`, and `note` all take an optional `--date`/`-d DATE`
+flag targeting a date other than today. Same `DATE` grammar as
+`status` (§3.5): an absolute `YYYY-MM-DD`, or `-N` for N days before
+today (`-1` = yesterday, N a positive integer, `-0` rejected).
+
+- `--date`/`-d` must come before `NOTE` text on the command line —
+  after `NOTE` starts, everything remaining is note text, so a
+  trailing `--date` is absorbed into the note body instead of parsed
+  as the flag.
+- Malformed `--date`, or one resolving to a future date: hard error
+  (§6.1).
 
 ### 3.5 `mlm status [DATE]`
 
@@ -318,9 +342,9 @@ else here: no mental-math input.
 ### 4.1 Parsing and conversion
 
 A `TIME` argument (§3.1) is parsed as a local wall-clock hour/minute,
-combined with local *today* (the only date `start`/`stop` ever target
-in MVP, §1.2) to form a local datetime, then converted to UTC for
-storage per-instant (§2.1). There is no seconds precision anywhere —
+combined with the target date (local *today* by default) to form a
+local datetime, then converted to UTC for storage per-instant (§2.1).
+There is no seconds precision anywhere —
 everything is minute-granular, per NOTES.md's "keep time in minutes"
 call.
 
@@ -394,7 +418,7 @@ malformed.
 
 Edge cases, still just **detected and surfaced in that date's
 summary** (§3.5/§3.6 output), not silently fixed and not rejected at
-insert time (no editing/validation in MVP — see §1.2):
+insert time (no editing/validation — see §1.2):
 
 - **One unmatched trailing `start`** (stack has exactly one item once
   the date's punches are exhausted): the normal open/ongoing stint
@@ -453,9 +477,15 @@ genuinely carried-over orphan sharing its date with one unrelated
 stray orphan elsewhere that day still doesn't splice** (the
 `orphaned_ends.len() == 1` gate fails), so this section's fix isn't an
 unconditional guarantee against every possible day's data, only the
-ordinary case. This residual case, plus the fact that a spliced stint
-carries no visual marker distinguishing it from an ordinary same-date
-stint (deliberate — see §1.2a), are the known rough edges here.
+ordinary case. This residual case is the known rough edge here — the
+gate's own on/off condition is still undocumented in `--help`/`status`
+(§1.2a).
+
+A spliced stint is not indistinguishable from an ordinary same-date
+one: the earlier date's stint line gets a `, spans to next day` suffix
+(§7.1), and the receiving date's header gets a `(HH:MM continues
+previous day's stint)` suffix (§7.1) — added by the boundary-context-cues
+changeset, see `docs/dev/plans/reports/boundary-context-cues-*`.
 
 ## 5. Week accounting — worked example
 
@@ -505,16 +535,20 @@ questions, not a contradiction.
 Two tiers, kept distinct on purpose: **hard errors** reject the
 command outright (nonzero exit, nothing written, message on stderr);
 **anomalies** (§4.3) are accepted, stored, and surfaced later in
-`status`/`week` output instead — because MVP has no editing, refusing
-to store a punch that merely produces a weird pairing would leave the
-user with no way to fix it.
+`status`/`week` output instead — because there's no in-place editing
+(§1.2), refusing to store a punch that merely produces a weird pairing
+would leave the user with no way to fix it.
 
 ### 6.1 Hard errors (reject, no write)
 
 - Malformed `TIME` (§3.1): doesn't match `HH:MM`/`HHMM`/`HH`, or an
   out-of-range hour/minute (`25:00`, `9:75`).
-- Malformed `DATE` (`YYYY-MM-DD`): wrong shape or an invalid calendar
-  date (`2026-02-30`).
+- Malformed `DATE` (`YYYY-MM-DD`, or a `-N` shorthand where accepted):
+  wrong shape, an invalid calendar date (`2026-02-30`), or a malformed
+  `-N` (non-integer, `-0`).
+- `--date`/`-d` on `start`/`stop`/`note` resolving to a date later
+  than today (§3.4a) — these three never write into the future.
+  `status`'s `DATE` argument (§3.5) has no such restriction.
 - Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
   shape, or a week number that isn't a valid ISO week for its year
   (most years have 52, some have 53 — `2027-53` is invalid if 2027
@@ -583,13 +617,23 @@ Notes:
   - started punch pairing tests
 ```
 
-- Header: `<weekday abbrev> <YYYY-MM-DD>`.
+- Header: `<weekday abbrev> <YYYY-MM-DD>`, with a suffix
+  `  (HH:MM continues previous day's stint)` when this date's
+  chronologically-first punch was consumed by a §4.3.1 splice onto the
+  previous date — e.g. `Fri 2026-02-13  (00:45 continues previous
+  day's stint)`. No bracket marker, no extra line. `status`-only:
+  `week`'s row for the same date shows no equivalent marker (§7.2) —
+  an accepted asymmetry, not a bug.
 - **Day total** and **week** lines lead the output, ahead of the
   stint list — the "how much is left" figures are the point of a
   status check, not something to hunt for at the bottom.
 - Day total is a tabular-format sum; ongoing time isn't folded into
   it live (avoids the total silently changing mid-read) — `(+
-  ongoing)` just flags that an open stint isn't counted yet.
+  ongoing)` just flags that an open stint isn't counted yet, unless
+  that open stint is two or more calendar days old, in which case the
+  suffix is `(+ unclosed)` instead, matching the stint line's own
+  wording change below — a stale, probably-forgotten punch reads
+  differently from a live one.
 - "X left to `<required>` required by end of `<weekday>`" (fulfillment
   under `required`) or "X over `<required>` required by end of
   `<weekday>`" (fulfillment at/above it) is a **display-only pace
@@ -626,12 +670,34 @@ Notes:
   itself is some other day within that same week — the deadline is
   always about today, not about which day's stints you're viewing),
   or the plain `Total still owed`/`Total ahead` form when `DATE`'s
-  week is a past or future one.
+  week is a past or future one. When the current week's `carry_in` is
+  non-zero, the `(fulfillment .../target ...)` parenthetical expands to
+  `(fulfillment F = worked W + carry-in C / target T)`, each figure
+  signed independently per §4.2 (a carry-in deficit can drive
+  `fulfillment` itself negative — that's expected, not an error) —
+  when `carry_in` is zero, the shorter one-term form is unchanged. The
+  past/future `Total still owed`/`Total ahead` form never gets this
+  parenthetical, zero or non-zero carry-in alike.
 - Stint lines: `HH:MM-HH:MM  (duration)`, ongoing stint's end is the
   literal word `now`. Tabular duration format (§4.2). Section omitted
   entirely when the date has zero stints (a note-only day, or a fully
   empty one) — same treatment as Notes below, no empty-list
   placeholder either way.
+  - A **completed** stint whose end falls on a later calendar date
+    than its start (a §4.3.1 splice) gets `, spans to next day` added
+    inside the duration parenthetical, same slot the `, ongoing` suffix
+    below occupies: `23:30-00:45  (01h 15m, spans to next day)`.
+  - An **open** stint's rendering depends on how old its date is,
+    relative to today: today's own open stint is unchanged
+    (`17:45-now  (00h 15m, ongoing)`); one dated yesterday keeps its
+    live duration and gains a caption
+    (`23:10-now  (10h 35m, ongoing - duration as of right now, not a
+    running total)`); one dated two or more days back drops the
+    duration figure entirely — at that age the number is noise, not
+    information — and renders as `09:00-now  (unclosed)` instead. See
+    §1.2a for the remaining gap this doesn't close (nothing signals the
+    stale punch's existence on any *other* date's `status`, or in
+    `week`'s per-day table).
 - Notes render only if any exist for the date (section omitted
   otherwise, not shown empty).
 - Anomalies (§4.3), if any, print between the two lead lines and the
@@ -725,6 +791,10 @@ to it.)
   nothing" scope, not a bug in this rule. The ordinary case (a clean
   cross-midnight session) now splices into one completed stint on the
   earlier date instead of reaching this fallback at all.
+  `status`'s own rendering of that stale date does show the open
+  stint's age-based caption/`(unclosed)` form (§7.1) — only `week`'s
+  per-day row stays silent about it, another instance of the same
+  status/week asymmetry the header suffix (§7.1) also has.
 - Field order below the headline is fixed: carry-in, worked,
   fulfillment, target — `still owed` isn't repeated down here since
   the headline already states it plainly.
@@ -877,9 +947,3 @@ or less directly.
   open `start` on day one, silent in `week`'s view (no `(ongoing)`, no
   `[!]`, §7.2), plus a flagged orphaned-`end` anomaly on day two.
 
----
-
-*Spec complete through MVP scope, flow-mapped and adversarially
-reviewed per NOTES.md's final-review note. Ready for TDD
-implementation + independent adversarial code review, per the
-workflow note at the top of NOTES.md.*

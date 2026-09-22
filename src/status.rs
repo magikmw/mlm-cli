@@ -70,12 +70,36 @@ pub enum StintEnd {
     Now,
 }
 
+/// §4's three-way classification of how stale an open stint's date is,
+/// relative to `today`. Threaded into every `StintLine` via
+/// `build_stint_lines`'s parameter, and stored again, unchanged, on
+/// `StatusView` for `day_total_line()` to read directly (§4's Day-total
+/// match requirement).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenStintAge {
+    /// `target_date == today` — today's own open stint (§4, unchanged
+    /// rendering).
+    Today,
+    /// `target_date == today - 1 day` — keeps its duration, gains a
+    /// caption.
+    Yesterday,
+    /// `target_date <= today - 2 days` — duration dropped, `(unclosed)`.
+    TwoOrMoreDaysBack,
+}
+
 /// One rendered stint row's data (§7.1/§7.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StintLine {
     pub start: NaiveTime,
     pub end: StintEnd,
     pub duration_minutes: i64,
+    /// True for a completed stint whose `start.date != end.date`
+    /// (§2). Always `false` for an open stint (`StintEnd::Now`) —
+    /// §2's span cue applies to completed stints only.
+    pub spans_to_next_day: bool,
+    /// Only meaningful when `end == StintEnd::Now`; `None` for a
+    /// completed stint. §4's three-way open-stint age classification.
+    pub open_stint_age: Option<OpenStintAge>,
 }
 
 /// Everything `render` needs, already computed and in final form
@@ -85,6 +109,10 @@ pub struct StintLine {
 pub struct StatusView {
     /// Pre-formatted L1 header, e.g. `"Thu 2026-02-12"` (date::format_date_with_weekday).
     pub header: String,
+    /// §3 header suffix, pre-rendered, e.g. `"  (00:45 continues
+    /// previous day's stint)"`. `None` when no splice consumed
+    /// `target_date`'s first punch.
+    pub receiving_date_suffix: Option<String>,
     /// Completed-stints-only total for `DATE` (§2.4).
     pub day_total_minutes: i64,
     pub has_open_stint: bool,
@@ -108,6 +136,13 @@ pub struct StatusView {
     /// Note bodies, in insertion order, verbatim (already trimmed at
     /// storage, §2.3).
     pub notes: Vec<String>,
+    /// §4's three-way open-stint age, stored unchanged from the same
+    /// local `resolve()` computes for `build_stint_lines` — read
+    /// directly by `day_total_line()` since it is a per-date fact, not
+    /// per-stint. NOT derived from `stints` — it is set even when
+    /// `has_open_stint` is false, in which case `day_total_line()`
+    /// never reads it.
+    pub open_stint_age: OpenStintAge,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +162,10 @@ fn day_total_line(view: &StatusView) -> String {
         w = LABEL_WIDTH
     );
     if view.has_open_stint {
-        s.push_str(" (+ ongoing)");
+        match view.open_stint_age {
+            OpenStintAge::Today | OpenStintAge::Yesterday => s.push_str(" (+ ongoing)"),
+            OpenStintAge::TwoOrMoreDaysBack => s.push_str(" (+ unclosed)"),
+        }
     }
     if let Some(hint) = &view.daily_target {
         let (word, magnitude) = if hint.gap_minutes >= 0 {
@@ -157,21 +195,50 @@ fn stint_line(line: &StintLine) -> String {
         StintEnd::At(end) => format!("{}-{}", line.start.format("%H:%M"), end.format("%H:%M")),
         StintEnd::Now => format!("{}-now", line.start.format("%H:%M")),
     };
-    let ongoing = matches!(line.end, StintEnd::Now);
-    format!(
-        "  {:<11}  ({}{})",
-        range,
-        format_minutes(line.duration_minutes),
-        if ongoing { ", ongoing" } else { "" }
-    )
+    match (line.end, line.open_stint_age) {
+        (StintEnd::At(_), _) => {
+            let suffix = if line.spans_to_next_day {
+                ", spans to next day"
+            } else {
+                ""
+            };
+            format!(
+                "  {:<11}  ({}{})",
+                range,
+                format_minutes(line.duration_minutes),
+                suffix
+            )
+        }
+        (StintEnd::Now, Some(OpenStintAge::Today)) | (StintEnd::Now, None) => {
+            format!(
+                "  {:<11}  ({}, ongoing)",
+                range,
+                format_minutes(line.duration_minutes)
+            )
+        }
+        (StintEnd::Now, Some(OpenStintAge::Yesterday)) => {
+            format!(
+                "  {:<11}  ({}, ongoing - duration as of right now, not a running total)",
+                range,
+                format_minutes(line.duration_minutes)
+            )
+        }
+        (StintEnd::Now, Some(OpenStintAge::TwoOrMoreDaysBack)) => {
+            format!("  {:<11}  (unclosed)", range)
+        }
+    }
 }
 
 /// The complete rendered status view (plans/milestone-10-status-command.md
 /// §3.1): pure, no I/O, no clock. Lines joined by `\n`, exactly one
 /// trailing `\n`, no trailing blank line.
 pub fn render(view: &StatusView) -> String {
+    let mut header_line = view.header.clone();
+    if let Some(suffix) = &view.receiving_date_suffix {
+        header_line.push_str(suffix);
+    }
     let mut lines: Vec<String> = vec![
-        view.header.clone(),
+        header_line,
         String::new(),
         day_total_line(view),
         view.week_line.clone(),
@@ -209,7 +276,14 @@ pub fn render(view: &StatusView) -> String {
 /// a call site, since there is only one call site and its argument
 /// order is named here, not positional at every use.
 fn week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
-    render::status_week_line(acct.week, acct.owed, acct.fulfillment, acct.target, today)
+    render::status_week_line(
+        acct.week,
+        acct.owed,
+        acct.fulfillment,
+        acct.target,
+        acct.carry_in,
+        today,
+    )
 }
 
 /// Builds a `render::Anomalies` from `DayStints`'s raw fields.
@@ -235,13 +309,15 @@ fn to_anomalies(day: &DayStints) -> Anomalies {
 /// (plans/milestone-10-status-command.md §3.7). A stable sort preserves
 /// each side's own relative order (completed by end instant, open by
 /// start instant) for the rare tie at an identical start time.
-fn build_stint_lines(day: &DayStints) -> Vec<StintLine> {
+fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<StintLine> {
     let mut rows: Vec<StintLine> = Vec::new();
     for s in &day.completed {
         rows.push(StintLine {
             start: s.start.at_utc.with_timezone(&Local).time(),
             end: StintEnd::At(s.end.at_utc.with_timezone(&Local).time()),
             duration_minutes: s.minutes,
+            spans_to_next_day: s.start.date != s.end.date,
+            open_stint_age: None,
         });
     }
     for o in &day.open {
@@ -249,6 +325,8 @@ fn build_stint_lines(day: &DayStints) -> Vec<StintLine> {
             start: o.start.at_utc.with_timezone(&Local).time(),
             end: StintEnd::Now,
             duration_minutes: o.minutes_so_far,
+            spans_to_next_day: false,
+            open_stint_age: Some(open_stint_age),
         });
     }
     rows.sort_by_key(|r| r.start);
@@ -334,6 +412,13 @@ pub fn resolve(
         Some(s) => date::resolve_date(s, today)?,
     };
     let is_today = target_date == today;
+    let open_stint_age = if target_date == today {
+        OpenStintAge::Today
+    } else if target_date == today - ChronoDuration::days(1) {
+        OpenStintAge::Yesterday
+    } else {
+        OpenStintAge::TwoOrMoreDaysBack
+    };
 
     let punches = storage::punches_for_date(conn, target_date)?;
     let notes = storage::notes_for_date(conn, target_date)?;
@@ -342,6 +427,25 @@ pub fn resolve(
 
     let now_utc = now.with_timezone(&Utc);
     let day = stint::classify_at(&prev_punches, &punches, &next_punches, now_utc);
+
+    let receiving_end_time = {
+        let prev_classified = stint::classify(&prev_punches, now_utc);
+        let fresh_target_classified = stint::classify(&punches, now_utc);
+        stint::splice_candidate(
+            prev_classified.open.len(),
+            &fresh_target_classified,
+            &punches,
+        )
+        .then(|| {
+            fresh_target_classified.orphaned_ends[0]
+                .punch
+                .at_utc
+                .with_timezone(&Local)
+                .time()
+        })
+    };
+    let receiving_date_suffix = receiving_end_time
+        .map(|t| format!("  ({} continues previous day's stint)", t.format("%H:%M")));
 
     let day_total_minutes = day.completed_minutes();
     let has_open_stint = day.is_ongoing();
@@ -378,11 +482,12 @@ pub fn resolve(
         (None, None, None)
     };
 
-    let stints = build_stint_lines(&day);
+    let stints = build_stint_lines(&day, open_stint_age);
     let note_bodies = notes.into_iter().map(|n| n.body).collect();
 
     Ok(StatusView {
         header: date::format_date_with_weekday(target_date),
+        receiving_date_suffix,
         day_total_minutes,
         has_open_stint,
         daily_target,
@@ -392,6 +497,7 @@ pub fn resolve(
         anomaly_lines,
         stints,
         notes: note_bodies,
+        open_stint_age,
     })
 }
 
@@ -477,6 +583,7 @@ mod tests {
     fn base_view() -> StatusView {
         StatusView {
             header: "Thu 2026-02-12".to_string(),
+            receiving_date_suffix: None,
             day_total_minutes: 0,
             has_open_stint: false,
             daily_target: None,
@@ -486,6 +593,7 @@ mod tests {
             anomaly_lines: vec![],
             stints: vec![],
             notes: vec![],
+            open_stint_age: OpenStintAge::Today,
         }
     }
 
@@ -552,6 +660,8 @@ mod tests {
             start: t(9, 0),
             end: StintEnd::Now,
             duration_minutes: 0,
+            spans_to_next_day: false,
+            open_stint_age: None,
         }];
         let out = render(&view);
         assert!(out.contains("Day total:     00h 00m (+ ongoing)"));
@@ -569,6 +679,8 @@ mod tests {
             start: t(9, 0),
             end: StintEnd::At(t(17, 30)),
             duration_minutes: 510,
+            spans_to_next_day: false,
+            open_stint_age: None,
         }];
         view.daily_target = Some(DailyTargetHint {
             required_minutes: 480,
@@ -597,11 +709,15 @@ mod tests {
                 start: t(9, 0),
                 end: StintEnd::At(t(13, 0)),
                 duration_minutes: 240,
+                spans_to_next_day: false,
+                open_stint_age: None,
             },
             StintLine {
                 start: t(14, 0),
                 end: StintEnd::At(t(18, 0)),
                 duration_minutes: 240,
+                spans_to_next_day: false,
+                open_stint_age: None,
             },
         ];
         let out = render(&view);
@@ -609,6 +725,215 @@ mod tests {
         let idx2 = out.find("14:00-18:00").unwrap();
         assert!(idx1 < idx2);
         assert!(!out.contains("[!]"));
+    }
+
+    // §2 -- a completed stint whose start.date != end.date gets ", spans
+    // to next day" appended in the duration parenthetical.
+    #[test]
+    fn spanning_stint_gets_spans_to_next_day_suffix() {
+        let mut view = base_view();
+        view.stints = vec![StintLine {
+            start: t(23, 30),
+            end: StintEnd::At(t(0, 45)),
+            duration_minutes: 75,
+            spans_to_next_day: true,
+            open_stint_age: None,
+        }];
+        let out = render(&view);
+        assert!(
+            out.contains("(01h 15m, spans to next day)"),
+            "expected spans-to-next-day suffix: {out}"
+        );
+    }
+
+    // Companion negative case: a same-date completed stint of the same
+    // duration renders byte-identical to the pre-existing "(HH:MM)" form,
+    // with no ", spans to next day" substring anywhere.
+    #[test]
+    fn non_spanning_stint_has_no_spans_to_next_day_suffix() {
+        let mut view = base_view();
+        view.stints = vec![StintLine {
+            start: t(23, 30),
+            end: StintEnd::At(t(0, 45)),
+            duration_minutes: 75,
+            spans_to_next_day: false,
+            open_stint_age: None,
+        }];
+        let out = render(&view);
+        assert!(!out.contains("spans to next day"), "{out}");
+        assert!(out.contains("(01h 15m)"), "{out}");
+    }
+
+    // Companion negative case for open stints: build_stint_lines always
+    // sets spans_to_next_day: false for opens, and stint_line() never
+    // shows the suffix for StintEnd::Now regardless.
+    #[test]
+    fn open_stint_never_shows_spans_to_next_day_suffix_even_if_field_set() {
+        let mut view = base_view();
+        view.has_open_stint = true;
+        view.stints = vec![StintLine {
+            start: t(9, 0),
+            end: StintEnd::Now,
+            duration_minutes: 30,
+            // Hypothetically true -- stint_line() only branches on
+            // spans_to_next_day inside the StintEnd::At arm, so this must
+            // never surface for an open stint.
+            spans_to_next_day: true,
+            open_stint_age: Some(OpenStintAge::Today),
+        }];
+        let out = render(&view);
+        assert!(!out.contains("spans to next day"), "{out}");
+    }
+
+    // §2 -- build_stint_lines itself always sets spans_to_next_day: false
+    // for every open row it builds (a build_stint_lines fact, distinct
+    // from stint_line()'s rendering fact tested above).
+    #[test]
+    fn build_stint_lines_always_marks_open_rows_as_not_spanning() {
+        let day = stint::classify(
+            &[storage::Punch {
+                id: 1,
+                at_utc: today()
+                    .and_hms_opt(9, 0, 0)
+                    .unwrap()
+                    .and_local_timezone(Local)
+                    .unwrap()
+                    .with_timezone(&Utc),
+                date: today(),
+                kind: PunchKind::Start,
+            }],
+            now_thu_1800().with_timezone(&Utc),
+        );
+        let rows = build_stint_lines(&day, OpenStintAge::Today);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].spans_to_next_day);
+    }
+
+    // §4 -- today's open stint is byte-identical to today's current
+    // output: no new literal in either the stint line or Day total.
+    #[test]
+    fn open_stint_today_is_byte_identical_to_current_output() {
+        let mut view = base_view();
+        view.has_open_stint = true;
+        view.stints = vec![StintLine {
+            start: t(9, 0),
+            end: StintEnd::Now,
+            duration_minutes: 0,
+            spans_to_next_day: false,
+            open_stint_age: Some(OpenStintAge::Today),
+        }];
+        let out = render(&view);
+        assert!(out.contains("Day total:     00h 00m (+ ongoing)"));
+        assert!(out.contains("  09:00-now    (00h 00m, ongoing)"));
+        assert!(!out.contains("unclosed"));
+        assert!(!out.contains("duration as of right now"));
+    }
+
+    // §4 -- an open stint dated yesterday keeps its live duration and
+    // gains a caption; Day total stays "(+ ongoing)".
+    #[test]
+    fn open_stint_yesterday_keeps_duration_and_gains_caption() {
+        let mut view = base_view();
+        view.has_open_stint = true;
+        view.open_stint_age = OpenStintAge::Yesterday;
+        view.stints = vec![StintLine {
+            start: t(23, 10),
+            end: StintEnd::Now,
+            duration_minutes: 635, // 10h 35m, spec §4's own example
+            spans_to_next_day: false,
+            open_stint_age: Some(OpenStintAge::Yesterday),
+        }];
+        let out = render(&view);
+        assert!(
+            out.contains(
+                "  23:10-now    (10h 35m, ongoing - duration as of right now, not a running total)"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains("Day total:     00h 00m (+ ongoing)"),
+            "Day total unchanged for yesterday: {out}"
+        );
+    }
+
+    // §4 -- an open stint two-or-more days back drops the duration figure
+    // entirely and renders "(unclosed)"; Day total switches to "(+
+    // unclosed)".
+    #[test]
+    fn open_stint_two_or_more_days_back_drops_duration_and_shows_unclosed() {
+        let mut view = base_view();
+        view.has_open_stint = true;
+        view.open_stint_age = OpenStintAge::TwoOrMoreDaysBack;
+        view.stints = vec![StintLine {
+            start: t(9, 0),
+            end: StintEnd::Now,
+            duration_minutes: 4321, // implausible, would be very visible if leaked
+            spans_to_next_day: false,
+            open_stint_age: Some(OpenStintAge::TwoOrMoreDaysBack),
+        }];
+        let out = render(&view);
+        assert!(out.contains("  09:00-now    (unclosed)"), "{out}");
+        let stint_line_out = out
+            .lines()
+            .find(|l| l.contains("09:00-now"))
+            .expect("stint line present");
+        assert!(
+            !stint_line_out.contains("43"),
+            "no duration digits should leak: {stint_line_out}"
+        );
+        assert!(
+            out.contains("Day total:     00h 00m (+ unclosed)"),
+            "Day total switches to unclosed: {out}"
+        );
+        assert!(!out.contains("(+ ongoing)"));
+    }
+
+    // §4 -- boundary tightness: today - 2 days classifies as
+    // TwoOrMoreDaysBack, not a fourth bucket.
+    #[test]
+    fn resolve_open_stint_exactly_two_days_back_is_two_or_more_days_back() {
+        let conn = test_db();
+        let two_days_back = today() - ChronoDuration::days(2);
+        storage::insert_punch(&conn, PunchKind::Start, two_days_back, t(9, 0), &Local)
+            .expect("insert");
+
+        let view = resolve(
+            Some(&two_days_back.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert_eq!(view.open_stint_age, OpenStintAge::TwoOrMoreDaysBack);
+        assert_eq!(
+            view.stints[0].open_stint_age,
+            Some(OpenStintAge::TwoOrMoreDaysBack)
+        );
+    }
+
+    // §4 -- resolve()-level: all three age buckets, and the StintLine-level
+    // field must agree with the StatusView-level field.
+    #[test]
+    fn resolve_open_stint_age_buckets_agree_between_view_and_stint_line() {
+        let cases = [
+            (today(), OpenStintAge::Today),
+            (today() - ChronoDuration::days(1), OpenStintAge::Yesterday),
+            (
+                today() - ChronoDuration::days(3),
+                OpenStintAge::TwoOrMoreDaysBack,
+            ),
+        ];
+        for (date, expected) in cases {
+            let conn2 = test_db();
+            storage::insert_punch(&conn2, PunchKind::Start, date, t(9, 0), &Local).expect("insert");
+            let view = resolve(
+                Some(&date.format("%Y-%m-%d").to_string()),
+                now_thu_1800(),
+                &conn2,
+            )
+            .expect("resolve");
+            assert_eq!(view.open_stint_age, expected, "date {date}");
+            assert_eq!(view.stints[0].open_stint_age, Some(expected), "date {date}");
+        }
     }
 
     // T6a -- F9 state 1: open stint, gap > 0.
@@ -703,8 +1028,12 @@ mod tests {
                 start: t(8, 30),
                 end: StintEnd::At(t(14, 45)),
                 duration_minutes: 375,
+                spans_to_next_day: false,
+                open_stint_age: None,
             }],
             notes: vec![],
+            receiving_date_suffix: None,
+            open_stint_age: OpenStintAge::Today,
         };
         let out = render(&view);
         let expected = "Mon 2026-01-05\n\
@@ -749,16 +1078,22 @@ mod tests {
                 start: t(9, 0),
                 end: StintEnd::Now,
                 duration_minutes: 540,
+                spans_to_next_day: false,
+                open_stint_age: None,
             },
             StintLine {
                 start: t(10, 0),
                 end: StintEnd::Now,
                 duration_minutes: 480,
+                spans_to_next_day: false,
+                open_stint_age: None,
             },
             StintLine {
                 start: t(11, 0),
                 end: StintEnd::Now,
                 duration_minutes: 420,
+                spans_to_next_day: false,
+                open_stint_age: None,
             },
         ];
         let out = render(&view);
@@ -793,6 +1128,8 @@ mod tests {
             start: t(9, 0),
             end: StintEnd::At(t(17, 0)),
             duration_minutes: 480,
+            spans_to_next_day: false,
+            open_stint_age: None,
         }];
         let out = render(&view);
         assert_eq!(out.matches("[!]").count(), 2);
@@ -826,22 +1163,30 @@ mod tests {
                     start: t(9, 0),
                     end: StintEnd::At(t(13, 0)),
                     duration_minutes: 240,
+                    spans_to_next_day: false,
+                    open_stint_age: None,
                 },
                 StintLine {
                     start: t(14, 5),
                     end: StintEnd::At(t(17, 30)),
                     duration_minutes: 205,
+                    spans_to_next_day: false,
+                    open_stint_age: None,
                 },
                 StintLine {
                     start: t(17, 45),
                     end: StintEnd::Now,
                     duration_minutes: 15,
+                    spans_to_next_day: false,
+                    open_stint_age: None,
                 },
             ],
             notes: vec![
                 "fixed migration runner bug".to_string(),
                 "started punch pairing tests".to_string(),
             ],
+            receiving_date_suffix: None,
+            open_stint_age: OpenStintAge::Today,
         };
         let out = render(&view);
         let expected = "Thu 2026-02-12\n\
@@ -915,8 +1260,12 @@ mod tests {
                 start: t(9, 0),
                 end: StintEnd::At(t(13, 0)),
                 duration_minutes: 240,
+                spans_to_next_day: false,
+                open_stint_age: None,
             }],
             notes: vec![],
+            receiving_date_suffix: None,
+            open_stint_age: OpenStintAge::Today,
         });
         let t7 = render(&StatusView {
             header: "Mon 2026-01-05".to_string(),
@@ -931,8 +1280,12 @@ mod tests {
                 start: t(8, 30),
                 end: StintEnd::At(t(14, 45)),
                 duration_minutes: 375,
+                spans_to_next_day: false,
+                open_stint_age: None,
             }],
             notes: vec![],
+            receiving_date_suffix: None,
+            open_stint_age: OpenStintAge::Today,
         });
         let mut t6b_view = base_view();
         t6b_view.day_total_minutes = 500;
@@ -971,8 +1324,12 @@ mod tests {
                 start: t(9, 0),
                 end: StintEnd::At(t(13, 0)),
                 duration_minutes: 240,
+                spans_to_next_day: false,
+                open_stint_age: None,
             }],
             notes: vec!["ascii only note".to_string()],
+            receiving_date_suffix: None,
+            open_stint_age: OpenStintAge::Today,
         };
         let out = render(&ascii_view);
         assert!(
@@ -987,6 +1344,74 @@ mod tests {
         assert!(
             out2.contains("caf\u{e9} r\u{e9}sum\u{e9}"),
             "note body must pass through unmangled: {out2:?}"
+        );
+    }
+
+    // Extends T13's plain-ASCII audit to the five new literals this task
+    // adds inside status.rs: ", spans to next day"; ", ongoing - duration
+    // as of right now, not a running total"; "(unclosed)"; "continues
+    // previous day's stint" (via a non-None receiving_date_suffix); "(+
+    // unclosed)".
+    #[test]
+    fn t13b_new_boundary_context_cue_literals_are_plain_ascii() {
+        let mut spanning_view = base_view();
+        spanning_view.stints = vec![StintLine {
+            start: t(23, 30),
+            end: StintEnd::At(t(0, 45)),
+            duration_minutes: 75,
+            spans_to_next_day: true,
+            open_stint_age: None,
+        }];
+        let out = render(&spanning_view);
+        assert!(out.contains(", spans to next day"));
+        assert!(
+            out.bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
+        );
+
+        let mut yesterday_view = base_view();
+        yesterday_view.has_open_stint = true;
+        yesterday_view.open_stint_age = OpenStintAge::Yesterday;
+        yesterday_view.stints = vec![StintLine {
+            start: t(23, 10),
+            end: StintEnd::Now,
+            duration_minutes: 635,
+            spans_to_next_day: false,
+            open_stint_age: Some(OpenStintAge::Yesterday),
+        }];
+        let out = render(&yesterday_view);
+        assert!(out.contains(", ongoing - duration as of right now, not a running total"));
+        assert!(
+            out.bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
+        );
+
+        let mut stale_view = base_view();
+        stale_view.has_open_stint = true;
+        stale_view.open_stint_age = OpenStintAge::TwoOrMoreDaysBack;
+        stale_view.stints = vec![StintLine {
+            start: t(9, 0),
+            end: StintEnd::Now,
+            duration_minutes: 4321,
+            spans_to_next_day: false,
+            open_stint_age: Some(OpenStintAge::TwoOrMoreDaysBack),
+        }];
+        let out = render(&stale_view);
+        assert!(out.contains("(unclosed)"));
+        assert!(out.contains("(+ unclosed)"));
+        assert!(
+            out.bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
+        );
+
+        let mut spliced_view = base_view();
+        spliced_view.receiving_date_suffix =
+            Some("  (00:45 continues previous day's stint)".to_string());
+        let out = render(&spliced_view);
+        assert!(out.contains("continues previous day's stint"));
+        assert!(
+            out.bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
         );
     }
 
@@ -1153,6 +1578,11 @@ mod tests {
         assert_eq!(view.stints.len(), 1);
         assert_eq!(view.stints[0].start, t(23, 30));
         assert_eq!(view.stints[0].end, StintEnd::At(t(0, 45)));
+        assert!(
+            view.stints[0].spans_to_next_day,
+            "23:30-00:45 crosses a calendar date"
+        );
+        assert!(render(&view).contains(", spans to next day"));
     }
 
     #[test]
@@ -1174,6 +1604,27 @@ mod tests {
             "the spliced stint belongs to D, never D+1's own list"
         );
         assert_eq!(view.day_total_minutes, 0);
+        assert_eq!(
+            view.receiving_date_suffix,
+            Some("  (00:45 continues previous day's stint)".to_string())
+        );
+        let out = render(&view);
+        assert!(out.contains(&format!(
+            "{}  (00:45 continues previous day's stint)",
+            date::format_date_with_weekday(d2)
+        )));
+    }
+
+    // §3 -- negative case: no splice consumed this date's first punch.
+    #[test]
+    fn resolve_no_splice_has_no_receiving_date_suffix() {
+        let conn = test_db();
+        storage::insert_punch(&conn, PunchKind::Start, today(), t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, today(), t(10, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, today(), t(8, 0), &Local).expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(view.receiving_date_suffix.is_none());
     }
 
     // Direct regression companion: confirms the new call site doesn't
@@ -1205,6 +1656,32 @@ mod tests {
         assert_eq!(view_d2.day_total_minutes, 0);
         assert_eq!(view_d2.anomaly_lines.len(), 1);
         assert!(view_d2.anomaly_lines[0].contains("orphaned end at 00:30"));
+        assert!(
+            view_d2.receiving_date_suffix.is_none(),
+            "prev has 2 opens (not 1:1), so the fresh classify(prev) gate blocks the suffix"
+        );
+    }
+
+    // §3 -- the consumed punch was target_date's only punch: the stint
+    // list is entirely omitted (SPEC.md §7.1), but the header suffix,
+    // Day total, and week line still render.
+    #[test]
+    fn resolve_midnight_splice_only_punch_of_the_day_still_shows_header_suffix() {
+        let conn = test_db();
+        let d1 = d(2026, 2, 9);
+        let d2 = d(2026, 2, 10);
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 30), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view = resolve(Some("2026-02-10"), now_thu_1800(), &conn).expect("resolve");
+        assert!(view.stints.is_empty());
+        assert_eq!(
+            view.receiving_date_suffix,
+            Some("  (00:45 continues previous day's stint)".to_string())
+        );
+        let expected_week = current_week_acct(2400 - 75, 75, 2400);
+        assert_eq!(view.week_line, week_line(&expected_week, today()));
+        assert_eq!(view.day_total_minutes, 0);
     }
 
     #[test]
@@ -1303,14 +1780,47 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
+    // §5: carry-in wiring, end-to-end through resolve()/render().
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn resolve_end_to_end_nonzero_carry_in_shows_worked_and_carry_in_breakdown() {
+        let conn = test_db();
+        // Week 2026-06 (Mon 2026-02-02 .. Sun 2026-02-08): target 8h,
+        // worked 10h -- a 2h surplus carries into week 2026-07 as
+        // carry_in.
+        week_target::set_week_target(&conn, &wk(2026, 6), 480).expect("set target");
+        storage::insert_punch(&conn, PunchKind::Start, d(2026, 2, 2), t(8, 0), &Local)
+            .expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d(2026, 2, 2), t(18, 0), &Local)
+            .expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        let out = render(&view);
+        assert!(
+            out.contains(
+                "(fulfillment 02h 00m = worked 00h 00m + carry-in 02h 00m / target 40h 00m)"
+            ),
+            "carry-in breakdown should survive build_ledger -> week_accounting -> \
+             week_line -> status_week_line: {out}"
+        );
+    }
+
+    // -----------------------------------------------------------------
     // week_line helper sanity: confirms the wrapper never transposes.
     // -----------------------------------------------------------------
 
     #[test]
     fn week_line_matches_status_week_line_field_for_field() {
         let acct = current_week_acct(645, 1755, 2400);
-        let want =
-            render::status_week_line(acct.week, acct.owed, acct.fulfillment, acct.target, today());
+        let want = render::status_week_line(
+            acct.week,
+            acct.owed,
+            acct.fulfillment,
+            acct.target,
+            acct.carry_in,
+            today(),
+        );
         assert_eq!(week_line(&acct, today()), want);
     }
 }
