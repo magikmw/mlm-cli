@@ -14,7 +14,7 @@ fixes applied**.
 week-over-week hours-owed calculation) with a tool that does the
 arithmetic and lets entries land in any order.
 
-### 1.1 Goals (MVP)
+### 1.1 Goals
 
 - Record start/end time punches for the current date, entered in any
   order.
@@ -33,7 +33,7 @@ arithmetic and lets entries land in any order.
 - Persist everything in SQLite, normalized, in the platform app-data
   directory, with schema migrations from the first release.
 
-### 1.2 Non-goals (MVP — deferred/stretch, see `NOTES.md`)
+### 1.2 Non-goals (deferred/stretch, see `NOTES.md`)
 
 Deliberately out of scope: future features not committed to, not
 things known to be broken or confusing today. See §1.2a for that.
@@ -45,7 +45,7 @@ things known to be broken or confusing today. See §1.2a for that.
 - Terminal dashboard (ratatui) — deps are in, UI is not.
 - Shell prompt integration.
 - Non-ISO week conventions.
-- 12h (AM/PM) time input — MVP is `HH:MM`/`HHMM`/`HH`, 24h only.
+- 12h (AM/PM) time input — accepted input is `HH:MM`/`HHMM`/`HH`, 24h only.
 - `+N`/`-N` relative week notation for `week`'s week-id argument.
   (`status`'s `DATE` argument's own `-N` shorthand, and logging a
   punch/note against a date other than today, are no longer non-goals —
@@ -57,16 +57,9 @@ project's history — both are now fixed; see §4.3.
 
 ### 1.2a Known issues to revisit
 
-Shipped, working-as-designed behavior that's rough or confusing in a
-way worth fixing later. Kept separate from §1.2 because a "known
-issue" reads very differently to a user hitting it than a "non-goal"
-does: one is "we haven't built this yet," the other is "this works,
-but expect a rough edge here." Originally surfaced by a first-time-user
-UX pass run against the boundary-stint-pairing changeset (several
-predated that changeset and were simply never written down before);
-the boundary-context-cues changeset fixed four of those bullets (see
-`docs/dev/plans/reports/boundary-context-cues-*`) and its own
-fresh-eyes UX check surfaced five more, listed below.
+Shipped, working-as-designed behavior that's rough or confusing, not
+committed to a fix. Kept separate from §1.2: a non-goal isn't built
+yet, a known issue works but has a rough edge.
 
 - Whether an unclosed stint reaching into the next day silently merges
   or gets flagged and left unmerged depends on an internal
@@ -120,7 +113,7 @@ fresh-eyes UX check surfaced five more, listed below.
 - **Note**: a short free-text work-log entry for a date, independent
   of punches.
 - **Week**: identified by an (ISO year, ISO week number) tuple, e.g.
-  `2026-07`. Always Monday-start for MVP.
+  `2026-07`. Always Monday-start.
 - **Target**: the number of minutes a week is expected to reach.
   Fixed at 40h by default; can be overridden per week to an absolute
   value. Not affected by carry (see **Fulfillment**).
@@ -169,8 +162,8 @@ crate — ordered SQL migrations embedded in the binary, applies
 whatever's pending on `connect()` — instead of a hand-rolled runner.
 
 Single-user, single-machine tool — concurrent access from two `mlm`
-invocations at once is out of scope for MVP; SQLite's default locking
-is trusted to fail safely (as a §6.1 DB error) rather than corrupt
+invocations at once is out of scope; SQLite's default locking is
+trusted to fail safely (as a §6.1 DB error) rather than corrupt
 anything, but no explicit WAL/busy-timeout tuning is planned.
 
 ### 2.3 Tables
@@ -192,7 +185,7 @@ Index on `date` (and probably `at_utc` for ordering within a date).
 |---|---|---|
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
 | `date` | `TEXT NOT NULL` | local calendar date, `YYYY-MM-DD` — a note is attached to a day, not an instant, so no `at_utc` here |
-| `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); embedded `\r`/`\n` are collapsed to a single space rather than preserved verbatim, so a stored body is always exactly one line (this collapse never affects whether a body counts as empty — that check happens first, against the pre-normalization text, and rejects a whitespace-only body, including one that's only newlines, before either step touches it, §6.1); project-name prefix stays *in* the text for MVP (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction beyond that newline collapse — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
+| `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); embedded `\r`/`\n` are collapsed to a single space rather than preserved verbatim, so a stored body is always exactly one line (this collapse never affects whether a body counts as empty — that check happens first, against the pre-normalization text, and rejects a whitespace-only body, including one that's only newlines, before either step touches it, §6.1); project-name prefix stays *in* the text (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction beyond that newline collapse — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
 | `created_at_utc` | `TEXT NOT NULL` | minute-granular like every other stored instant (§4.1) — not a source of sub-minute precision. Two notes inserted in the same minute are disambiguated by `id ASC` as the actual tiebreaker; this column orders coarsely, `id` breaks remaining ties |
 
 **`week_targets`** — sparse overrides only; a week with no row uses
@@ -332,9 +325,9 @@ else here: no mental-math input.
 ### 4.1 Parsing and conversion
 
 A `TIME` argument (§3.1) is parsed as a local wall-clock hour/minute,
-combined with local *today* (the only date `start`/`stop` ever target
-in MVP, §1.2) to form a local datetime, then converted to UTC for
-storage per-instant (§2.1). There is no seconds precision anywhere —
+combined with the target date (local *today* by default) to form a
+local datetime, then converted to UTC for storage per-instant (§2.1).
+There is no seconds precision anywhere —
 everything is minute-granular, per NOTES.md's "keep time in minutes"
 call.
 
@@ -408,7 +401,7 @@ malformed.
 
 Edge cases, still just **detected and surfaced in that date's
 summary** (§3.5/§3.6 output), not silently fixed and not rejected at
-insert time (no editing/validation in MVP — see §1.2):
+insert time (no editing/validation — see §1.2):
 
 - **One unmatched trailing `start`** (stack has exactly one item once
   the date's punches are exhausted): the normal open/ongoing stint
@@ -525,9 +518,9 @@ questions, not a contradiction.
 Two tiers, kept distinct on purpose: **hard errors** reject the
 command outright (nonzero exit, nothing written, message on stderr);
 **anomalies** (§4.3) are accepted, stored, and surfaced later in
-`status`/`week` output instead — because MVP has no editing, refusing
-to store a punch that merely produces a weird pairing would leave the
-user with no way to fix it.
+`status`/`week` output instead — because there's no in-place editing
+(§1.2), refusing to store a punch that merely produces a weird pairing
+would leave the user with no way to fix it.
 
 ### 6.1 Hard errors (reject, no write)
 
@@ -933,9 +926,3 @@ or less directly.
   open `start` on day one, silent in `week`'s view (no `(ongoing)`, no
   `[!]`, §7.2), plus a flagged orphaned-`end` anomaly on day two.
 
----
-
-*Spec complete through MVP scope, flow-mapped and adversarially
-reviewed per NOTES.md's final-review note. Ready for TDD
-implementation + independent adversarial code review, per the
-workflow note at the top of NOTES.md.*
