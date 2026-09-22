@@ -8,7 +8,12 @@
 (`docs/dev/plans/reports/boundary-context-cues-plan-review.md`)
 surfaced an undeclared gap between §4's stint-line wording and Day
 total's own `(+ ongoing)` suffix — §4 extended to cover Day total too
-(NOTES.md decision 62).
+(NOTES.md decision 62). Implemented and merged
+(`docs/dev/plans/reports/boundary-context-cues-final-review.md`,
+ship-with-followups). §4's caption wording amended post-final-review
+— "elapsed since now" read backwards to a fresh-eyes reader (elapsed
+time is measured *since the start*, as of now); replaced with
+"duration as of right now" (NOTES.md decision 64).
 
 ## 1. Scope
 
@@ -72,7 +77,7 @@ An open stint dated yesterday keeps its live duration, with a caption
 (still a plausible number — an overnight stint):
 
 ```
-  23:10-now    (10h 35m, ongoing - elapsed since now, not a running total)
+  23:10-now    (10h 35m, ongoing - duration as of right now, not a running total)
 ```
 
 An open stint dated two or more days back drops the duration figure

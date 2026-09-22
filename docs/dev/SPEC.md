@@ -61,18 +61,13 @@ Shipped, working-as-designed behavior that's rough or confusing in a
 way worth fixing later. Kept separate from §1.2 because a "known
 issue" reads very differently to a user hitting it than a "non-goal"
 does: one is "we haven't built this yet," the other is "this works,
-but expect a rough edge here." Surfaced by a
-first-time-user UX pass run against the boundary-stint-pairing
-changeset; several predate that changeset and were simply never
-written down before.
+but expect a rough edge here." Originally surfaced by a first-time-user
+UX pass run against the boundary-stint-pairing changeset (several
+predated that changeset and were simply never written down before);
+the boundary-context-cues changeset fixed four of those bullets (see
+`docs/dev/plans/reports/boundary-context-cues-*`) and its own
+fresh-eyes UX check surfaced five more, listed below.
 
-- A cross-midnight completed stint (e.g. `23:30-00:45`) has no visual
-  cue that it spans two calendar days — legible once you notice
-  end < start and read the duration, but nothing points it out.
-- The calendar date that received the actual `stop` punch of a
-  cross-midnight stint shows **zero trace of it** in `status` — the
-  punch is fully absorbed into the previous date's stint with no
-  footnote on the date it was actually typed against.
 - Whether an unclosed stint reaching into the next day silently merges
   or gets flagged and left unmerged depends on an internal
   1:1-unambiguous gate (§4.3) the user has no way to observe — nothing
@@ -85,13 +80,32 @@ written down before.
   case, two-or-more is E7) — the same surface signal ("still open, no
   stop yet") is silent in one case and loudly flagged in the other,
   and the distinction isn't explained anywhere.
-- An open stint's live duration is computed against real wall-clock
-  "now" — for a backdated punch (`-d`, a first-class feature) this can
-  read as alarming ("443h 06m, ongoing") with no caption clarifying
-  it's elapsed-since-real-now, not a computed total or a bug.
-- `status`'s "fulfillment" line can show a confusing negative number
-  driven by carry-in debt from a prior week, with no "carry-in" context
-  on that screen — only `week`'s separate output explains it.
+- A multi-day-old forgotten `stop` is invisible everywhere except the
+  exact calendar date it started: `status` for today, `status` for any
+  date in between, and `week`'s per-day table (that date's row just
+  reads `00h 00m`) all show zero trace of it. Nothing says "you have an
+  open punch from N days ago" anywhere except a `status` query against
+  that exact date.
+- `status`/`week`'s output for a past (closed) date/week uses a
+  different sentence shape (`Total still owed: Xh Ym`, no
+  fulfillment/target breakdown) than the current-week form the README
+  only ever shows examples of (`X left by end of <weekday>
+  (fulfillment.../target...)`) — a user who has only read the README's
+  examples hits an undocumented format the first time they check a
+  past date/week.
+- `est. EOD HH:MM` (§7.1) can point at tomorrow with no date shown —
+  "EOD" reads as "later today," but the shown clock time can require
+  working through the night into the next calendar date, and nothing
+  in the string distinguishes the two.
+- On the last weekday of the ISO week, the day-total pace hint
+  ("... required by end of `<weekday>`") and the week line ("...
+  left by end of `<weekday>`") quote the identical figure with
+  different introductory phrasing — correct, but reads as a redundant
+  repeated number on that one day.
+- "`Total still owed`" (the closed-week/closed-date headline, §7.1/§7.2)
+  reads as punitive/debt-like for a week that simply ended under
+  target, inconsistent with the tool's otherwise neutral vocabulary
+  ("fulfillment," "carry-in," "shortfall/surplus" per the README).
 
 ### 1.3 Terminology
 
@@ -453,9 +467,15 @@ genuinely carried-over orphan sharing its date with one unrelated
 stray orphan elsewhere that day still doesn't splice** (the
 `orphaned_ends.len() == 1` gate fails), so this section's fix isn't an
 unconditional guarantee against every possible day's data, only the
-ordinary case. This residual case, plus the fact that a spliced stint
-carries no visual marker distinguishing it from an ordinary same-date
-stint (deliberate — see §1.2a), are the known rough edges here.
+ordinary case. This residual case is the known rough edge here — the
+gate's own on/off condition is still undocumented in `--help`/`status`
+(§1.2a).
+
+A spliced stint is not indistinguishable from an ordinary same-date
+one: the earlier date's stint line gets a `, spans to next day` suffix
+(§7.1), and the receiving date's header gets a `(HH:MM continues
+previous day's stint)` suffix (§7.1) — added by the boundary-context-cues
+changeset, see `docs/dev/plans/reports/boundary-context-cues-*`.
 
 ## 5. Week accounting — worked example
 
@@ -583,13 +603,23 @@ Notes:
   - started punch pairing tests
 ```
 
-- Header: `<weekday abbrev> <YYYY-MM-DD>`.
+- Header: `<weekday abbrev> <YYYY-MM-DD>`, with a suffix
+  `  (HH:MM continues previous day's stint)` when this date's
+  chronologically-first punch was consumed by a §4.3.1 splice onto the
+  previous date — e.g. `Fri 2026-02-13  (00:45 continues previous
+  day's stint)`. No bracket marker, no extra line. `status`-only:
+  `week`'s row for the same date shows no equivalent marker (§7.2) —
+  an accepted asymmetry, not a bug.
 - **Day total** and **week** lines lead the output, ahead of the
   stint list — the "how much is left" figures are the point of a
   status check, not something to hunt for at the bottom.
 - Day total is a tabular-format sum; ongoing time isn't folded into
   it live (avoids the total silently changing mid-read) — `(+
-  ongoing)` just flags that an open stint isn't counted yet.
+  ongoing)` just flags that an open stint isn't counted yet, unless
+  that open stint is two or more calendar days old, in which case the
+  suffix is `(+ unclosed)` instead, matching the stint line's own
+  wording change below — a stale, probably-forgotten punch reads
+  differently from a live one.
 - "X left to `<required>` required by end of `<weekday>`" (fulfillment
   under `required`) or "X over `<required>` required by end of
   `<weekday>`" (fulfillment at/above it) is a **display-only pace
@@ -626,12 +656,34 @@ Notes:
   itself is some other day within that same week — the deadline is
   always about today, not about which day's stints you're viewing),
   or the plain `Total still owed`/`Total ahead` form when `DATE`'s
-  week is a past or future one.
+  week is a past or future one. When the current week's `carry_in` is
+  non-zero, the `(fulfillment .../target ...)` parenthetical expands to
+  `(fulfillment F = worked W + carry-in C / target T)`, each figure
+  signed independently per §4.2 (a carry-in deficit can drive
+  `fulfillment` itself negative — that's expected, not an error) —
+  when `carry_in` is zero, the shorter one-term form is unchanged. The
+  past/future `Total still owed`/`Total ahead` form never gets this
+  parenthetical, zero or non-zero carry-in alike.
 - Stint lines: `HH:MM-HH:MM  (duration)`, ongoing stint's end is the
   literal word `now`. Tabular duration format (§4.2). Section omitted
   entirely when the date has zero stints (a note-only day, or a fully
   empty one) — same treatment as Notes below, no empty-list
   placeholder either way.
+  - A **completed** stint whose end falls on a later calendar date
+    than its start (a §4.3.1 splice) gets `, spans to next day` added
+    inside the duration parenthetical, same slot the `, ongoing` suffix
+    below occupies: `23:30-00:45  (01h 15m, spans to next day)`.
+  - An **open** stint's rendering depends on how old its date is,
+    relative to today: today's own open stint is unchanged
+    (`17:45-now  (00h 15m, ongoing)`); one dated yesterday keeps its
+    live duration and gains a caption
+    (`23:10-now  (10h 35m, ongoing - duration as of right now, not a
+    running total)`); one dated two or more days back drops the
+    duration figure entirely — at that age the number is noise, not
+    information — and renders as `09:00-now  (unclosed)` instead. See
+    §1.2a for the remaining gap this doesn't close (nothing signals the
+    stale punch's existence on any *other* date's `status`, or in
+    `week`'s per-day table).
 - Notes render only if any exist for the date (section omitted
   otherwise, not shown empty).
 - Anomalies (§4.3), if any, print between the two lead lines and the
@@ -725,6 +777,10 @@ to it.)
   nothing" scope, not a bug in this rule. The ordinary case (a clean
   cross-midnight session) now splices into one completed stint on the
   earlier date instead of reaching this fallback at all.
+  `status`'s own rendering of that stale date does show the open
+  stint's age-based caption/`(unclosed)` form (§7.1) — only `week`'s
+  per-day row stays silent about it, another instance of the same
+  status/week asymmetry the header suffix (§7.1) also has.
 - Field order below the headline is fixed: carry-in, worked,
   fulfillment, target — `still owed` isn't repeated down here since
   the headline already states it plainly.
