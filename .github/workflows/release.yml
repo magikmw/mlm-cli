@@ -16,6 +16,7 @@
 name: Release
 permissions:
   "contents": "write"
+  "actions": "read"
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -45,6 +46,55 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  # Gate the release on CI having passed for the tagged commit.
+  # Runs on every trigger (job-level skips would cascade into a skip of
+  # build-local-artifacts via its default success() check), but the gate
+  # itself is a no-op on the pull_request path, which doesn't publish.
+  check-ci:
+    runs-on: "ubuntu-22.04"
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Wait for CI to pass on the tagged commit
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Pull request run — nothing to publish, skipping the CI gate."
+            exit 0
+          fi
+
+          if [ "${{ vars.SKIP_CI_GATE }}" = "true" ]; then
+            echo "::warning::SKIP_CI_GATE is set — bypassing the CI gate for ${{ github.sha }}. This release was NOT verified against a passing CI run."
+            exit 0
+          fi
+
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+          ELAPSED=0
+          INTERVAL=15
+          TIMEOUT=600
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            RUN_JSON="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=1")"
+            STATUS="$(echo "$RUN_JSON" | jq -r '.workflow_runs[0].status // empty')"
+            CONCLUSION="$(echo "$RUN_JSON" | jq -r '.workflow_runs[0].conclusion // empty')"
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "CI passed for ${SHA} (conclusion: ${CONCLUSION})."
+                exit 0
+              fi
+              echo "::error::CI for commit ${SHA} completed with conclusion '${CONCLUSION}', not 'success'. Refusing to release. Set the SKIP_CI_GATE repo variable to 'true' to override."
+              exit 1
+            fi
+
+            echo "Waiting for CI on ${SHA} to complete (current status: ${STATUS:-not found}, ${ELAPSED}s elapsed)..."
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::Timed out after ${TIMEOUT}s waiting for a completed CI run on commit ${SHA}. Refusing to release. Set the SKIP_CI_GATE repo variable to 'true' to override."
+          exit 1
+
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
     runs-on: "ubuntu-22.04"
@@ -93,6 +143,7 @@ jobs:
     # Let the initial task tell us to not run (currently very blunt)
     needs:
       - plan
+      - check-ci
     if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
     strategy:
       fail-fast: false
