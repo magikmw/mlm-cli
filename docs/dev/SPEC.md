@@ -46,10 +46,10 @@ things known to be broken or confusing today. See §1.2a for that.
 - Shell prompt integration.
 - Non-ISO week conventions.
 - 12h (AM/PM) time input — accepted input is `HH:MM`/`HHMM`/`HH`, 24h only.
-- `+N`/`-N` relative week notation for `week`'s week-id argument.
-  (`status`'s `DATE` argument's own `-N` shorthand, and logging a
-  punch/note against a date other than today, are no longer non-goals —
-  both are implemented.)
+- `+N`/`-N` relative week notation for `week`'s week-id argument. (This
+  is distinct from `status`'s `DATE` argument and `start`/`stop`/
+  `note`'s `--date` flag, both of which already accept a `-N` shorthand
+  — §3.4a, §3.5.)
 
 Stints spanning midnight, and a same-instant `end`/`start` boundary
 between two real stints, were both non-goals through this point in the
@@ -256,13 +256,15 @@ Accepted for any `TIME` argument, 24h only (§1.2):
 | `HHMM` | `0905`, `1730` | hour and minute, no separator |
 | `HH` | `9`, `17` | hour, minute defaults to `:00` |
 
-### 3.2 `mlm start [TIME] [NOTE]`
+### 3.2 `mlm start [TIME] [NOTE] [--date DATE]`
 
-Insert a `start` punch for today.
+Insert a `start` punch, for today unless `--date` says otherwise
+(§3.4a).
 
 - `TIME` optional (§3.1). Defaults to now.
 - `NOTE` optional, free text — if given, also inserts a note row for
-  today in the same call (convenience for "starting work on X").
+  the target date in the same call (convenience for "starting work on
+  X").
 - Positional order is strict and never sniffed: `TIME`, when given, is
   always the first positional argument. A value in that position that
   fails to parse as `TIME` is a hard error (§6.1, E1) — it is never
@@ -271,14 +273,29 @@ Insert a `start` punch for today.
 - No chronology requirement: a start punch can be inserted at any
   time value relative to existing punches for the day.
 
-### 3.3 `mlm stop [TIME] [NOTE]`
+### 3.3 `mlm stop [TIME] [NOTE] [--date DATE]`
 
 Same shape as `start`, inserts an `end` punch.
 
-### 3.4 `mlm note NOTE`
+### 3.4 `mlm note NOTE [--date DATE]`
 
-Insert a work-log note for today, independent of punches — for
-end-of-day or next-day notes with no punch attached.
+Insert a work-log note, for today unless `--date` says otherwise
+(§3.4a), independent of punches — for end-of-day or next-day notes
+with no punch attached.
+
+### 3.4a Backdating with `--date`/`-d`
+
+`start`, `stop`, and `note` all take an optional `--date`/`-d DATE`
+flag targeting a date other than today. Same `DATE` grammar as
+`status` (§3.5): an absolute `YYYY-MM-DD`, or `-N` for N days before
+today (`-1` = yesterday, N a positive integer, `-0` rejected).
+
+- `--date`/`-d` must come before `NOTE` text on the command line —
+  after `NOTE` starts, everything remaining is note text, so a
+  trailing `--date` is absorbed into the note body instead of parsed
+  as the flag.
+- Malformed `--date`, or one resolving to a future date: hard error
+  (§6.1).
 
 ### 3.5 `mlm status [DATE]`
 
@@ -526,8 +543,12 @@ would leave the user with no way to fix it.
 
 - Malformed `TIME` (§3.1): doesn't match `HH:MM`/`HHMM`/`HH`, or an
   out-of-range hour/minute (`25:00`, `9:75`).
-- Malformed `DATE` (`YYYY-MM-DD`): wrong shape or an invalid calendar
-  date (`2026-02-30`).
+- Malformed `DATE` (`YYYY-MM-DD`, or a `-N` shorthand where accepted):
+  wrong shape, an invalid calendar date (`2026-02-30`), or a malformed
+  `-N` (non-integer, `-0`).
+- `--date`/`-d` on `start`/`stop`/`note` resolving to a date later
+  than today (§3.4a) — these three never write into the future.
+  `status`'s `DATE` argument (§3.5) has no such restriction.
 - Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
   shape, or a week number that isn't a valid ISO week for its year
   (most years have 52, some have 53 — `2027-53` is invalid if 2027
