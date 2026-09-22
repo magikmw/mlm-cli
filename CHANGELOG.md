@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.5] - 2026-09-22
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix a stale test assertion that was failing CI for correct output
+- Releases now require a passing CI run on the tagged commit before publishing
+
 ## [0.3.4] - 2026-09-22
 
 ### 🚀 Features
