@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.4] - 2026-09-22
+
+### 🚀 Features
+
+- *(status)* A cross-midnight stint now shows a visible span cue: `23:30-00:45  (01h 15m, spans to next day)`
+- *(status)* The date that received the tail end of a cross-midnight stint now shows where that time came from: `Fri 2026-02-13  (00:45 continues previous day's stint)`
+- *(status)* An open stint's duration caption now reflects how stale it is, dropping the number entirely past a day old: `09:00-now  (unclosed)`
+- *(status)* The week line now breaks a nonzero carry-in out of the fulfillment figure: `(fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)`
+
+### 📚 Documentation
+
+- Document the `--date`/`-d` backdating flag for `start`/`stop`/`note`, shipped since 0.2.0 but missing from the command reference until now
+- General cleanup: stale terminology, drift between docs, leftover claudish
+
 ## [0.3.3] - 2026-09-19
 
 ### 🐛 Bug Fixes
