@@ -96,9 +96,15 @@ else
                 break
             fi
             echo "error: CI for commit ${sha} completed with conclusion '${conclusion}', not 'success'." >&2
-            echo "main was already pushed — that's fine, an ordinary push doesn't trigger a release." >&2
-            echo "The tag was NOT created or pushed, so no release was triggered." >&2
-            echo "Fix CI and re-run this script (it will make a new commit), or use --skip-ci-check to override." >&2
+            echo "The version-bump commit already exists and is already pushed to origin/main — there's nothing to redo there." >&2
+            echo "The tag was NOT created or pushed, so no release was triggered. That's the safe state to be in." >&2
+            echo "Don't re-run this script — Cargo.toml etc. are already at ${new_version} and already committed, so it has" >&2
+            echo "nothing left to commit and will die at the 'git commit' step." >&2
+            echo "Once you've confirmed CI is green on ${sha} (a fix commit, a re-run of the workflow, whatever it takes)," >&2
+            echo "finish the release by tagging and pushing directly (--skip-ci-check won't help at this point — it only" >&2
+            echo "skips the wait before the commit/push happen, and those already happened):" >&2
+            echo "  git tag -a ${tag} -m \"mlm ${new_version}\"" >&2
+            echo "  git push origin ${tag}" >&2
             exit 1
         fi
 
@@ -109,9 +115,15 @@ else
 
     if [ "$elapsed" -ge "$timeout" ]; then
         echo "error: timed out after ${timeout}s waiting for a completed CI run on commit ${sha}." >&2
-        echo "main was already pushed — that's fine, an ordinary push doesn't trigger a release." >&2
-        echo "The tag was NOT created or pushed, so no release was triggered." >&2
-        echo "Re-run the CI check once it's fixed, or use --skip-ci-check to override." >&2
+        echo "The version-bump commit already exists and is already pushed to origin/main — there's nothing to redo there." >&2
+        echo "The tag was NOT created or pushed, so no release was triggered. That's the safe state to be in." >&2
+        echo "Don't re-run this script — Cargo.toml etc. are already at ${new_version} and already committed, so it has" >&2
+        echo "nothing left to commit and will die at the 'git commit' step." >&2
+        echo "Once you've confirmed CI is green on ${sha} (a fix commit, a re-run of the workflow, whatever it takes)," >&2
+        echo "finish the release by tagging and pushing directly (--skip-ci-check won't help at this point — it only" >&2
+        echo "skips the wait before the commit/push happen, and those already happened):" >&2
+        echo "  git tag -a ${tag} -m \"mlm ${new_version}\"" >&2
+        echo "  git push origin ${tag}" >&2
         exit 1
     fi
 fi
