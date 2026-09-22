@@ -195,34 +195,37 @@ fn stint_line(line: &StintLine) -> String {
         StintEnd::At(end) => format!("{}-{}", line.start.format("%H:%M"), end.format("%H:%M")),
         StintEnd::Now => format!("{}-now", line.start.format("%H:%M")),
     };
-    let suffix = match (line.end, line.open_stint_age) {
+    match (line.end, line.open_stint_age) {
         (StintEnd::At(_), _) => {
-            if line.spans_to_next_day {
-                ", spans to next day".to_string()
+            let suffix = if line.spans_to_next_day {
+                ", spans to next day"
             } else {
-                String::new()
-            }
+                ""
+            };
+            format!(
+                "  {:<11}  ({}{})",
+                range,
+                format_minutes(line.duration_minutes),
+                suffix
+            )
         }
         (StintEnd::Now, Some(OpenStintAge::Today)) | (StintEnd::Now, None) => {
-            ", ongoing".to_string()
+            format!(
+                "  {:<11}  ({}, ongoing)",
+                range,
+                format_minutes(line.duration_minutes)
+            )
         }
         (StintEnd::Now, Some(OpenStintAge::Yesterday)) => {
-            ", ongoing - elapsed since now, not a running total".to_string()
+            format!(
+                "  {:<11}  ({}, ongoing - duration as of right now, not a running total)",
+                range,
+                format_minutes(line.duration_minutes)
+            )
         }
-        (StintEnd::Now, Some(OpenStintAge::TwoOrMoreDaysBack)) => String::new(),
-    };
-    if matches!(
-        (line.end, line.open_stint_age),
-        (StintEnd::Now, Some(OpenStintAge::TwoOrMoreDaysBack))
-    ) {
-        format!("  {:<11}  (unclosed)", range)
-    } else {
-        format!(
-            "  {:<11}  ({}{})",
-            range,
-            format_minutes(line.duration_minutes),
-            suffix
-        )
+        (StintEnd::Now, Some(OpenStintAge::TwoOrMoreDaysBack)) => {
+            format!("  {:<11}  (unclosed)", range)
+        }
     }
 }
 
@@ -823,7 +826,7 @@ mod tests {
         assert!(out.contains("Day total:     00h 00m (+ ongoing)"));
         assert!(out.contains("  09:00-now    (00h 00m, ongoing)"));
         assert!(!out.contains("unclosed"));
-        assert!(!out.contains("elapsed since now"));
+        assert!(!out.contains("duration as of right now"));
     }
 
     // §4 -- an open stint dated yesterday keeps its live duration and
@@ -843,7 +846,7 @@ mod tests {
         let out = render(&view);
         assert!(
             out.contains(
-                "  23:10-now    (10h 35m, ongoing - elapsed since now, not a running total)"
+                "  23:10-now    (10h 35m, ongoing - duration as of right now, not a running total)"
             ),
             "{out}"
         );
@@ -1345,9 +1348,10 @@ mod tests {
     }
 
     // Extends T13's plain-ASCII audit to the five new literals this task
-    // adds inside status.rs: ", spans to next day"; ", ongoing - elapsed
-    // since now, not a running total"; "(unclosed)"; "continues previous
-    // day's stint" (via a non-None receiving_date_suffix); "(+ unclosed)".
+    // adds inside status.rs: ", spans to next day"; ", ongoing - duration
+    // as of right now, not a running total"; "(unclosed)"; "continues
+    // previous day's stint" (via a non-None receiving_date_suffix); "(+
+    // unclosed)".
     #[test]
     fn t13b_new_boundary_context_cue_literals_are_plain_ascii() {
         let mut spanning_view = base_view();
@@ -1376,7 +1380,7 @@ mod tests {
             open_stint_age: Some(OpenStintAge::Yesterday),
         }];
         let out = render(&yesterday_view);
-        assert!(out.contains(", ongoing - elapsed since now, not a running total"));
+        assert!(out.contains(", ongoing - duration as of right now, not a running total"));
         assert!(
             out.bytes()
                 .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
@@ -1794,7 +1798,9 @@ mod tests {
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
         let out = render(&view);
         assert!(
-            out.contains("worked") && out.contains("+ carry-in"),
+            out.contains(
+                "(fulfillment 02h 00m = worked 00h 00m + carry-in 02h 00m / target 40h 00m)"
+            ),
             "carry-in breakdown should survive build_ledger -> week_accounting -> \
              week_line -> status_week_line: {out}"
         );
