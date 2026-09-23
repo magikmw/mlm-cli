@@ -749,6 +749,74 @@ SPEC.md and PLAN.md:
     (phase 14) next — phase 13 needs the user's explicit approval
     before dispatch.
 
+69. **Phase 13/14 dispatched** for `status-wording-fixes`. Phase 13
+    (final review) approved by the user at default (Sonnet) tier,
+    scoped to the diff `v0.3.5..status-wording-fixes` (v0.3.5 is
+    tagged and is main's current tip). Phase 14 (fresh-eyes) tier:
+    `returning` — this changeset changes wording an existing user
+    already relies on in `status`/`week` output, not first-run
+    onboarding or an opt-in flag, so the most-naive-applicable-tier
+    rule lands on `returning`. Sandbox prepared at
+    `/tmp/claude-659200001/mlm-fresh-eyes-sandbox/` (release binary
+    built from `status-wording-fixes` tip + `README.md` only — the
+    phase-0 user-visible-surface slot's other member, `--help`/
+    rendered output, the persona generates itself by running the
+    binary).
+
+70. **`status-wording-fixes` phase 13/14 back; fresh-eyes findings
+    triaged with the user.** Final review (phase 13, Sonnet tier,
+    `docs/dev/plans/reports/status-wording-fixes-final-review.md`):
+    green, no findings, verdict ship — built and ran the artifact by
+    hand against the spec's worked examples, all four fixes confirmed
+    correct. Fresh-eyes (phase 14, `returning` tier,
+    `docs/dev/plans/reports/status-wording-fixes-fresh-eyes.md`): 5
+    findings, all pre-existing behavior outside this changeset's
+    scope (none are regressions it introduced). Triaged one by one
+    with the user, decisions:
+    - Finding 1 (day-total line mixes today's hours with a week-scoped
+      pace clause) — **not a bug**. Confirmed by the user as original
+      design intent: the day-total line is deliberately a combined
+      day+week statusline, not a day-only figure. Not filed.
+    - Finding 2 (`est. EOD (tomorrow)` is flatly wrong for gaps many
+      days out, demonstrated up to ~49 days via repeated `week target`
+      inflation) — **dismissed**. The user judged the scenario
+      unrealistic (no real workflow produces a 49-day-open stint); the
+      spec's original "accepted edge case, technically imprecise"
+      language stands as written. Not filed, no doc change.
+    - Finding 3 (`status` silently accepts future dates; week framing
+      then names the real current weekday, not the queried date) —
+      **confirmed as a real bug** by the user ("status has no business
+      showing future dates"), but explicitly deferred to its own
+      future changeset rather than folded into this one, since fixing
+      it means new validation logic in already-reviewed-and-merged
+      code, outside this changeset's presentation-only scope. Needs
+      its own spec/plan/implementation cycle later — not yet started.
+    - Finding 4 (the expanded `fulfillment = worked + carry-in`
+      output format has no README/SPEC.md precedent, only the simple
+      form is ever shown) — **confirmed, fixed now**. Small, bounded,
+      docs-only fix pass dispatched (phase 16) rather than filed as a
+      known issue, since it's cheap and the user said outright "needs
+      documentation."
+    - Finding 5 ("Total behind: Nh" reads identically for an
+      untracked week and a worked-but-short one) — **not a bug**. The
+      user's read: this is a target-configuration matter (set the
+      week's target for weeks you don't mean to track), not a wording
+      ambiguity in the tool, and the same phrasing existed under the
+      old "Total still owed" wording too — this changeset's rename
+      neither caused nor worsened it. Not filed.
+    Net: only Finding 4 produces a change (phase 16 fix pass,
+    docs-only). Finding 3 is logged here as a known future changeset,
+    not yet scoped or specced.
+
+71. **`status-wording-fixes` fix pass merged; Finding 3 filed as a
+    known issue.** Fix pass (`docs/dev/plans/reports/status-wording-fixes-fixpass.md`)
+    merged and independently re-verified green. Finding 3 (`status`
+    silently accepting future dates, week framing anchored to the
+    real "today") added as a new bullet to both `SPEC.md §1.2a` and
+    README's "Known issues" — filing the issue itself, not its fix,
+    which stays deferred to its own future changeset per entry 70.
+    Changeset ready for phase 17 (release) pending user go-ahead.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

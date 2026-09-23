@@ -79,6 +79,13 @@ yet, a known issue works but has a rough edge.
   reads `00h 00m`) all show zero trace of it. Nothing says "you have an
   open punch from N days ago" anywhere except a `status` query against
   that exact date.
+- `status DATE` silently accepts a future `DATE` — undocumented; only
+  `start`/`stop`/`note`'s future-date rejection is documented (§6.1).
+  When accepted, the week line's deadline phrase (`... by end of
+  <weekday>`) still names the real current weekday, not the queried
+  date, with nothing on the page saying so — a future-dated page reads
+  as if it's talking about itself, but the weekday it names belongs to
+  "now," not to `DATE`.
 
 ### 1.3 Terminology
 

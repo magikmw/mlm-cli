@@ -54,6 +54,9 @@ later:
   except a `status` query against the exact date it started — no
   warning on today's `status`, on any date in between, or in `week`'s
   per-day table
+- `status DATE` silently accepts a future date; the week deadline
+  phrase then names today's real weekday, not the date you queried,
+  with nothing on the page explaining the mismatch
 
 ## Install
 
