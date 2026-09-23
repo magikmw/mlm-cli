@@ -54,15 +54,6 @@ later:
   except a `status` query against the exact date it started — no
   warning on today's `status`, on any date in between, or in `week`'s
   per-day table
-- `status`/`week`'s output for a past (closed) date/week uses a
-  different, undocumented sentence shape (`Total still owed: Xh Ym`)
-  than the current-week examples above
-- `est. EOD HH:MM` can point at tomorrow with no date shown
-- On the last weekday of the week, the day-total and week-total lines
-  can show the identical figure with different wording, reading as
-  redundant
-- "Total still owed" reads more punitive than intended for a week that
-  simply ended under target
 
 ## Install
 
@@ -195,7 +186,7 @@ before today (e.g. `-1` = yesterday), and defaults to today.
 $ mlm status
 Sat 2026-09-12
 
-Day total:     07h 25m (+ ongoing), 04h 35m over 40h 00m required by end of Saturday, est. EOD target already met
+Day total:     07h 25m (+ ongoing), 04h 35m over 40h 00m required today, target already met
 Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
@@ -219,6 +210,21 @@ Day total:     07h 35m
 Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40h 00m)
 
   09:05-16:40  (07h 35m)
+```
+
+A date in an already-closed week shows the same plain total the week
+line uses instead of the current-week's deadline framing — no
+fulfillment/target parenthetical either, since that only applies to
+the current week:
+
+```sh
+$ mlm status 2026-08-25
+Tue 2026-08-25
+
+Day total:     07h 50m
+Week 2026-35:  Total behind: 02h 10m
+
+  09:10-17:00  (07h 50m)
 ```
 
 ### `mlm week|w [WEEK_ID]`
@@ -275,6 +281,31 @@ Carry-in:      00h 00m
 Worked:        44h 35m
 Fulfillment:   44h 35m
 Target:        45h 00m
+```
+
+A past (or future) week has no "today" to frame a deadline against, so
+its headline is the same plain total `status` showed above, leading
+the output instead of appearing inline — everything else is the same
+shape:
+
+```sh
+$ mlm week 2026-35
+Week 2026-35 (2026-08-24 - 2026-08-30)
+
+Total behind: 02h 10m
+
+  Mon 2026-08-24   08h 15m
+  Tue 2026-08-25   07h 50m
+  Wed 2026-08-26   08h 00m
+  Thu 2026-08-27   07h 45m
+  Fri 2026-08-28   06h 00m
+  Sat 2026-08-29   00h 00m
+  Sun 2026-08-30   00h 00m
+
+Carry-in:      00h 00m
+Worked:        37h 50m
+Fulfillment:   37h 50m
+Target:        40h 00m
 ```
 
 ### `mlm delete|del note|n [ID] [-d/--date DATE]`
