@@ -728,6 +728,27 @@ SPEC.md and PLAN.md:
     now records both review rounds. Changeset plan locked, task
     dispatches (phase 8) next.
 
+68. **`status-wording-fixes` Task 1 and Task 2 implemented and merged**
+    — both dispatched via worktree, strict TDD, shipped exactly per
+    their task plans (no completion reports needed). Task 1 (code,
+    `src/render.rs`/`src/status.rs`, commit `c3da272`) added one extra
+    test beyond its plan (`resolve_eod_target_already_met_with_open_stint`)
+    to close a coverage gap the repo's coverage-regression hook
+    flagged — not a behavior or signature deviation. Task 2 (docs,
+    `README.md`/`docs/dev/SPEC.md`, commit `cbbeefa`) cross-checked its
+    worked examples against Task 1's actual merged code before
+    writing them, rather than trusting the plan's pre-implementation
+    derivation. Both merged `--no-ff` into `status-wording-fixes`
+    (merge commits for Task 1 then Task 2, sequential — Task 2 was
+    dispatched only after Task 1 merged, since it needed real output
+    strings). Coordinator re-verified independently after each merge:
+    `cargo fmt`, `cargo build`, `cargo test`, `cargo clippy --all-targets
+    -- -D warnings` all green both times; confirmed zero remaining
+    `Total still owed` occurrences repo-wide after Task 2's merge.
+    Merge gate closed. Final review (phase 13) and fresh-eyes check
+    (phase 14) next — phase 13 needs the user's explicit approval
+    before dispatch.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
