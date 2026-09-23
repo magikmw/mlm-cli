@@ -1125,7 +1125,7 @@ mod tests {
         let before =
             crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
         assert!(
-            before.week_line.contains("Total still owed: 76h 00m"),
+            before.week_line.contains("Total behind: 76h 00m"),
             "before: {}",
             before.week_line
         );
@@ -1153,7 +1153,7 @@ mod tests {
         let after =
             crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
         assert!(
-            after.week_line.contains("Total still owed: 74h 00m"),
+            after.week_line.contains("Total behind: 74h 00m"),
             "after: {}",
             after.week_line
         );
