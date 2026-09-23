@@ -639,6 +639,184 @@ SPEC.md and PLAN.md:
     caption-reword dispatched as a follow-up implementation task on the
     `boundary-context-cues` branch (not yet landed as of this entry).
 
+65. **`status-wording-fixes` changeset started** — coordinator-subagent
+    workflow (`coordinating-development` skill), phase 0 profile filled:
+    verification set `cargo fmt`, `cargo build`, `cargo test`,
+    `cargo clippy --all-targets -- -D warnings` (from `AGENTS.md`
+    "Verifying changes"); doc root `docs/dev/` (`SPEC.md`, `NOTES.md`,
+    `specs/`, `plans/`, `plans/reports/`); decision log is this file,
+    appended as numbered entries; model tier default (Sonnet) everywhere,
+    no escalation requested; release procedure `scripts/prep_release.sh`
+    (reversible bump+changelog) then `scripts/release.sh` (irreversible
+    tag+push), not read in full yet — will be before phase 17 if this
+    changeset reaches release; integration branch scheme one branch per
+    changeset (`boundary-context-cues` precedent); changeset spec location
+    `docs/dev/specs/<date>-<slug>.md`; runnable artifact `cargo build
+    --release` → `target/release/mlm`; user-visible surface `README.md`,
+    `mlm --help`, `status`/`week` rendered output — all four fixes below
+    touch it, so phase 14 (fresh-eyes check) runs, not skipped. Context-
+    starvation hook: absent, not configured in `.claude/settings.json`.
+    Changeset numbering: repo's existing plan files use a topic slug
+    (`boundary-context-cues-plan.md`, `boundary-context-cues-task-1-...`),
+    never a bare integer — deviated from the skill's numeric default to
+    match precedent; this changeset's id is the slug
+    `status-wording-fixes` everywhere the skill's templates say `<N>`.
+    Scope: the four known issues newly filed in entry 61
+    (SPEC.md §1.2a bullets on closed-period sentence shape, `est. EOD`
+    with no date, last-weekday redundant wording, "Total still owed"
+    tone) — user picked all four for one changeset, greenlit in chat
+    2026-09-22/23. Two tasks: Task 1 (code — `render.rs`/`status.rs` and
+    their in-file tests, covers "Total behind" rename + `est. EOD
+    (tomorrow)` + last-weekday wording), Task 2 (docs only —
+    `README.md`/`SPEC.md` closed-period example) — user asked for Task 2
+    to get its own dispatch rather than being folded into Task 1's
+    verification pass. 1–2 task changeset: phase 10 (cross-document
+    review) skipped per the scaling table; phases 5-7 collapse into one
+    short changeset plan, reviewed once.
+
+66. **`status-wording-fixes` spec adversarially reviewed and locked**
+    (`docs/dev/plans/reports/status-wording-fixes-spec-review.md`,
+    needs-rework, 5 findings). Two were implementation-blocking: Fix
+    C's condition (`weekday_number.min(5) == 5`) fires on Friday,
+    Saturday, *and* Sunday, not "the one day" the draft repeatedly
+    claimed — corrected in place, since the underlying redundancy
+    genuinely spans all three (required_minutes is capped at the full
+    week target on each), not a bug to route around, just a wrong
+    premise in the prose; and Fix B's suggested `.date()` comparison
+    is deprecated since chrono 0.4.23, returns the wrong type against
+    `today: NaiveDate`, and would fail this repo's `clippy -D
+    warnings` CI gate outright — corrected to `.date_naive()`. One
+    would have misdirected Task 2: SPEC.md already has both
+    closed-period worked examples (§7.1/§7.2), so Fix D's SPEC.md
+    portion is a string update, not a new example — only README.md
+    actually lacks one; scope narrowed accordingly. Also folded: a
+    fuller `Total still owed` inventory (SPEC.md has 8 hits, not the
+    2 the draft named — four are normative prose at lines 647/672/
+    679/776) and an explicit weekend-day test-plan addition for Fix C
+    (the fixture gap that would have caught the first finding).
+    Undeclared-user-visible-gap check came back empty — all four
+    fixes already record their visible consequences. Spec locked.
+
+67. **`status-wording-fixes` changeset plan adversarially reviewed
+    (collapsed form) and folded** — plan written
+    (`docs/dev/plans/status-wording-fixes-plan.md`), reviewed
+    (`docs/dev/plans/reports/status-wording-fixes-plan-review.md`,
+    needs-rework, 5 findings). Two high-severity: Fix C's
+    `weekday_number.min(5) == 5` condition has no data path into
+    `day_total_line` (a pure `&StatusView -> String` function with no
+    access to `today`/`weekday_number`) — both spec and plan named the
+    condition without saying where it lives; fixed by threading a
+    third field, `day_reaches_week_cap: bool`, onto `DailyTargetHint`,
+    mirroring how Fix B's bool already threads through `EodState`. And
+    both spec and plan claimed no existing test hits the capped
+    weekday range — false:
+    `resolve_f9b_sunday_pin_non_multiple_of_five_target_override`
+    (`status.rs:1759-1780`) already asserts the old wording via
+    `render()` on a Sunday and will break under Fix C; folded in as a
+    required update, not left as silent fallout. One medium,
+    filed as an undeclared user-visible gap: README's existing
+    Saturday `status` example (`README.md:196-198`) goes stale the
+    moment Fix C ships (Saturday triggers the same condition), and
+    Task 2's scope hadn't named touching any *existing* example, only
+    adding new ones — folded in, along with a pre-existing, unrelated
+    defect noticed at the same line (an `est. EOD ... target already
+    met` concatenation the renderer can't actually produce), fixed
+    since Task 2 is already editing that exact line. One low: the
+    `EodState::At` conversion-site enumeration wrongly included
+    `base_view` (which has no such construction) — corrected to the
+    actual five sites. Both spec and plan updated; spec's Status line
+    now records both review rounds. Changeset plan locked, task
+    dispatches (phase 8) next.
+
+68. **`status-wording-fixes` Task 1 and Task 2 implemented and merged**
+    — both dispatched via worktree, strict TDD, shipped exactly per
+    their task plans (no completion reports needed). Task 1 (code,
+    `src/render.rs`/`src/status.rs`, commit `c3da272`) added one extra
+    test beyond its plan (`resolve_eod_target_already_met_with_open_stint`)
+    to close a coverage gap the repo's coverage-regression hook
+    flagged — not a behavior or signature deviation. Task 2 (docs,
+    `README.md`/`docs/dev/SPEC.md`, commit `cbbeefa`) cross-checked its
+    worked examples against Task 1's actual merged code before
+    writing them, rather than trusting the plan's pre-implementation
+    derivation. Both merged `--no-ff` into `status-wording-fixes`
+    (merge commits for Task 1 then Task 2, sequential — Task 2 was
+    dispatched only after Task 1 merged, since it needed real output
+    strings). Coordinator re-verified independently after each merge:
+    `cargo fmt`, `cargo build`, `cargo test`, `cargo clippy --all-targets
+    -- -D warnings` all green both times; confirmed zero remaining
+    `Total still owed` occurrences repo-wide after Task 2's merge.
+    Merge gate closed. Final review (phase 13) and fresh-eyes check
+    (phase 14) next — phase 13 needs the user's explicit approval
+    before dispatch.
+
+69. **Phase 13/14 dispatched** for `status-wording-fixes`. Phase 13
+    (final review) approved by the user at default (Sonnet) tier,
+    scoped to the diff `v0.3.5..status-wording-fixes` (v0.3.5 is
+    tagged and is main's current tip). Phase 14 (fresh-eyes) tier:
+    `returning` — this changeset changes wording an existing user
+    already relies on in `status`/`week` output, not first-run
+    onboarding or an opt-in flag, so the most-naive-applicable-tier
+    rule lands on `returning`. Sandbox prepared at
+    `/tmp/claude-659200001/mlm-fresh-eyes-sandbox/` (release binary
+    built from `status-wording-fixes` tip + `README.md` only — the
+    phase-0 user-visible-surface slot's other member, `--help`/
+    rendered output, the persona generates itself by running the
+    binary).
+
+70. **`status-wording-fixes` phase 13/14 back; fresh-eyes findings
+    triaged with the user.** Final review (phase 13, Sonnet tier,
+    `docs/dev/plans/reports/status-wording-fixes-final-review.md`):
+    green, no findings, verdict ship — built and ran the artifact by
+    hand against the spec's worked examples, all four fixes confirmed
+    correct. Fresh-eyes (phase 14, `returning` tier,
+    `docs/dev/plans/reports/status-wording-fixes-fresh-eyes.md`): 5
+    findings, all pre-existing behavior outside this changeset's
+    scope (none are regressions it introduced). Triaged one by one
+    with the user, decisions:
+    - Finding 1 (day-total line mixes today's hours with a week-scoped
+      pace clause) — **not a bug**. Confirmed by the user as original
+      design intent: the day-total line is deliberately a combined
+      day+week statusline, not a day-only figure. Not filed.
+    - Finding 2 (`est. EOD (tomorrow)` is flatly wrong for gaps many
+      days out, demonstrated up to ~49 days via repeated `week target`
+      inflation) — **dismissed**. The user judged the scenario
+      unrealistic (no real workflow produces a 49-day-open stint); the
+      spec's original "accepted edge case, technically imprecise"
+      language stands as written. Not filed, no doc change.
+    - Finding 3 (`status` silently accepts future dates; week framing
+      then names the real current weekday, not the queried date) —
+      **confirmed as a real bug** by the user ("status has no business
+      showing future dates"), but explicitly deferred to its own
+      future changeset rather than folded into this one, since fixing
+      it means new validation logic in already-reviewed-and-merged
+      code, outside this changeset's presentation-only scope. Needs
+      its own spec/plan/implementation cycle later — not yet started.
+    - Finding 4 (the expanded `fulfillment = worked + carry-in`
+      output format has no README/SPEC.md precedent, only the simple
+      form is ever shown) — **confirmed, fixed now**. Small, bounded,
+      docs-only fix pass dispatched (phase 16) rather than filed as a
+      known issue, since it's cheap and the user said outright "needs
+      documentation."
+    - Finding 5 ("Total behind: Nh" reads identically for an
+      untracked week and a worked-but-short one) — **not a bug**. The
+      user's read: this is a target-configuration matter (set the
+      week's target for weeks you don't mean to track), not a wording
+      ambiguity in the tool, and the same phrasing existed under the
+      old "Total still owed" wording too — this changeset's rename
+      neither caused nor worsened it. Not filed.
+    Net: only Finding 4 produces a change (phase 16 fix pass,
+    docs-only). Finding 3 is logged here as a known future changeset,
+    not yet scoped or specced.
+
+71. **`status-wording-fixes` fix pass merged; Finding 3 filed as a
+    known issue.** Fix pass (`docs/dev/plans/reports/status-wording-fixes-fixpass.md`)
+    merged and independently re-verified green. Finding 3 (`status`
+    silently accepting future dates, week framing anchored to the
+    real "today") added as a new bullet to both `SPEC.md §1.2a` and
+    README's "Known issues" — filing the issue itself, not its fix,
+    which stays deferred to its own future changeset per entry 70.
+    Changeset ready for phase 17 (release) pending user go-ahead.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

@@ -79,26 +79,13 @@ yet, a known issue works but has a rough edge.
   reads `00h 00m`) all show zero trace of it. Nothing says "you have an
   open punch from N days ago" anywhere except a `status` query against
   that exact date.
-- `status`/`week`'s output for a past (closed) date/week uses a
-  different sentence shape (`Total still owed: Xh Ym`, no
-  fulfillment/target breakdown) than the current-week form the README
-  only ever shows examples of (`X left by end of <weekday>
-  (fulfillment.../target...)`) — a user who has only read the README's
-  examples hits an undocumented format the first time they check a
-  past date/week.
-- `est. EOD HH:MM` (§7.1) can point at tomorrow with no date shown —
-  "EOD" reads as "later today," but the shown clock time can require
-  working through the night into the next calendar date, and nothing
-  in the string distinguishes the two.
-- On the last weekday of the ISO week, the day-total pace hint
-  ("... required by end of `<weekday>`") and the week line ("...
-  left by end of `<weekday>`") quote the identical figure with
-  different introductory phrasing — correct, but reads as a redundant
-  repeated number on that one day.
-- "`Total still owed`" (the closed-week/closed-date headline, §7.1/§7.2)
-  reads as punitive/debt-like for a week that simply ended under
-  target, inconsistent with the tool's otherwise neutral vocabulary
-  ("fulfillment," "carry-in," "shortfall/surplus" per the README).
+- `status DATE` silently accepts a future `DATE` — undocumented; only
+  `start`/`stop`/`note`'s future-date rejection is documented (§6.1).
+  When accepted, the week line's deadline phrase (`... by end of
+  <weekday>`) still names the real current weekday, not the queried
+  date, with nothing on the page saying so — a future-dated page reads
+  as if it's talking about itself, but the weekday it names belongs to
+  "now," not to `DATE`.
 
 ### 1.3 Terminology
 
@@ -606,7 +593,7 @@ the week shown is the actual current week:
 Thu 2026-02-12
 
 Day total:     07h 25m (+ ongoing), 02h 45m left to 32h 00m required by end of Thursday, est. EOD 20:45
-Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)
+Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
   14:05-17:30  (03h 25m)
@@ -616,6 +603,13 @@ Notes:
   - fixed migration runner bug
   - started punch pairing tests
 ```
+
+`2026-07` carries in a -02h 10m deficit from the previous week (see
+§7.2's block for the same week below), so the fulfillment parenthetical
+here is the **expanded** form, `fulfillment F = worked W + carry-in C /
+target T`, not the shorter `fulfillment F / target T` form — that
+shorter form only appears when the current week's carry-in is exactly
+zero.
 
 - Header: `<weekday abbrev> <YYYY-MM-DD>`, with a suffix
   `  (HH:MM continues previous day's stint)` when this date's
@@ -644,7 +638,7 @@ Notes:
   — carry-in counts here, unlike the old day-total figure it's
   compared next to. `X` is always `gap`'s absolute value; which of the
   two words prints is what carries the sign — a word switch, not an
-  inline `-` (matching decision 18's closed-week "Total still owed" /
+  inline `-` (matching decision 18's closed-week "Total behind" /
   "Total ahead" split, §7.2, rather than §4.2's bare-signed-number
   convention used elsewhere). `gap == 0` counts as "left to" (X =
   `00h 00m`), matching every other "reached exactly" case in this
@@ -654,7 +648,14 @@ Notes:
   climbing while the pace hint is already deep negative because of a
   large carry-in), and that's expected: day total is "today, in
   isolation," the pace hint is "today's slice of the whole week's
-  math."
+  math." On Friday, Saturday, and Sunday — the three days on which
+  `required` has already plateaued at the week's full target
+  (`weekday_number.min(5) == 5`) — this trailing phrase drops the
+  weekday name entirely and reads `required today` in place of
+  `required by end of <weekday>`, since the week line directly above
+  already names the same weekday and, on those three days, the same
+  figure. Monday through Thursday render `required by end of
+  <weekday>` unchanged.
 - **Estimated EOD** (`est. EOD HH:MM`) appears only when today has an
   open stint: it's `now + (required − fulfillment)`, i.e. "if you
   keep going from right now, this is the clock time you'd close out
@@ -662,21 +663,28 @@ Notes:
   the open stint's live minutes (§2.4), same as everywhere else.
   Omitted entirely when there's no open stint (nothing to project
   from) or replaced with `target already met` when the gap is already
-  zero or negative.
+  zero or negative. When the projected `now + gap` lands on a later
+  calendar date than today — a large enough `gap` to cross midnight —
+  the line gains a literal ` (tomorrow)` suffix after the clock time,
+  e.g. `est. EOD 01:15 (tomorrow)`, so the time can't be misread as
+  landing before midnight tonight. The marker is always the bare word
+  `(tomorrow)`, never a weekday name or calendar date, even when `gap`
+  is large enough to cross more than one midnight — an accepted
+  imprecision past one day out, not a bug.
 - Week line reports the week containing `DATE` (§3.5), and its
   framing follows the same ongoing-vs-not split as `mlm week` (§7.2):
   "`<owed>` left by end of `<weekday>`" when that week is the actual
   currently-ongoing week (using *today's* weekday, even if `DATE`
   itself is some other day within that same week — the deadline is
   always about today, not about which day's stints you're viewing),
-  or the plain `Total still owed`/`Total ahead` form when `DATE`'s
+  or the plain `Total behind`/`Total ahead` form when `DATE`'s
   week is a past or future one. When the current week's `carry_in` is
   non-zero, the `(fulfillment .../target ...)` parenthetical expands to
   `(fulfillment F = worked W + carry-in C / target T)`, each figure
   signed independently per §4.2 (a carry-in deficit can drive
   `fulfillment` itself negative — that's expected, not an error) —
   when `carry_in` is zero, the shorter one-term form is unchanged. The
-  past/future `Total still owed`/`Total ahead` form never gets this
+  past/future `Total behind`/`Total ahead` form never gets this
   parenthetical, zero or non-zero carry-in alike.
 - Stint lines: `HH:MM-HH:MM  (duration)`, ongoing stint's end is the
   literal word `now`. Tabular duration format (§4.2). Section omitted
@@ -712,7 +720,7 @@ already ended:
 Mon 2026-01-05
 
 Day total:     06h 15m
-Week 2026-02:  Total still owed: 01h 40m
+Week 2026-02:  Total behind: 01h 40m
 
   08:30-14:45  (06h 15m)
 ```
@@ -749,7 +757,7 @@ carry-in/worked/fulfillment/target block:
 ```
 Week 2026-06 (2026-02-02 - 2026-02-08)
 
-Total still owed: 03h 10m
+Total behind: 03h 10m
 
   Mon 2026-02-02   07h 30m
   Tue 2026-02-03   08h 00m
@@ -773,7 +781,7 @@ to it.)
 - Headline is the same "owed" figure `status`'s week line shows
   (§7.1), just leading its own output here instead of being inline —
   worded with the weekday-deadline framing only for the current week;
-  a closed or not-yet-started week gets the plain `Total still owed`/
+  a closed or not-yet-started week gets the plain `Total behind`/
   `Total ahead` form (NOTES.md decision, this round).
 - One row per calendar date in the week, always all 7 even if some
   are empty (`00h 00m`) — consistent shape, easy to scan for gaps.
