@@ -352,7 +352,7 @@ mod tests {
             week_id_display: "2026-06".to_string(),
             span_start_display: "2026-02-02".to_string(),
             span_end_display: "2026-02-08".to_string(),
-            headline: "Total still owed: 03h 10m".to_string(),
+            headline: "Total behind: 03h 10m".to_string(),
             rows,
             carry_in_minutes: 0,
             worked_minutes: 2210,
@@ -383,7 +383,7 @@ Target:        40h 00m
     const EXAMPLE_B_GOLDEN: &str = "\
 Week 2026-06 (2026-02-02 - 2026-02-08)
 
-Total still owed: 03h 10m
+Total behind: 03h 10m
 
   Mon 2026-02-02   07h 30m
   Tue 2026-02-03   08h 00m
@@ -452,7 +452,7 @@ Target:        40h 00m
             week_id_display: "2026-10".to_string(),
             span_start_display: "2026-03-02".to_string(),
             span_end_display: "2026-03-08".to_string(),
-            headline: "Total still owed: 40h 00m".to_string(),
+            headline: "Total behind: 40h 00m".to_string(),
             rows,
             carry_in_minutes: 0,
             worked_minutes: 0,
@@ -473,7 +473,7 @@ Target:        40h 00m
             week_id_display: "2026-20".to_string(),
             span_start_display: "2026-05-04".to_string(),
             span_end_display: "2026-05-10".to_string(),
-            headline: "Total still owed: 43h 12m".to_string(),
+            headline: "Total behind: 43h 12m".to_string(),
             rows,
             carry_in_minutes: -1872,
             worked_minutes: 0,

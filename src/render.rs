@@ -65,7 +65,7 @@ pub fn week_headline(week: WeekId, owed_minutes: i64, today: NaiveDate) -> Strin
             format_weekday_full(today)
         ),
         WeekFraming::Closed if owed_minutes > 0 => {
-            format!("Total still owed: {}", format_minutes(owed_minutes))
+            format!("Total behind: {}", format_minutes(owed_minutes))
         }
         WeekFraming::Closed => format!("Total ahead: {}", format_minutes(-owed_minutes)),
     }
@@ -199,7 +199,7 @@ mod tests {
     fn t2_past_week_headline_plain_total() {
         assert_eq!(
             week_headline(wk(2026, 6), 190, TODAY()),
-            "Total still owed: 03h 10m"
+            "Total behind: 03h 10m"
         );
     }
 
@@ -207,7 +207,7 @@ mod tests {
     fn t3_status_first_example_past_week() {
         assert_eq!(
             week_headline(wk(2026, 2), 100, TODAY()),
-            "Total still owed: 01h 40m"
+            "Total behind: 01h 40m"
         );
     }
 
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn t38_carry_in_gains_no_parenthetical_on_a_closed_week() {
         let line = status_week_line(wk(2026, 2), 100, 999, 999, -130, TODAY());
-        assert_eq!(line, "Week 2026-02:  Total still owed: 01h 40m");
+        assert_eq!(line, "Week 2026-02:  Total behind: 01h 40m");
         assert!(!line.contains("carry-in"));
     }
 
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn t6_f10_status_week_line_past_week_is_plain_total() {
         let line = status_week_line(wk(2026, 2), 100, 999, 999, 0, TODAY());
-        assert_eq!(line, "Week 2026-02:  Total still owed: 01h 40m");
+        assert_eq!(line, "Week 2026-02:  Total behind: 01h 40m");
         for weekday in [
             "Monday",
             "Tuesday",
@@ -307,7 +307,7 @@ mod tests {
     fn t7_future_week_gets_the_same_plain_form_as_closed() {
         assert_eq!(
             week_headline(wk(2026, 10), 2400, TODAY()),
-            "Total still owed: 40h 00m"
+            "Total behind: 40h 00m"
         );
     }
 
@@ -333,7 +333,7 @@ mod tests {
     fn t10_one_minute_owed_is_still_owed_the_boundary_above_t8() {
         assert_eq!(
             week_headline(wk(2026, 6), 1, TODAY()),
-            "Total still owed: 00h 01m"
+            "Total behind: 00h 01m"
         );
     }
 
