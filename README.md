@@ -212,6 +212,23 @@ Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40
   09:05-16:40  (07h 35m)
 ```
 
+Both examples above have a `Carry-in` of `00h 00m` (see the `week`
+examples below), so the parenthetical only ever shows the short
+`(fulfillment X / target Y)` form. The moment the current week's
+carry-in isn't zero — routine once `week target`'s carry-in mechanic
+has run for a week — that parenthetical expands to spell out how the
+fulfillment figure was built, e.g. with a 03h 00m deficit carried in
+from the previous week:
+
+```
+Week 2026-22:  20h 30m left by end of Thursday (fulfillment 19h 30m = worked 22h 30m + carry-in -03h 00m / target 40h 00m)
+```
+
+The short form appears whenever carry-in is zero; this expanded
+`fulfillment F = worked W + carry-in C / target T` form appears
+whenever it isn't, and `fulfillment` itself is free to go negative
+when a carry-in deficit outweighs what's been worked so far.
+
 A date in an already-closed week shows the same plain total the week
 line uses instead of the current-week's deadline framing — no
 fulfillment/target parenthetical either, since that only applies to
