@@ -586,7 +586,7 @@ the week shown is the actual current week:
 Thu 2026-02-12
 
 Day total:     07h 25m (+ ongoing), 02h 45m left to 32h 00m required by end of Thursday, est. EOD 20:45
-Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)
+Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
   14:05-17:30  (03h 25m)
@@ -596,6 +596,13 @@ Notes:
   - fixed migration runner bug
   - started punch pairing tests
 ```
+
+`2026-07` carries in a -02h 10m deficit from the previous week (see
+§7.2's block for the same week below), so the fulfillment parenthetical
+here is the **expanded** form, `fulfillment F = worked W + carry-in C /
+target T`, not the shorter `fulfillment F / target T` form — that
+shorter form only appears when the current week's carry-in is exactly
+zero.
 
 - Header: `<weekday abbrev> <YYYY-MM-DD>`, with a suffix
   `  (HH:MM continues previous day's stint)` when this date's
