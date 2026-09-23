@@ -817,6 +817,19 @@ SPEC.md and PLAN.md:
     which stays deferred to its own future changeset per entry 70.
     Changeset ready for phase 17 (release) pending user go-ahead.
 
+72. **`status-wording-fixes` released as v0.3.6.** Merged to `main`
+    (commit incorporating both tasks, the fix pass, and the finding-3
+    known-issue filing), changelog curated by hand — `git-cliff`'s
+    auto-generated entry listed internal process commits ("Task 1:
+    status/week wording fixes", "Log merge gate...") rather than
+    user-facing changes; rewritten to describe the actual fixes,
+    trimmed twice more per the user's steer (terser bullets, dropped
+    the known-issue line entirely — a filed-not-fixed issue doesn't
+    belong in a changelog). `prep_release.sh 0.3.6` then
+    `release.sh 0.3.6`: pushed `main`, CI green, tag `v0.3.6` pushed,
+    triggering the release workflow (build/sign/publish). Changeset
+    closed.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
