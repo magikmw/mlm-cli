@@ -639,6 +639,95 @@ SPEC.md and PLAN.md:
     caption-reword dispatched as a follow-up implementation task on the
     `boundary-context-cues` branch (not yet landed as of this entry).
 
+65. **`status-wording-fixes` changeset started** — coordinator-subagent
+    workflow (`coordinating-development` skill), phase 0 profile filled:
+    verification set `cargo fmt`, `cargo build`, `cargo test`,
+    `cargo clippy --all-targets -- -D warnings` (from `AGENTS.md`
+    "Verifying changes"); doc root `docs/dev/` (`SPEC.md`, `NOTES.md`,
+    `specs/`, `plans/`, `plans/reports/`); decision log is this file,
+    appended as numbered entries; model tier default (Sonnet) everywhere,
+    no escalation requested; release procedure `scripts/prep_release.sh`
+    (reversible bump+changelog) then `scripts/release.sh` (irreversible
+    tag+push), not read in full yet — will be before phase 17 if this
+    changeset reaches release; integration branch scheme one branch per
+    changeset (`boundary-context-cues` precedent); changeset spec location
+    `docs/dev/specs/<date>-<slug>.md`; runnable artifact `cargo build
+    --release` → `target/release/mlm`; user-visible surface `README.md`,
+    `mlm --help`, `status`/`week` rendered output — all four fixes below
+    touch it, so phase 14 (fresh-eyes check) runs, not skipped. Context-
+    starvation hook: absent, not configured in `.claude/settings.json`.
+    Changeset numbering: repo's existing plan files use a topic slug
+    (`boundary-context-cues-plan.md`, `boundary-context-cues-task-1-...`),
+    never a bare integer — deviated from the skill's numeric default to
+    match precedent; this changeset's id is the slug
+    `status-wording-fixes` everywhere the skill's templates say `<N>`.
+    Scope: the four known issues newly filed in entry 61
+    (SPEC.md §1.2a bullets on closed-period sentence shape, `est. EOD`
+    with no date, last-weekday redundant wording, "Total still owed"
+    tone) — user picked all four for one changeset, greenlit in chat
+    2026-09-22/23. Two tasks: Task 1 (code — `render.rs`/`status.rs` and
+    their in-file tests, covers "Total behind" rename + `est. EOD
+    (tomorrow)` + last-weekday wording), Task 2 (docs only —
+    `README.md`/`SPEC.md` closed-period example) — user asked for Task 2
+    to get its own dispatch rather than being folded into Task 1's
+    verification pass. 1–2 task changeset: phase 10 (cross-document
+    review) skipped per the scaling table; phases 5-7 collapse into one
+    short changeset plan, reviewed once.
+
+66. **`status-wording-fixes` spec adversarially reviewed and locked**
+    (`docs/dev/plans/reports/status-wording-fixes-spec-review.md`,
+    needs-rework, 5 findings). Two were implementation-blocking: Fix
+    C's condition (`weekday_number.min(5) == 5`) fires on Friday,
+    Saturday, *and* Sunday, not "the one day" the draft repeatedly
+    claimed — corrected in place, since the underlying redundancy
+    genuinely spans all three (required_minutes is capped at the full
+    week target on each), not a bug to route around, just a wrong
+    premise in the prose; and Fix B's suggested `.date()` comparison
+    is deprecated since chrono 0.4.23, returns the wrong type against
+    `today: NaiveDate`, and would fail this repo's `clippy -D
+    warnings` CI gate outright — corrected to `.date_naive()`. One
+    would have misdirected Task 2: SPEC.md already has both
+    closed-period worked examples (§7.1/§7.2), so Fix D's SPEC.md
+    portion is a string update, not a new example — only README.md
+    actually lacks one; scope narrowed accordingly. Also folded: a
+    fuller `Total still owed` inventory (SPEC.md has 8 hits, not the
+    2 the draft named — four are normative prose at lines 647/672/
+    679/776) and an explicit weekend-day test-plan addition for Fix C
+    (the fixture gap that would have caught the first finding).
+    Undeclared-user-visible-gap check came back empty — all four
+    fixes already record their visible consequences. Spec locked.
+
+67. **`status-wording-fixes` changeset plan adversarially reviewed
+    (collapsed form) and folded** — plan written
+    (`docs/dev/plans/status-wording-fixes-plan.md`), reviewed
+    (`docs/dev/plans/reports/status-wording-fixes-plan-review.md`,
+    needs-rework, 5 findings). Two high-severity: Fix C's
+    `weekday_number.min(5) == 5` condition has no data path into
+    `day_total_line` (a pure `&StatusView -> String` function with no
+    access to `today`/`weekday_number`) — both spec and plan named the
+    condition without saying where it lives; fixed by threading a
+    third field, `day_reaches_week_cap: bool`, onto `DailyTargetHint`,
+    mirroring how Fix B's bool already threads through `EodState`. And
+    both spec and plan claimed no existing test hits the capped
+    weekday range — false:
+    `resolve_f9b_sunday_pin_non_multiple_of_five_target_override`
+    (`status.rs:1759-1780`) already asserts the old wording via
+    `render()` on a Sunday and will break under Fix C; folded in as a
+    required update, not left as silent fallout. One medium,
+    filed as an undeclared user-visible gap: README's existing
+    Saturday `status` example (`README.md:196-198`) goes stale the
+    moment Fix C ships (Saturday triggers the same condition), and
+    Task 2's scope hadn't named touching any *existing* example, only
+    adding new ones — folded in, along with a pre-existing, unrelated
+    defect noticed at the same line (an `est. EOD ... target already
+    met` concatenation the renderer can't actually produce), fixed
+    since Task 2 is already editing that exact line. One low: the
+    `EodState::At` conversion-site enumeration wrongly included
+    `base_view` (which has no such construction) — corrected to the
+    actual five sites. Both spec and plan updated; spec's Status line
+    now records both review rounds. Changeset plan locked, task
+    dispatches (phase 8) next.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
