@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.6] - 2026-09-23
+
+### 🚀 Features
+
+- *(status)* Closed week deficit now reads `Total behind`, pairing `Total ahead`
+- *(status)* `est. EOD` gains a `(tomorrow)` suffix when it crosses midnight
+- *(status)* Day-total reads `required today` on Fri/Sat/Sun instead of repeating the week line
+
+### 📚 Documentation
+
+- README: closed-period `status`/`week` worked examples
+- README/SPEC.md: document the `fulfillment = worked + carry-in` expanded format
+
 ## [0.3.5] - 2026-09-22
 
 ### ⚙️ Miscellaneous Tasks
