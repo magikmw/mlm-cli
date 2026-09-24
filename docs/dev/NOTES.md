@@ -830,6 +830,38 @@ SPEC.md and PLAN.md:
     triggering the release workflow (build/sign/publish). Changeset
     closed.
 
+73. **`current-week-ahead-wording` changeset started, spec locked.**
+    User report: once a week's target is met, the current-week
+    headline on `status` and `week` reads `-04h 35m left by end of
+    Saturday`. SPEC.md and README only showed that form in examples
+    and never recorded it as a decision. Phase 0 profile reused from
+    entry 65 unchanged. Wording picked by the user in chat
+    2026-09-24: for `owed < 0` the headline reads `{abs(owed)} ahead
+    of target` and drops the weekday. `owed >= 0` is unchanged,
+    including `00h 00m left by end of <weekday>` at zero. This
+    supersedes decision 18's current-week framing for `owed < 0`. The
+    closed-week strings stay as shipped (`Total behind: X` /
+    `Total ahead: X`, `render.rs:68,70`); decision 18's own `Total
+    still owed` text is stale. Spec
+    `docs/dev/specs/2026-09-24-current-week-ahead-wording.md`,
+    reviewed (`docs/dev/plans/reports/current-week-ahead-wording-spec-review.md`,
+    ship-with-followups, 3 findings), all folded. Finding 1 was a
+    testing gap: no test drove `resolve()`/`build_week_view()` to a
+    negative current-week `owed`. Task 1 now adds one pipeline test in
+    each of `status.rs` and `week_view.rs`, so its scope grows to
+    those files' test modules. Finding 2 concerned the stale decision
+    18 strings, handled above. Finding 3 was an undeclared visible
+    gap: on an ahead week, today's pace hint can name a weekday above
+    a week line that names none. Accepted as intended. It is recorded
+    in SPEC §7.1 and in the changeset spec's §1.2, not filed in
+    §1.2a, because it follows directly from the user's wording choice.
+    The zero-boundary mismatch (current `00h 00m left` vs closed
+    `Total ahead: 00h 00m`) predates this changeset and goes into
+    §1.2a as a known issue. Two tasks (code, docs), so phase 10 is
+    skipped and phases 5-7 collapse into one short plan. Phase 14
+    runs at tier `returning`, because the change alters output that
+    existing users already read daily.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
