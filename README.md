@@ -57,6 +57,10 @@ later:
 - `status DATE` silently accepts a future date; the week deadline
   phrase then names today's real weekday, not the date you queried,
   with nothing on the page explaining the mismatch
+- A current week exactly at target reads `00h 00m left by end of
+  <weekday>`, but the same week once closed reads `Total ahead: 00h
+  00m` — the wording flips depending on whether the week is still
+  open, even though the underlying figure is the same zero
 
 ## Install
 
@@ -190,7 +194,7 @@ $ mlm status
 Sat 2026-09-12
 
 Day total:     07h 25m (+ ongoing), 04h 35m over 40h 00m required today, target already met
-Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40h 00m)
+Week 2026-37:  04h 35m ahead of target (fulfillment 44h 35m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
   14:05-17:30  (03h 25m)
@@ -210,7 +214,7 @@ $ mlm status 2026-09-08
 Tue 2026-09-08
 
 Day total:     07h 35m
-Week 2026-37:  -04h 35m left by end of Saturday (fulfillment 44h 35m / target 40h 00m)
+Week 2026-37:  04h 35m ahead of target (fulfillment 44h 35m / target 40h 00m)
 
   09:05-16:40  (07h 35m)
 ```
@@ -258,7 +262,7 @@ to the current week.
 $ mlm week
 Week 2026-37 (2026-09-07 - 2026-09-13)
 
--04h 35m left by end of Saturday
+04h 35m ahead of target
 
   Mon 2026-09-07   08h 15m
   Tue 2026-09-08   07h 35m
