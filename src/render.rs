@@ -59,11 +59,14 @@ pub fn week_framing(week: WeekId, today: NaiveDate) -> WeekFraming {
 /// whatever date the caller happens to be displaying (§7.1, F11).
 pub fn week_headline(week: WeekId, owed_minutes: i64, today: NaiveDate) -> String {
     match week_framing(week, today) {
-        WeekFraming::Current => format!(
+        WeekFraming::Current if owed_minutes >= 0 => format!(
             "{} left by end of {}",
             format_minutes(owed_minutes),
             format_weekday_full(today)
         ),
+        WeekFraming::Current => {
+            format!("{} ahead of target", format_minutes(-owed_minutes))
+        }
         WeekFraming::Closed if owed_minutes > 0 => {
             format!("Total behind: {}", format_minutes(owed_minutes))
         }
@@ -338,10 +341,36 @@ mod tests {
     }
 
     #[test]
-    fn t11_current_week_already_ahead_passes_sign_through_verbatim() {
+    fn t11_current_week_already_ahead_drops_the_weekday() {
         assert_eq!(
             week_headline(wk(2026, 7), -150, TODAY()),
-            "-02h 30m left by end of Thursday"
+            "02h 30m ahead of target"
+        );
+    }
+
+    #[test]
+    fn t11b_current_week_ahead_boundary_one_minute() {
+        assert_eq!(
+            week_headline(wk(2026, 7), -1, TODAY()),
+            "00h 01m ahead of target"
+        );
+    }
+
+    #[test]
+    fn t11c_status_week_line_ahead_form_short_parenthetical() {
+        assert_eq!(
+            status_week_line(wk(2026, 7), -275, 2675, 2400, 0, TODAY()),
+            "Week 2026-07:  04h 35m ahead of target (fulfillment 44h 35m / target 40h 00m)"
+        );
+    }
+
+    #[test]
+    fn t11d_status_week_line_ahead_form_carry_in_surplus_alone() {
+        // No work logged at all; a carry-in surplus alone puts the week
+        // ahead of target.
+        assert_eq!(
+            status_week_line(wk(2026, 7), -50, 2450, 2400, 2450, TODAY()),
+            "Week 2026-07:  00h 50m ahead of target (fulfillment 40h 50m = worked 00h 00m + carry-in 40h 50m / target 40h 00m)"
         );
     }
 
