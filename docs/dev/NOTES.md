@@ -862,6 +862,22 @@ SPEC.md and PLAN.md:
     runs at tier `returning`, because the change alters output that
     existing users already read daily.
 
+74. **`current-week-ahead-wording` plan reviewed and folded.** Plan
+    `docs/dev/plans/current-week-ahead-wording-plan.md`, reviewed
+    (`docs/dev/plans/reports/current-week-ahead-wording-plan-review.md`,
+    ship-with-followups, 2 findings), both folded mechanically. SPEC
+    §7.1's pace-hint bullet justifies `required today` on Fri-Sun by
+    saying the week line above names the same weekday. That is false
+    on an ahead week, so Task 2 now rewords it. Task 1's carry-in
+    ahead test now pins worked `00h 00m`, the surplus-only shape spec
+    §3 calls out. The plan's doc-string check pointed Task 2 at Task
+    1's output, which a parallel task cannot see. It now points at the
+    plan's pinned interface contract, and the merge gate checks the
+    built binary. Phase 8 (task plans) skipped: spec §3 already pins
+    the exact format strings and the change is one match arm, so a
+    task plan would restate the spec. Phase 10 skipped per the 1-2
+    task scaling rule.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
