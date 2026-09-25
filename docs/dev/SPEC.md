@@ -88,8 +88,9 @@ yet, a known issue works but has a rough edge.
   "now," not to `DATE`.
 - The zero boundary differs between framings. A current week at
   exactly target reads `00h 00m left by end of <weekday>`, but the
-  same week once closed reads `Total ahead: 00h 00m`. Both behaviors
-  predate this changeset and are unchanged by it.
+  same week once closed reads `Total ahead: 00h 00m`. The current-week
+  zero case stays "left" to match the pace hint's `gap == 0` rule
+  (§7.1).
 - `status`'s `Day total:` line names today's hours, then in the same
   breath adds a pace-hint clause ("X over/left to `<required>`
   required by end of `<weekday>`") built from the week's running
