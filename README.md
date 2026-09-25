@@ -61,6 +61,16 @@ later:
   <weekday>`, but the same week once closed reads `Total ahead: 00h
   00m` — the wording flips depending on whether the week is still
   open, even though the underlying figure is the same zero
+- `status`'s `Day total:` line names today's hours, then adds a
+  pace-hint clause ("X over/left to `<required>` required by end of
+  `<weekday>`") built from the week's running fulfillment, not from
+  the day total just printed on the same line — nothing marks the
+  switch, so the two figures can look like bad arithmetic even though
+  each is correct on its own terms
+- Monday through Thursday, that pace hint always names *today's* own
+  weekday ("required by end of Thursday" on a Thursday); `required
+  today` would read correctly every day, but the wording only switches
+  to that form on Friday, Saturday, and Sunday
 
 ## Install
 
@@ -206,8 +216,13 @@ Notes:
 ```
 
 The required-by-day pace hint and estimated-EOD line only show up when
-`DATE` is today (they need "now" to mean anything). A past date's
-status just shows that day's total and its week's numbers:
+`DATE` is today (they need "now" to mean anything). The pace-hint
+clause after the day total isn't derived from that day total — it
+compares the week's running fulfillment so far (worked time plus any
+carry-in) against how much of the week's target should be done by the
+end of today, so its figure can move in a different direction than the
+day total next to it (see Known issues). A past date's status just
+shows that day's total and its week's numbers:
 
 ```sh
 $ mlm status 2026-09-08
