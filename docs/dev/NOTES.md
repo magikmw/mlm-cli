@@ -830,6 +830,74 @@ SPEC.md and PLAN.md:
     triggering the release workflow (build/sign/publish). Changeset
     closed.
 
+73. **`current-week-ahead-wording` changeset started, spec locked.**
+    User report: once a week's target is met, the current-week
+    headline on `status` and `week` reads `-04h 35m left by end of
+    Saturday`. SPEC.md and README only showed that form in examples
+    and never recorded it as a decision. Phase 0 profile reused from
+    entry 65 unchanged. Wording picked by the user in chat
+    2026-09-24: for `owed < 0` the headline reads `{abs(owed)} ahead
+    of target` and drops the weekday. `owed >= 0` is unchanged,
+    including `00h 00m left by end of <weekday>` at zero. This
+    supersedes decision 18's current-week framing for `owed < 0`. The
+    closed-week strings stay as shipped (`Total behind: X` /
+    `Total ahead: X`, `render.rs:68,70`); decision 18's own `Total
+    still owed` text is stale. Spec
+    `docs/dev/specs/2026-09-24-current-week-ahead-wording.md`,
+    reviewed (`docs/dev/plans/reports/current-week-ahead-wording-spec-review.md`,
+    ship-with-followups, 3 findings), all folded. Finding 1 was a
+    testing gap: no test drove `resolve()`/`build_week_view()` to a
+    negative current-week `owed`. Task 1 now adds one pipeline test in
+    each of `status.rs` and `week_view.rs`, so its scope grows to
+    those files' test modules. Finding 2 concerned the stale decision
+    18 strings, handled above. Finding 3 was an undeclared visible
+    gap: on an ahead week, today's pace hint can name a weekday above
+    a week line that names none. Accepted as intended. It is recorded
+    in SPEC §7.1 and in the changeset spec's §1.2, not filed in
+    §1.2a, because it follows directly from the user's wording choice.
+    The zero-boundary mismatch (current `00h 00m left` vs closed
+    `Total ahead: 00h 00m`) predates this changeset and goes into
+    §1.2a as a known issue. Two tasks (code, docs), so phase 10 is
+    skipped and phases 5-7 collapse into one short plan. Phase 14
+    runs at tier `returning`, because the change alters output that
+    existing users already read daily.
+
+74. **`current-week-ahead-wording` plan reviewed and folded.** Plan
+    `docs/dev/plans/current-week-ahead-wording-plan.md`, reviewed
+    (`docs/dev/plans/reports/current-week-ahead-wording-plan-review.md`,
+    ship-with-followups, 2 findings), both folded mechanically. SPEC
+    §7.1's pace-hint bullet justifies `required today` on Fri-Sun by
+    saying the week line above names the same weekday. That is false
+    on an ahead week, so Task 2 now rewords it. Task 1's carry-in
+    ahead test now pins worked `00h 00m`, the surplus-only shape spec
+    §3 calls out. The plan's doc-string check pointed Task 2 at Task
+    1's output, which a parallel task cannot see. It now points at the
+    plan's pinned interface contract, and the merge gate checks the
+    built binary. Phase 8 (task plans) skipped: spec §3 already pins
+    the exact format strings and the change is one match arm, so a
+    task plan would restate the spec. Phase 10 skipped per the 1-2
+    task scaling rule.
+
+75. **`current-week-ahead-wording` merged, reviewed, triaged.** Both
+    tasks merged `--no-ff` and re-verified green at the merge gate. A
+    hand-run of the release binary matched the spec for owed > 0,
+    == 0 and < 0 on `status` and `week`. Final review ran at the
+    default tier (Sonnet), which the user picked over escalating or
+    skipping
+    (`docs/dev/plans/reports/current-week-ahead-wording-final-review.md`,
+    ship, no findings). Fresh-eyes check at tier `returning`
+    (`docs/dev/plans/reports/current-week-ahead-wording-fresh-eyes.md`)
+    found the new wording clear and raised 4 findings, all
+    pre-existing. The user triaged them in chat 2026-09-25. F2 (README
+    never says the pace hint measures the week's running fulfillment)
+    gets a docs-only fix pass now. F1 (the pace hint sits on the `Day
+    total:` line and reads like arithmetic on the day total) and F4
+    (Mon-Thu the hint names today's own weekday where `required
+    today` would fit every day) are filed in SPEC §1.2a and README
+    known issues as the next changeset's scope. F3 (zero-boundary
+    wording) confirms a known issue already filed by this changeset,
+    so nothing changes.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

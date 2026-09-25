@@ -1074,6 +1074,26 @@ Target:        40h 00m
         assert!(!closed.headline.contains("left by end of"));
     }
 
+    // Current week whose fulfillment already exceeds target: the bare
+    // headline drops the weekday and reads "ahead of target".
+    #[test]
+    fn c10b_current_week_ahead_of_target_end_to_end() {
+        let conn = new_test_db();
+        week_target::set_week_target(&conn, &wk(2026, 7), 5).unwrap();
+        seed_week(&conn, wk(2026, 7), &[((9, 0), (17, 0))], 0);
+
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        assert!(
+            view.headline.contains("ahead of target"),
+            "{}",
+            view.headline
+        );
+        assert!(!view.headline.contains("Thursday"));
+
+        let out = render_week(&view);
+        assert!(out.contains("ahead of target"), "{out}");
+    }
+
     // C12
     #[test]
     fn c12_plain_ascii_over_real_output() {

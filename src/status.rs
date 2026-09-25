@@ -1597,6 +1597,27 @@ mod tests {
         );
     }
 
+    // Current week whose fulfillment already exceeds target: the week
+    // line drops the weekday deadline and reads "ahead of target".
+    #[test]
+    fn resolve_current_week_ahead_of_target_renders_ahead_of_target() {
+        let conn = test_db();
+        week_target::set_week_target(&conn, &wk(2026, 7), 5).expect("set target"); // tiny target
+        storage::insert_punch(&conn, PunchKind::Start, d(2026, 2, 9), t(8, 0), &Local)
+            .expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d(2026, 2, 9), t(17, 0), &Local)
+            .expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            view.week_line.contains("ahead of target (fulfillment "),
+            "week_line: {}",
+            view.week_line
+        );
+        let out = render(&view);
+        assert!(out.contains("ahead of target (fulfillment "), "{out}");
+    }
+
     #[test]
     fn resolve_e7_multi_open_and_e8_orphaned_end_via_anomalies_only() {
         let conn = test_db();
