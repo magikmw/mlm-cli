@@ -90,6 +90,19 @@ yet, a known issue works but has a rough edge.
   exactly target reads `00h 00m left by end of <weekday>`, but the
   same week once closed reads `Total ahead: 00h 00m`. Both behaviors
   predate this changeset and are unchanged by it.
+- `status`'s `Day total:` line names today's hours, then in the same
+  breath adds a pace-hint clause ("X over/left to `<required>`
+  required by end of `<weekday>`") built from the week's running
+  fulfillment, not from the day total just printed (§7.1). Nothing on
+  the line marks the switch, so the two figures can look like bad
+  arithmetic even though each is correct on its own terms.
+- On Monday through Thursday, the pace hint's `required by end of
+  <weekday>` always names *today's* own weekday, since `required` is
+  only ever prorated up to and including today. `required today` would
+  say the same thing and read as plainly correct every day of the
+  week, but the wording only switches to that form on Friday, Saturday,
+  and Sunday, once `required` has plateaued at the week's full target
+  (§7.1).
 
 ### 1.3 Terminology
 
