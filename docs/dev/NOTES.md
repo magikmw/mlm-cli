@@ -878,6 +878,26 @@ SPEC.md and PLAN.md:
     task plan would restate the spec. Phase 10 skipped per the 1-2
     task scaling rule.
 
+75. **`current-week-ahead-wording` merged, reviewed, triaged.** Both
+    tasks merged `--no-ff` and re-verified green at the merge gate. A
+    hand-run of the release binary matched the spec for owed > 0,
+    == 0 and < 0 on `status` and `week`. Final review ran at the
+    default tier (Sonnet), which the user picked over escalating or
+    skipping
+    (`docs/dev/plans/reports/current-week-ahead-wording-final-review.md`,
+    ship, no findings). Fresh-eyes check at tier `returning`
+    (`docs/dev/plans/reports/current-week-ahead-wording-fresh-eyes.md`)
+    found the new wording clear and raised 4 findings, all
+    pre-existing. The user triaged them in chat 2026-09-25. F2 (README
+    never says the pace hint measures the week's running fulfillment)
+    gets a docs-only fix pass now. F1 (the pace hint sits on the `Day
+    total:` line and reads like arithmetic on the day total) and F4
+    (Mon-Thu the hint names today's own weekday where `required
+    today` would fit every day) are filed in SPEC §1.2a and README
+    known issues as the next changeset's scope. F3 (zero-boundary
+    wording) confirms a known issue already filed by this changeset,
+    so nothing changes.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
