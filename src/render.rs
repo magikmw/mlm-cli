@@ -15,7 +15,7 @@
 
 use chrono::{NaiveDate, NaiveTime};
 
-use crate::date::{WeekId, format_weekday_full};
+use crate::date::{WeekId, format_date, format_date_with_weekday, format_weekday_full};
 use crate::time::format_minutes;
 
 /// Width of the left-hand label column shared by §7.1's lead lines and
@@ -166,6 +166,256 @@ impl Anomalies {
         if self.has_any() { "  [!]" } else { "" }
     }
 }
+
+/// Everything one calendar date's `status`/`week` anomaly rendering
+/// needs, as plain data (SPEC.md §3.1/§3.2/§3.4). Callers (Task 1's
+/// predicates via Task 3/5) compute every fact; this type never reads
+/// a clock, a database, or `stint.rs` itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DateAnomalies {
+    /// The date this block belongs to. Fills every `D` in this date's
+    /// own `fix:`/`or:` lines (§3.4).
+    pub date: NaiveDate,
+
+    /// How many trailing unmatched starts this date has. 0 or 1 is
+    /// normal; >= 2 is E7. Unchanged meaning from the old `Anomalies`.
+    pub open_stint_count: usize,
+
+    /// The most recently opened start's local time, when
+    /// `open_stint_count >= 1`. Only consumed when `open_stint_count
+    /// > 1` (E7's fix line names it, e.g. "14:00" in the spec's worked
+    /// example: "the latest open start on the date"). `None` iff
+    /// `open_stint_count == 0`.
+    pub latest_open_start: Option<NaiveTime>,
+
+    /// One entry per orphaned end (E8), ascending by instant. Same
+    /// contract as the old `Anomalies::orphaned_end_times` — never
+    /// deduplicated, never coalesced.
+    pub orphaned_end_times: Vec<NaiveTime>,
+
+    /// Set iff this date has exactly one open start AND it is stale
+    /// (age >= 2, Task 1's predicate). Never set when
+    /// `open_stint_count != 1` (E7 owns the 2+ case entirely, §3.1).
+    pub stale_open_start: Option<StaleOpenStart>,
+
+    /// Set to the previous calendar date iff this date and its
+    /// predecessor form a refused join with THIS date as the later
+    /// (orphaned-end) side (Task 1's predicate, §3.2).
+    pub refused_join_with_previous: Option<NaiveDate>,
+
+    /// Set to the next calendar date iff this date and its successor
+    /// form a refused join with THIS date as the earlier
+    /// (open-start) side (§3.2).
+    pub refused_join_with_next: Option<NaiveDate>,
+}
+
+/// The one stale-open-start fact a date can carry (§3.1/§3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaleOpenStart {
+    /// Local time of the (only) open start.
+    pub time: NaiveTime,
+    /// `today - date` in whole days. Always >= 2 (Task 1's predicate
+    /// contract) — callers never construct this with a smaller value.
+    pub age_days: i64,
+}
+
+impl DateAnomalies {
+    /// True iff this date has ANY anomaly under the new, wider
+    /// definition: E7, E8, stale, or either refused-join direction.
+    /// The single definition `week`'s per-row `[!]` (Task 5) and
+    /// `status`'s block-or-not decision (Task 3) both key off.
+    pub fn has_any(&self) -> bool {
+        self.open_stint_count > 1
+            || !self.orphaned_end_times.is_empty()
+            || self.stale_open_start.is_some()
+            || self.refused_join_with_previous.is_some()
+            || self.refused_join_with_next.is_some()
+    }
+
+    /// `status`'s per-date block (§3.4), in the fixed order: E7, then
+    /// stale, then E8 (ascending instant), then refused-join-with-
+    /// previous, then refused-join-with-next. Empty vec when
+    /// `has_any()` is false. Does NOT include lookback lines — those
+    /// come from separate `LookbackFinding`s, appended by the caller
+    /// (Task 3), never by this type.
+    pub fn detail_lines(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        out.extend(self.e7_lines());
+        out.extend(self.stale_lines());
+        out.extend(self.e8_lines());
+        out.extend(self.refused_join_lines());
+        out
+    }
+
+    fn e7_lines(&self) -> Vec<String> {
+        let Some(latest) = self.latest_open_start.filter(|_| self.open_stint_count > 1) else {
+            return Vec::new();
+        };
+        let d = format_date(self.date);
+        let latest = latest.format("%H:%M");
+        vec![
+            format!(
+                "[!] {} open stints for this date (only one can be open at a time)",
+                self.open_stint_count
+            ),
+            format!(
+                "    fix: mlm delete punch --date {d}  (lists punches; rerun with the extra start's number)"
+            ),
+            format!(
+                "     or: mlm stop HH:MM --date {d}  (a time after {latest} closes the {latest} start)"
+            ),
+        ]
+    }
+
+    fn stale_lines(&self) -> Vec<String> {
+        let Some(stale) = self.stale_open_start else {
+            return Vec::new();
+        };
+        debug_assert!(stale.age_days >= 2, "stale open start must be age >= 2");
+        let d = format_date(self.date);
+        let time = stale.time.format("%H:%M");
+        vec![
+            format!(
+                "[!] unclosed start at {time}, {} days old (no stop recorded)",
+                stale.age_days
+            ),
+            format!("    fix: mlm stop HH:MM --date {d}  (a time after {time})"),
+            format!(
+                "     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)"
+            ),
+        ]
+    }
+
+    fn e8_lines(&self) -> Vec<String> {
+        let d = format_date(self.date);
+        let mut out = Vec::new();
+        for t in &self.orphaned_end_times {
+            let time = t.format("%H:%M");
+            out.push(format!("[!] orphaned end at {time} (no matching start)"));
+            out.push(format!(
+                "    fix: mlm start HH:MM --date {d}  (a time before {time})"
+            ));
+            out.push(format!(
+                "     or: mlm delete punch --date {d}  (lists punches; rerun with the end's number)"
+            ));
+        }
+        out
+    }
+
+    fn refused_join_lines(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(prev) = self.refused_join_with_previous {
+            out.push(refused_join_line(prev, prev, self.date));
+        }
+        if let Some(next) = self.refused_join_with_next {
+            out.push(refused_join_line(next, self.date, next));
+        }
+        out
+    }
+
+    /// `week`'s per-row suffix (§3.5, §3.4's "row gets `[!]`" rule,
+    /// unchanged text/shape from the old `Anomalies::row_marker`):
+    /// `"  [!]"` when `has_any()`, `""` otherwise.
+    pub fn row_marker(&self) -> &'static str {
+        if self.has_any() { "  [!]" } else { "" }
+    }
+}
+
+fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> String {
+    format!(
+        "[!] not joined to {} across midnight (a join needs exactly one open start on {} and exactly one unmatched end, as {}'s first punch)",
+        format_date_with_weekday(named),
+        format_date_with_weekday(earlier),
+        format_date_with_weekday(later),
+    )
+}
+
+/// One window date's finding from the §3.3/§3.6 14-day lookback.
+/// Deliberately narrower than `DateAnomalies`: a lookback line never
+/// carries E8/refused-join detail (§1.2's residual-gap bullets), only
+/// "this window date has an open start" in one of two shapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LookbackFinding {
+    /// The window date (age 2-14) this finding is about.
+    pub date: NaiveDate,
+    /// `today - date`. Always in 2..=14 (Task 3's scan contract).
+    pub age_days: i64,
+    pub kind: LookbackKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookbackKind {
+    /// Exactly one open start on the window date.
+    SingleOpenStart { time: NaiveTime },
+    /// Two or more open starts on the window date (that date's own E7).
+    MultipleOpenStints { count: usize },
+}
+
+impl LookbackFinding {
+    /// `status`'s block form (§3.3, one finding per line-group,
+    /// appended after a date's own `DateAnomalies::detail_lines()`,
+    /// oldest window date first — Task 3's job to order/append).
+    pub fn detail_lines(&self) -> Vec<String> {
+        debug_assert!(
+            (2..=14).contains(&self.age_days),
+            "lookback age must be 2..=14"
+        );
+        let d = format_date(self.date);
+        let wdy = format_date_with_weekday(self.date);
+        match self.kind {
+            LookbackKind::SingleOpenStart { time } => {
+                let time = time.format("%H:%M");
+                vec![
+                    format!(
+                        "[!] unclosed start on {wdy} at {time} ({} days ago)",
+                        self.age_days
+                    ),
+                    format!("    fix: mlm stop HH:MM --date {d}  (a time after {time})"),
+                    format!(
+                        "     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)"
+                    ),
+                ]
+            }
+            LookbackKind::MultipleOpenStints { count } => vec![
+                format!(
+                    "[!] {count} open stints on {wdy} ({} days ago)",
+                    self.age_days
+                ),
+                format!("    fix: see mlm status {d}"),
+            ],
+        }
+    }
+
+    /// `start`'s compressed one-line stderr form (§3.6), no trailing
+    /// newline.
+    pub fn stderr_line(&self) -> String {
+        debug_assert!(
+            (2..=14).contains(&self.age_days),
+            "lookback age must be 2..=14"
+        );
+        let d = format_date(self.date);
+        let wdy = format_date_with_weekday(self.date);
+        match self.kind {
+            LookbackKind::SingleOpenStart { time } => {
+                let time = time.format("%H:%M");
+                format!(
+                    "warning: unclosed start on {wdy} at {time} ({} days ago); fix: mlm stop HH:MM --date {d} (a time after {time})",
+                    self.age_days
+                )
+            }
+            LookbackKind::MultipleOpenStints { count } => format!(
+                "warning: {count} open stints on {wdy} ({} days ago); see mlm status {d}",
+                self.age_days
+            ),
+        }
+    }
+}
+
+/// The exact, unparameterized §3.5 footer line. Task 5 decides
+/// whether to append it (at least one row has `[!]`) and where (after
+/// the table, after one blank line) — this constant is the only thing
+/// this task owns.
+pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";
 
 #[cfg(test)]
 mod tests {
@@ -649,6 +899,254 @@ mod tests {
 
     // ---- 4.12 plain-ASCII audit ----
 
+    // ---- DateAnomalies / LookbackFinding (open-punch-visibility) ----
+
+    fn da(date: NaiveDate) -> DateAnomalies {
+        DateAnomalies {
+            date,
+            open_stint_count: 0,
+            latest_open_start: None,
+            orphaned_end_times: Vec::new(),
+            stale_open_start: None,
+            refused_join_with_previous: None,
+            refused_join_with_next: None,
+        }
+    }
+
+    #[test]
+    fn t_e7_reworded_matches_spec_example() {
+        let a = DateAnomalies {
+            open_stint_count: 2,
+            latest_open_start: Some(t(14, 0)),
+            ..da(d(2026, 9, 21))
+        };
+        assert_eq!(
+            a.detail_lines(),
+            vec![
+                "[!] 2 open stints for this date (only one can be open at a time)".to_string(),
+                "    fix: mlm delete punch --date 2026-09-21  (lists punches; rerun with the extra start's number)".to_string(),
+                "     or: mlm stop HH:MM --date 2026-09-21  (a time after 14:00 closes the 14:00 start)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_stale_matches_spec_example() {
+        let a = DateAnomalies {
+            open_stint_count: 1,
+            stale_open_start: Some(StaleOpenStart {
+                time: t(9, 0),
+                age_days: 5,
+            }),
+            ..da(d(2026, 9, 21))
+        };
+        assert_eq!(
+            a.detail_lines(),
+            vec![
+                "[!] unclosed start at 09:00, 5 days old (no stop recorded)".to_string(),
+                "    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)".to_string(),
+                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_e8_gains_fix_lines_text_unchanged() {
+        let a = DateAnomalies {
+            orphaned_end_times: vec![t(18, 0)],
+            ..da(d(2026, 9, 21))
+        };
+        assert_eq!(
+            a.detail_lines(),
+            vec![
+                "[!] orphaned end at 18:00 (no matching start)".to_string(),
+                "    fix: mlm start HH:MM --date 2026-09-21  (a time before 18:00)".to_string(),
+                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the end's number)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_refused_join_previous_side() {
+        let a = DateAnomalies {
+            refused_join_with_previous: Some(d(2026, 9, 21)),
+            ..da(d(2026, 9, 22))
+        };
+        assert_eq!(
+            a.detail_lines(),
+            vec![
+                "[!] not joined to Mon 2026-09-21 across midnight (a join needs exactly one open start on Mon 2026-09-21 and exactly one unmatched end, as Tue 2026-09-22's first punch)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_refused_join_next_side() {
+        let a = DateAnomalies {
+            refused_join_with_next: Some(d(2026, 9, 22)),
+            ..da(d(2026, 9, 21))
+        };
+        assert_eq!(
+            a.detail_lines(),
+            vec![
+                "[!] not joined to Tue 2026-09-22 across midnight (a join needs exactly one open start on Mon 2026-09-21 and exactly one unmatched end, as Tue 2026-09-22's first punch)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_lookback_single_block_matches_spec_example() {
+        let f = LookbackFinding {
+            date: d(2026, 9, 21),
+            age_days: 5,
+            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+        };
+        assert_eq!(
+            f.detail_lines(),
+            vec![
+                "[!] unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)".to_string(),
+                "    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)".to_string(),
+                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_lookback_multi_block_matches_spec_example() {
+        let f = LookbackFinding {
+            date: d(2026, 9, 21),
+            age_days: 5,
+            kind: LookbackKind::MultipleOpenStints { count: 2 },
+        };
+        assert_eq!(
+            f.detail_lines(),
+            vec![
+                "[!] 2 open stints on Mon 2026-09-21 (5 days ago)".to_string(),
+                "    fix: see mlm status 2026-09-21".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn t_ordering_all_kinds_at_once() {
+        // Unrealistic combination (stale + E7 together) is impossible
+        // under Task 1's real predicate, but render.rs enforces no such
+        // invariant -- this test only pins detail_lines()'s ordering.
+        let a = DateAnomalies {
+            date: d(2026, 9, 21),
+            open_stint_count: 2,
+            latest_open_start: Some(t(14, 0)),
+            orphaned_end_times: vec![t(10, 0), t(11, 0)],
+            stale_open_start: Some(StaleOpenStart {
+                time: t(9, 0),
+                age_days: 5,
+            }),
+            refused_join_with_previous: Some(d(2026, 9, 20)),
+            refused_join_with_next: Some(d(2026, 9, 22)),
+        };
+        let lines = a.detail_lines();
+        assert_eq!(lines.len(), 3 + 3 + 3 + 3 + 1 + 1);
+        assert!(lines[0].starts_with("[!] 2 open stints"));
+        assert!(lines[3].starts_with("[!] unclosed start at 09:00"));
+        assert!(lines[6].starts_with("[!] orphaned end at 10:00"));
+        assert!(lines[9].starts_with("[!] orphaned end at 11:00"));
+        assert!(lines[12].starts_with("[!] not joined to Sun 2026-09-20"));
+        assert!(lines[13].starts_with("[!] not joined to Tue 2026-09-22"));
+    }
+
+    #[test]
+    fn t_lookback_ordering_oldest_first() {
+        // This only proves rendering preserves caller-supplied order;
+        // the actual "oldest first" scan guarantee is Task 3's job.
+        let findings = [
+            LookbackFinding {
+                date: d(2026, 9, 20),
+                age_days: 6,
+                kind: LookbackKind::SingleOpenStart { time: t(8, 0) },
+            },
+            LookbackFinding {
+                date: d(2026, 9, 21),
+                age_days: 5,
+                kind: LookbackKind::MultipleOpenStints { count: 2 },
+            },
+        ];
+        let combined: Vec<String> = findings.iter().flat_map(|f| f.detail_lines()).collect();
+        assert!(combined[0].contains("2026-09-20"));
+        assert!(combined[3].contains("2026-09-21"));
+    }
+
+    #[test]
+    fn t_week_footer_matches_spec_example() {
+        assert_eq!(
+            WEEK_ANOMALY_FOOTER,
+            "[!] needs a look: run mlm status DATE for details and fixes"
+        );
+    }
+
+    #[test]
+    fn t_lookback_stderr_single_matches_spec_example() {
+        let f = LookbackFinding {
+            date: d(2026, 9, 21),
+            age_days: 5,
+            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+        };
+        assert_eq!(
+            f.stderr_line(),
+            "warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21 (a time after 09:00)"
+        );
+    }
+
+    #[test]
+    fn t_lookback_stderr_multi_matches_spec_example() {
+        let f = LookbackFinding {
+            date: d(2026, 9, 21),
+            age_days: 5,
+            kind: LookbackKind::MultipleOpenStints { count: 2 },
+        };
+        assert_eq!(
+            f.stderr_line(),
+            "warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21"
+        );
+    }
+
+    #[test]
+    fn t_lookback_stderr_single_space_differs_from_block_form() {
+        let f = LookbackFinding {
+            date: d(2026, 9, 21),
+            age_days: 5,
+            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+        };
+        let block = f.detail_lines();
+        let stderr = f.stderr_line();
+        assert!(block[1].contains("--date 2026-09-21  (a time after 09:00)"));
+        assert!(stderr.contains("--date 2026-09-21 (a time after 09:00)"));
+        assert!(!stderr.contains("--date 2026-09-21  (a time after 09:00)"));
+    }
+
+    #[test]
+    fn t_date_anomalies_new_fixtures_never_contain_old_e7_suffix() {
+        let fixtures = [
+            DateAnomalies {
+                open_stint_count: 2,
+                latest_open_start: Some(t(14, 0)),
+                ..da(d(2026, 9, 21))
+            },
+            DateAnomalies {
+                open_stint_count: 1,
+                stale_open_start: Some(StaleOpenStart {
+                    time: t(9, 0),
+                    age_days: 5,
+                }),
+                ..da(d(2026, 9, 21))
+            },
+        ];
+        for a in fixtures {
+            for line in a.detail_lines() {
+                assert!(!line.contains("(unmatched starts)"), "{line}");
+            }
+        }
+    }
+
     #[test]
     fn t33_every_produced_string_is_ascii() {
         let headlines = [
@@ -670,5 +1168,67 @@ mod tests {
             }
             assert!(a.row_marker().is_ascii());
         }
+    }
+
+    // Extends t33's plain-ASCII sweep to the open-punch-visibility
+    // literals (DateAnomalies/LookbackFinding/WEEK_ANOMALY_FOOTER),
+    // split into its own function to stay under the cognitive
+    // complexity budget.
+    #[test]
+    fn t33b_open_punch_visibility_literals_are_ascii() {
+        let date_anomaly_fixtures = [
+            DateAnomalies {
+                open_stint_count: 2,
+                latest_open_start: Some(t(14, 0)),
+                ..da(d(2026, 9, 21))
+            },
+            DateAnomalies {
+                open_stint_count: 1,
+                stale_open_start: Some(StaleOpenStart {
+                    time: t(9, 0),
+                    age_days: 5,
+                }),
+                ..da(d(2026, 9, 21))
+            },
+            DateAnomalies {
+                orphaned_end_times: vec![t(18, 0)],
+                ..da(d(2026, 9, 21))
+            },
+            DateAnomalies {
+                refused_join_with_previous: Some(d(2026, 9, 21)),
+                ..da(d(2026, 9, 22))
+            },
+            DateAnomalies {
+                refused_join_with_next: Some(d(2026, 9, 22)),
+                ..da(d(2026, 9, 21))
+            },
+        ];
+        for a in date_anomaly_fixtures {
+            for line in a.detail_lines() {
+                assert!(line.is_ascii(), "{line}");
+            }
+            assert!(a.row_marker().is_ascii());
+        }
+
+        let lookback_fixtures = [
+            LookbackFinding {
+                date: d(2026, 9, 21),
+                age_days: 5,
+                kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+            },
+            LookbackFinding {
+                date: d(2026, 9, 21),
+                age_days: 5,
+                kind: LookbackKind::MultipleOpenStints { count: 2 },
+            },
+        ];
+        for f in lookback_fixtures {
+            for line in f.detail_lines() {
+                assert!(line.is_ascii(), "{line}");
+            }
+            assert!(f.stderr_line().is_ascii());
+        }
+
+        assert!(WEEK_ANOMALY_FOOTER.is_ascii());
     }
 }
