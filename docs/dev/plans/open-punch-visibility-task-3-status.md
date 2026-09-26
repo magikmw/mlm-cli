@@ -1,5 +1,78 @@
 # Task 3 plan: `status` per-date anomalies and the shared lookback
 
+## Re-alignment note (phase 9)
+
+This plan was originally written before Task 1's and Task 2's plans
+existed, against assumed signatures. Task 1
+(`docs/dev/plans/open-punch-visibility-task-1-stint-predicates.md`) and
+Task 2 (`docs/dev/plans/open-punch-visibility-task-2-render.md`) are
+now authoritative, and NOTES.md entry 79 records that Task 2 stays
+additive (the old `render::Anomalies` keeps working; `DateAnomalies`,
+`StaleOpenStart`, `LookbackFinding`, `LookbackKind`,
+`WEEK_ANOMALY_FOOTER` are added beside it under the names Task 2's plan
+already pins). The changeset plan
+(`docs/dev/plans/open-punch-visibility-plan.md`) also moved
+`tests/status_cli.rs` ownership from Task 2 to this task. This pass
+corrects every call this plan makes into `stint.rs`/`render.rs` against
+those two plans' real "Published interface" sections, and folds in the
+`tests/status_cli.rs` scope. The mismatches found:
+
+- **`stint::stale_open_start`'s return type**: this plan assumed it
+  returns the raw `NaiveTime`/builds `render::StaleOpenStart` directly
+  inline. It actually returns `Option<stint::StaleOpenStart>`, a
+  distinct struct (`stint::StaleOpenStart { at: DateTime<Utc>,
+  age_days: i64 }`) that already carries `age_days` — this task no
+  longer recomputes the age itself, and converts `at` to local time
+  before handing it to `render::StaleOpenStart` (a same-named but
+  differently-shaped type in `render.rs`: `{ time: NaiveTime, age_days:
+  i64 }`). The two `StaleOpenStart` types must never be confused; this
+  task never imports both by bare name in the same `use` line.
+- **The refused-join predicate's name is `is_refused_join`**, not
+  `refused_join` as this plan's stub assumed. Signature otherwise
+  matches: `stint::is_refused_join(earlier: &DayStints, later:
+  &DayStints, later_punches: &[Punch]) -> bool`.
+- **Task 2's per-date fact type is `render::DateAnomalies`**, not
+  `render::DateAnomalyFacts` as this plan's stub assumed, and its shape
+  differs from the stub: it carries `date: NaiveDate` itself (so
+  rendering functions no longer take a separate date parameter), and
+  represents the open-start fact as `open_stint_count: usize` +
+  `latest_open_start: Option<NaiveTime>` rather than a bare
+  `open_stint_times: Vec<NaiveTime>`. Field names for the refused-join
+  facts are `refused_join_with_previous`/`refused_join_with_next`, not
+  `refused_join_prev`/`refused_join_next`.
+- **Rendering is via methods, not free functions.** There is no
+  `render::anomaly_detail_lines(date, &facts)` — it's
+  `DateAnomalies::detail_lines(&self) -> Vec<String>`. There is no
+  `render::lookback_block_lines(&finding)` — it's
+  `LookbackFinding::detail_lines(&self) -> Vec<String>`. There is no
+  `render::lookback_stderr_line(&finding)` — it's
+  `LookbackFinding::stderr_line(&self) -> String`.
+- **The lookback-kind enum is `render::LookbackKind`**, not
+  `render::LookbackFindingKind` as this plan's Published Interface
+  section assumed. Variant names (`SingleOpenStart { time }`,
+  `MultipleOpenStints { count }`) are unchanged.
+- **The Contract-A gap this plan flagged under Risks — "E7's fix line
+  needs a time, not just a count" — is resolved**: Task 2's
+  `DateAnomalies` already carries `latest_open_start: Option<NaiveTime>`
+  alongside `open_stint_count`. No follow-up needed at integration.
+- **This task's own Published interface (the `lookback` function Task
+  4 calls) does not change.** Its signature, `pub fn lookback(conn:
+  &Connection, today: NaiveDate, now_utc: DateTime<Utc>) ->
+  anyhow::Result<Vec<render::LookbackFinding>>`, is unaffected by any
+  of the above — only the re-exported enum name
+  (`LookbackFindingKind` -> `LookbackKind`) and the method Task 4 calls
+  for the stderr line (`finding.stderr_line()`, not a free function)
+  change in the surrounding doc text.
+- **Scope**: this task now also owns `tests/status_cli.rs`, per the
+  changeset plan's update. See the new "Scope" and "Test plan" entries
+  below for the exact edits folded in from Task 2's plan (which no
+  longer owns that file).
+
+Nothing above is a spec-level or design change — every correction is a
+name/shape fix to match the two dependency plans' authoritative
+signatures. The algorithm, ordering, and test intent below are
+otherwise unchanged from the original pass.
+
 ## What I read
 
 - `docs/dev/plans/open-punch-visibility-plan.md` (full) — changeset
@@ -47,20 +120,43 @@
 
 ## Scope
 
-**This task owns exclusively**: `src/status.rs`. No other file is
-touched, per the changeset plan's Task 3 file-ownership line and per
-my own brief.
+**This task owns exclusively**: `src/status.rs` and
+`tests/status_cli.rs` — the changeset plan moved the latter from Task 2
+to this task (NOTES.md entry 79), since the new E7 wording only reaches
+the compiled binary once this task switches `status.rs` off the old
+`render::Anomalies` type.
 
 **Files this task must not touch, and who owns them**:
 
 | File | Owner |
 |---|---|
-| `src/stint.rs` | Task 1 (the two new predicates this task calls) |
-| `src/render.rs` | Task 2 (the new per-date fact struct, lookback-finding struct, and their rendering functions this task calls) |
-| `tests/status_cli.rs` | Task 2 (rewords the E7 golden line this task's own output must still produce, unchanged in text) |
+| `src/stint.rs` | Task 1 (the two new predicates this task calls: `stale_open_start`, `is_refused_join`) |
+| `src/render.rs` | Task 2 (`DateAnomalies`, `StaleOpenStart`, `LookbackFinding`, `LookbackKind`, and their methods this task calls) |
 | `src/week_view.rs` | Task 5 (parallel to this task; consumes the same Task 1/Task 2 surface independently — no shared symbol with this task) |
 | `src/commands.rs` | Task 4 (sequenced after this task; calls this task's published `lookback` function) |
 | `docs/dev/SPEC.md`, `README.md` | Task 6 |
+
+**`tests/status_cli.rs` edit folded in from Task 2's plan** (which no
+longer owns this file): update
+`t14_status_with_anomalies_exits_zero_and_prints_to_stdout` (currently
+asserting `out.contains("[!] 2 open stints for this date (unmatched
+starts)")`) to assert the new E7 header text,
+`out.contains("[!] 2 open stints for this date (only one can be open at a time)")`,
+and consider also asserting the two new fix/or lines are present
+(`out.contains("fix: mlm delete punch --date")`,
+`out.contains("or: mlm stop HH:MM --date")`) since this is the one
+binary-level test covering E7 fix lines at all.
+
+**Old-wording fixtures inside `src/status.rs`'s own test module** (this
+task's file already, no cross-file coordination needed) that must move
+off the pre-changeset E7/E8 text as part of this task's own rewiring,
+confirmed present at: lines 1185 and 1215 (`"[!] 3 open stints for this
+date (unmatched starts)"` -> the new E7 wording), and the E8 fixtures at
+lines 1234-1235, 1246-1247, 1436, 1631, 1793 (these already read
+`"orphaned end at ..."`, unchanged in their first line, but now render
+through `DateAnomalies::detail_lines()` and pick up the two new
+`fix:`/`or:` lines any test asserting an exact `anomaly_lines` vector,
+rather than a substring, must account for).
 
 No contract is needed with Task 4 (it is sequenced strictly after this
 task and reads the finished code). Contract B is the agreement this
@@ -81,8 +177,8 @@ after `start`'s write has committed:
 /// open start, after that date's own boundary splices are resolved.
 /// Defined in `render.rs` (Task 2) per Contract A/B — re-exported here
 /// only in the sense that this module constructs and returns values of
-/// it; see "Dependencies" below for today's stand-in.
-pub use crate::render::{LookbackFinding, LookbackFindingKind};
+/// it; see "Dependencies" below for the real import paths.
+pub use crate::render::{LookbackFinding, LookbackKind};
 
 /// Walks ages 2 through 14 relative to `today` (§2's lookback window),
 /// oldest date first, and returns one `LookbackFinding` per window date
@@ -116,39 +212,35 @@ line.
 
 Task 4 also needs, from Task 2's `render.rs` (not this task's file,
 listed here only so Task 4's call site reads completely):
-`render::lookback_stderr_line(&finding) -> String` for the §3.6
-one-line stderr form.
+`finding.stderr_line() -> String` (a method on `render::LookbackFinding`,
+not a free function) for the §3.6 one-line stderr form.
 
-## Dependencies (Task 1 / Task 2 — not yet landed)
+## Dependencies (Task 1 / Task 2 — now pinned)
 
-Both land before this task is implemented (per the changeset plan's
-ordering: Task 3 depends on Task 1 and Task 2 merging first), so in
-the ordinary case this task's implementer codes directly against the
-real, merged `stint.rs`/`render.rs`. The stand-ins below exist for the
-case this task's worktree is opened before that merge lands, so
-implementation can start from the pinned contract text rather than
-wait idle.
+Both tasks' plans exist and are authoritative for signatures (see the
+re-alignment note above). This task's implementer codes directly
+against these real import paths — no local stand-ins needed.
 
-| Dependency | Landed? | Stub to test against today | Import to swap at integration |
-|---|---|---|---|
-| `stint::stale_open_start(day: &DayStints, date: NaiveDate, today: NaiveDate) -> Option<NaiveTime>` | No (Task 1) | Local fn in this task's worktree, same signature, same body: `(day.open.len() == 1 && (today - date).num_days() >= 2).then(|| local_time(&day.open[0].start))` | Delete the local fn; `use crate::stint::stale_open_start;` once Task 1's real one lands under this name |
-| `stint::refused_join(earlier: &DayStints, later: &DayStints, later_punches: &[Punch]) -> bool` | No (Task 1) | Local fn: `earlier.open.len() >= 1 \|\| later.orphaned_ends.is_empty() { return false } else { !stint::splice_candidate(earlier.open.len(), later, later_punches) }` — note `splice_candidate` already exists and is `pub(crate)`, so this stub can call the real thing today | Delete the local fn; `use crate::stint::refused_join;` once Task 1 lands |
-| `render::DateAnomalyFacts { open_stint_times: Vec<NaiveTime>, orphaned_end_times: Vec<NaiveTime>, stale_open_start: Option<StaleOpenStart>, refused_join_prev: Option<NaiveDate>, refused_join_next: Option<NaiveDate> }`, `render::StaleOpenStart { time: NaiveTime, age_days: i64 }` | No (Task 2) | Local structs, same fields, in this task's worktree | Delete local structs; `use crate::render::{DateAnomalyFacts, StaleOpenStart};` |
-| `render::anomaly_detail_lines(date: NaiveDate, facts: &DateAnomalyFacts) -> Vec<String>` | No (Task 2) | Local fn producing exactly the §3.4 text for E7/stale/E8/refused-prev/refused-next, in that fixed order — copy the spec's literal strings verbatim into the stub so tests are already asserting real wording, not placeholder text | Delete local fn; `use crate::render::anomaly_detail_lines;` |
-| `render::LookbackFinding { date: NaiveDate, age_days: i64, kind: LookbackFindingKind }`, `render::LookbackFindingKind::{SingleOpenStart { time: NaiveTime }, MultipleOpenStints { count: usize }}` | No (Task 2) | Local structs/enum, same shape, in this task's worktree | Delete local defs; `use crate::render::{LookbackFinding, LookbackFindingKind};` |
-| `render::lookback_block_lines(finding: &LookbackFinding) -> Vec<String>` | No (Task 2) | Local fn producing the §3.4 lookback block form verbatim (both single- and multi-open variants) | Delete local fn; `use crate::render::lookback_block_lines;` |
+| Dependency | Import | Notes |
+|---|---|---|
+| `stint::stale_open_start(day: &DayStints, date: NaiveDate, today: NaiveDate) -> Option<stint::StaleOpenStart>` | `use crate::stint;` (module-qualified call, matching this file's existing style) | Returns a struct (`pub(crate) struct StaleOpenStart { pub at: DateTime<Utc>, pub age_days: i64 }`), not a bare `NaiveTime`. `age_days` is already computed by Task 1 — this task must not recompute it. `at` needs `local_time()` before it can fill `render::StaleOpenStart.time`. |
+| `stint::is_refused_join(earlier: &DayStints, later: &DayStints, later_punches: &[Punch]) -> bool` | `use crate::stint;` | Named `is_refused_join`, not `refused_join`. |
+| `render::DateAnomalies { date: NaiveDate, open_stint_count: usize, latest_open_start: Option<NaiveTime>, orphaned_end_times: Vec<NaiveTime>, stale_open_start: Option<render::StaleOpenStart>, refused_join_with_previous: Option<NaiveDate>, refused_join_with_next: Option<NaiveDate> }` | `use crate::render::{self, DateAnomalies};` (or fully qualify `render::DateAnomalies` at each construction site) | Carries its own `date` field — no separate date parameter needed anywhere this task passes it around. Do not also bare-import `render::StaleOpenStart` alongside `stint::StaleOpenStart`; the two are distinct, same-named types with different fields. This task always writes `stint::StaleOpenStart`/`render::StaleOpenStart` module-qualified, never both unqualified in the same scope. |
+| `render::StaleOpenStart { pub time: NaiveTime, pub age_days: i64 }` | Constructed as `render::StaleOpenStart { .. }` | Distinct from `stint::StaleOpenStart` above — see note. |
+| `DateAnomalies::detail_lines(&self) -> Vec<String>`, `has_any(&self) -> bool`, `row_marker(&self) -> &'static str` | Method calls on a `render::DateAnomalies` value | Not free functions. `detail_lines()` takes no date argument (the struct already carries it). This task only calls `detail_lines()`; `has_any`/`row_marker` are Task 5's concern. |
+| `render::LookbackFinding { date: NaiveDate, age_days: i64, kind: render::LookbackKind }`, `render::LookbackKind::{SingleOpenStart { time: NaiveTime }, MultipleOpenStints { count: usize }}` | `use crate::render::{self, LookbackFinding, LookbackKind};` | Enum is `LookbackKind`, not `LookbackFindingKind`. |
+| `LookbackFinding::detail_lines(&self) -> Vec<String>`, `stderr_line(&self) -> String` | Method calls on a `render::LookbackFinding` value | Not free functions (`lookback_block_lines`/`lookback_stderr_line` don't exist). `stderr_line()` is only called by Task 4, not this task, but is listed here per this task's own "Published interface" doc comment above. |
 
-**Handoff needed against Contract A, not planned here**: Contract A's
-list of per-date facts (open-start count, orphaned-end list, stale
-info, refused-join info) does not by itself carry what E7's fix line
-needs — the spec's E7 example fills `HH:MM` with "the latest open
-start on the date" (§3.4: *"In the E7 hint, `14:00` is the latest open
-start on the date."*). A bare `open_stint_count: usize` cannot supply
-that value. This task's stand-in therefore widens that fact to
-`open_stint_times: Vec<NaiveTime>` (count is `.len()`, latest is
-`.iter().max()`), and assumes Task 2 lands the same widening. This is
-flagged again under Risks — it is the one place this task's design
-depends on a fact Contract A's own text doesn't literally enumerate.
+Task 2 stays additive per NOTES.md entry 79: the old `render::Anomalies`
+still compiles, but this task fully switches off it, so `src/status.rs`'s
+`use crate::render::{self, Anomalies};` import line drops `Anomalies`
+once this task's rewiring lands.
+
+**Contract A's E7 fix-line gap (flagged in the original pass) is
+resolved.** Task 2's `DateAnomalies` already carries
+`latest_open_start: Option<NaiveTime>` alongside `open_stint_count`, so
+this task's `anomaly_facts_for_date` (below) fills both directly from
+`ctx.day.open` — no widening left to negotiate at integration.
 
 ## Algorithm and code sketch
 
@@ -210,18 +302,20 @@ fn anomaly_facts_for_date(
     today: NaiveDate,
     punches: &[Punch],
     next_punches: &[Punch],
-) -> render::DateAnomalyFacts {
-    render::DateAnomalyFacts {
-        open_stint_times: ctx.day.open.iter().map(|o| local_time(&o.start)).collect(),
+) -> render::DateAnomalies {
+    render::DateAnomalies {
+        date: target_date,
+        open_stint_count: ctx.day.open.len(),
+        latest_open_start: ctx.day.open.iter().map(|o| local_time(&o.start)).max(),
         orphaned_end_times: ctx.day.orphaned_ends.iter().map(|o| local_time(&o.punch)).collect(),
         stale_open_start: stint::stale_open_start(&ctx.day, target_date, today)
-            .map(|time| render::StaleOpenStart {
-                time,
-                age_days: (today - target_date).num_days(),
+            .map(|s| render::StaleOpenStart {
+                time: local_time(&s.at),
+                age_days: s.age_days,
             }),
-        refused_join_prev: stint::refused_join(&ctx.prev_raw, &ctx.day_raw, punches)
+        refused_join_with_previous: stint::is_refused_join(&ctx.prev_raw, &ctx.day_raw, punches)
             .then(|| target_date.pred_opt().unwrap()),
-        refused_join_next: stint::refused_join(&ctx.day_raw, &ctx.next_raw, next_punches)
+        refused_join_with_next: stint::is_refused_join(&ctx.day_raw, &ctx.next_raw, next_punches)
             .then(|| target_date.succ_opt().unwrap()),
     }
 }
@@ -229,24 +323,27 @@ fn anomaly_facts_for_date(
 
 `stale_open_start` reads `ctx.day` (post-splice), matching §2's own
 definition of "open start" ("a trailing unmatched `start` left on a
-date after `classify_at`"). `refused_join` reads the raw pair, per
+date after `classify_at`"). `is_refused_join` reads the raw pair, per
 Contract B's explicit instruction. Both open-start-count-driven checks
 (E7 vs. stale) stay mutually exclusive by construction, since Task 1's
 `stale_open_start` only returns `Some` when `ctx.day.open.len() == 1`
-and E7's own line only renders when `open_stint_times.len() > 1` —
-Task 2's `anomaly_detail_lines` owns that branch, this task only
-supplies both facts and trusts Task 1's stated exclusivity.
+and E7's own line only renders when `open_stint_count > 1` — Task 2's
+`DateAnomalies::detail_lines` owns that branch, this task only supplies
+both facts and trusts Task 1's stated exclusivity. `age_days` on
+`render::StaleOpenStart` is copied straight from `stint::StaleOpenStart`
+(Task 1 already computes `today - date` internally); this task never
+recomputes it.
 
 `resolve()`'s new anomaly section:
 
 ```rust
 let ctx = classify_date_context(&prev_punches, &punches, &next_punches, now_utc);
 let facts = anomaly_facts_for_date(&ctx, target_date, today, &punches, &next_punches);
-let mut anomaly_lines = render::anomaly_detail_lines(target_date, &facts);
+let mut anomaly_lines = facts.detail_lines();
 
 if is_today {
     for finding in lookback(conn, today, now_utc)? {
-        anomaly_lines.extend(render::lookback_block_lines(&finding));
+        anomaly_lines.extend(finding.detail_lines());
     }
 }
 ```
@@ -259,7 +356,7 @@ The old `to_anomalies` helper and its doc comment (about not calling
 `DayStints::has_anomaly()`/`anomalies()` to avoid a second formula) are
 deleted: `anomaly_facts_for_date` replaces it, and the "route
 everything through one rendering formula" property it protected is now
-`render::anomaly_detail_lines`'s job to uphold, not this module's.
+`DateAnomalies::detail_lines`'s job to uphold, not this module's.
 
 ### 2. The lookback scan
 
@@ -310,8 +407,8 @@ fn lookback_finding_for_date(
     let day = stint::classify_at(prev, cur, next, now_utc);
     let kind = match day.open.len() {
         0 => return None, // idle, or an orphaned end only (§1.2's known gap)
-        1 => render::LookbackFindingKind::SingleOpenStart { time: local_time(&day.open[0].start) },
-        n => render::LookbackFindingKind::MultipleOpenStints { count: n },
+        1 => render::LookbackKind::SingleOpenStart { time: local_time(&day.open[0].start) },
+        n => render::LookbackKind::MultipleOpenStints { count: n },
     };
     Some(render::LookbackFinding { date, age_days: age, kind })
 }
@@ -342,8 +439,9 @@ changeset plan's explicit warning that the lookback scan and the
 anomaly-line assembly are shaped to blow past 15 if written flat:
 
 - `classify_date_context` — 4 straight-line calls, no branches.
-- `anomaly_facts_for_date` — 5 struct-field assignments, each a single
-  predicate call or `.map()`/`.then()`; no nested branching.
+- `anomaly_facts_for_date` — 6 struct-field assignments, each a single
+  predicate call, `.map()`/`.then()`, or a plain field copy; no nested
+  branching.
 - `lookback` — one loop over 13 fixed ages, delegating the actual
   per-date logic out.
 - `group_punches_by_date` — one loop, one line body.
@@ -351,7 +449,7 @@ anomaly-line assembly are shaped to blow past 15 if written flat:
   three-arm match; the natural size limit for "one date's lookback
   fact", not expected to need further splitting.
 - `resolve()` itself grows by roughly 6 lines (construct `ctx`,
-  construct `facts`, call `anomaly_detail_lines`, conditionally extend
+  construct `facts`, call `facts.detail_lines()`, conditionally extend
   with lookback lines) replacing the ~10 lines it deletes
   (`to_anomalies` call plus the old two-line `receiving_end_time`
   setup) — expected to land at or below its current complexity, but
@@ -451,7 +549,8 @@ view.
   past one. This is mostly an assertion on `render.rs`'s output as
   invoked through `resolve()`, guarding against this task passing the
   wrong date into the wrong fact field (e.g. `target_date` where
-  `today` was meant, or vice versa in `refused_join_prev`/`_next`).
+  `today` was meant, or vice versa in
+  `refused_join_with_previous`/`refused_join_with_next`).
 
 ### Fix-command round-trip (spec §5)
 
@@ -483,16 +582,22 @@ view.
 
 ## Risks, ambiguities, and disagreements
 
-- **Contract A under-specifies E7's fix-line input** (detailed above
-  under Dependencies). Contract A's own text lists "the existing
-  open-start count" as a fact, but §3.4's E7 example needs the latest
-  open start's *time*, not just a count. This task's design widens the
-  fact to `open_stint_times: Vec<NaiveTime>`. If Task 2 lands with a
-  bare `open_stint_count: usize` instead, this task's
-  `anomaly_facts_for_date` needs a one-field change (add the vec
-  alongside or instead of the count) and `render::anomaly_detail_lines`
-  needs the same widening on its input — a small, contained mismatch
-  to catch at integration, not a structural one.
+- **Resolved by re-alignment (see note at top): Contract A's E7
+  fix-line gap and the "which module owns the lookback type" question.**
+  Task 2's plan lands `latest_open_start: Option<NaiveTime>` on
+  `render::DateAnomalies` directly, and both `LookbackFinding` and
+  `LookbackKind` are confirmed to live in `render.rs`, matching this
+  plan's original guess on both points. No mismatch remains at
+  integration for either.
+- **New scope, not a risk**: this task now also owns
+  `tests/status_cli.rs` and the old-wording fixtures inside
+  `src/status.rs`'s own test module (moved from Task 2 per the
+  changeset plan update, NOTES.md entry 79). See "Scope" above for the
+  exact lines and text. This is additional, mechanical work within
+  this task's existing rewiring, not a design change — the fixtures
+  already assert the pre-changeset E7/E8 strings and simply need
+  updating to the strings this task's own `DateAnomalies::detail_lines`
+  call now produces.
 - **`static EMPTY: Vec<Punch> = Vec::new()` needs `Punch: Sync`.**
   `Punch` derives only `Debug, Clone, Copy, PartialEq, Eq` today (per
   `stint.rs`'s use of it) with no explicit `!Sync` marker, so it should
@@ -510,18 +615,6 @@ view.
   (`assemble_anomaly_lines(ctx, target_date, today, is_today, conn,
   now_utc, punches, next_punches) -> anyhow::Result<Vec<String>>`) if
   the hook flags it.
-- **Whether `LookbackFinding`/`LookbackFindingKind` should live in
-  `render.rs` or `status.rs`.** I read Contract B's "the finished shape
-  of Task 2's per-date fact structure and lookback finding structure"
-  as meaning both types are Task 2's (`render.rs`), with `status.rs`
-  only constructing values of them — consistent with render.rs staying
-  the single place wording/shape lives and with this task's own
-  out-of-scope line ("leaving both textual renderings ... to Task 2's
-  functions"). If Task 2 instead expects `status.rs` to own the type
-  and `render.rs` to take it as a generic/duck-typed parameter, the fix
-  is a one-line `pub struct` relocation, not a logic change — flagged
-  here since I can't pin this against a sibling plan that doesn't exist
-  yet.
 - **No disagreement with the changeset plan's substance.** The
   architecture, the interface contracts, and Task 3's own acceptance
   criteria are all self-consistent and directly implementable; the

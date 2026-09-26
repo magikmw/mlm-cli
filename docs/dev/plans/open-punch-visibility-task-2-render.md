@@ -2,6 +2,14 @@
 
 Low-level plan for Task 2 of changeset `open-punch-visibility`.
 
+**Re-aligned** to the changeset plan's phase-9 update (NOTES.md entry
+79): Task 2 is now additive (adds `DateAnomalies` beside the existing
+`render::Anomalies`, deletes nothing — Task 4 deletes `Anomalies`
+later), no longer owns `tests/status_cli.rs` (Task 3 does), and this
+pass also checks the Published interface against Task 1's pinned
+`stint::StaleOpenStart` for a name collision (see "Name collision with
+Task 1"). No published name changed and no scope was added.
+
 ## What was read
 
 - `docs/dev/plans/open-punch-visibility-plan.md` (full) — goal,
@@ -30,25 +38,36 @@ Low-level plan for Task 2 of changeset `open-punch-visibility`.
 ## Scope
 
 **This task owns, exclusively:**
-- `src/render.rs`
-- `tests/status_cli.rs`
+- `src/render.rs` (batch 1 — additive only; see "Additive, not
+  replacing" below)
+
+**No longer owned by this task:** `tests/status_cli.rs`. It moves to
+Task 3, since that is where the new E7 wording first reaches the
+binary (`status.rs` is what switches to the new type). See "Handoff to
+Task 3" below for the exact assertion text Task 3 needs.
 
 **Must not touch (sibling ownership):**
 - `src/stint.rs` — Task 1. Owns the two new predicates (staleness,
   refused-join) this task's callers (Task 3/5) will use to *compute*
   the facts this task's types carry. This task never imports
   `stint.rs` at all (Contract A: "Task 2 never calls into `stint.rs`
-  directly; it only accepts facts about a date as plain data").
-- `src/status.rs` — Task 3. Builds `render::DateAnomalies` /
-  `render::LookbackFinding` instances from real `DayStints` data and
+  directly; it only accepts facts about a date as plain data"). See
+  "Name collision with Task 1" below — Task 1 also pins a type named
+  `StaleOpenStart`, in its own module.
+- `src/status.rs`, `tests/status_cli.rs` — Task 3. Builds
+  `render::DateAnomalies` / `render::LookbackFinding` instances from
+  real `DayStints` data, switches `status` over to the new type, and
   calls this task's rendering methods. Its own ~15 hardcoded golden
   tests asserting the *old* E7/E8 text (e.g. lines ~1180-1793,
   `"[!] 3 open stints for this date (unmatched starts)"`,
   `anomaly_lines: vec!["[!] orphaned end at 18:00 ..."]`) are **not**
   updated by this task — they live in Task 3's file. See "Handoff to
-  Task 3/5" below; this is flagged as a risk, not silently absorbed.
+  Task 3" below.
 - `src/commands.rs` — Task 4. Calls Task 3's lookback and this task's
-  `LookbackFinding::stderr_line()`.
+  `LookbackFinding::stderr_line()`. Also, sequentially after Tasks 3
+  and 5 have both merged, Task 4 deletes the old `render::Anomalies`
+  type and its now-unused functions from `src/render.rs` — see
+  "Additive, not replacing" below. This task does not delete anything.
 - `src/week_view.rs` — Task 5. Decides *which* dates get `[!]` and
   *whether* the footer is appended; this task only supplies the footer
   string and the per-date line text.
@@ -57,24 +76,91 @@ Low-level plan for Task 2 of changeset `open-punch-visibility`.
 No code in the working tree is edited to produce this plan file, and
 nothing is committed.
 
+## Additive, not replacing
+
+Earlier drafting of this plan had this task delete the existing
+`render::Anomalies` and replace it in place with `DateAnomalies`. That
+would leave `status.rs`/`week_view.rs` failing to compile from this
+task's commit until Task 3 and Task 5 land, which breaks `cargo build`
+and the pre-commit test gate on Task 2's own merge. The changeset plan
+now requires Task 2 to merge clean on its own, so that approach is
+dropped.
+
+Task 2 instead adds `DateAnomalies`, `StaleOpenStart`, `LookbackFinding`,
+`LookbackKind`, and `WEEK_ANOMALY_FOOTER` *beside* the existing
+`Anomalies` struct and its `impl` block. Nothing existing is deleted,
+renamed, or changed in behavior:
+
+- `render::Anomalies` (both fields, both methods) stays exactly as it
+  is today, with its existing tests unchanged and passing.
+- The new types have no in-crate caller yet (same as before), so
+  `#![allow(dead_code)]` at the module top keeps rustc/clippy quiet
+  — already present, no change needed.
+- `cargo build`, `cargo test`, and `cargo clippy --all-targets -- -D
+  warnings` are all green after this task's commit, on its own,
+  without Task 3 or Task 5 having landed.
+
+Deleting the old `Anomalies` type is explicitly **Task 4's job**, once
+Task 3 and Task 5 have both switched their call sites to
+`DateAnomalies` and nothing references the old type anymore (see the
+parent plan's Task 4 "Files owned exclusively," which now names
+`src/render.rs` for this one deletion step, sequenced after Tasks 3
+and 5). This task does not delete `Anomalies` and does not need to
+reason about when that deletion is safe.
+
+## Name collision with Task 1
+
+Task 1's plan (`open-punch-visibility-task-1-stint-predicates.md`)
+pins `pub(crate) struct StaleOpenStart` in `src/stint.rs`, with fields
+`at: DateTime<Utc>, age_days: i64`. This task pins a *different*
+`pub struct StaleOpenStart` in `src/render.rs`, with fields
+`time: NaiveTime, age_days: i64`. Same name, different module,
+different field shapes.
+
+This is not a Rust compile collision — the two types live in separate
+modules (`stint::StaleOpenStart` vs. `render::StaleOpenStart`) and
+Task 2 never imports `stint.rs` (Contract A), so nothing here forces a
+rename. Per this changeset's instruction to keep already-pinned
+Published-interface names stable for Tasks 3/4/5, **neither type is
+renamed**. Resolution:
+
+- `stint::StaleOpenStart` (Task 1) is authoritative for the
+  predicate's raw output — a UTC instant plus age, matching the rest
+  of `stint.rs`'s existing `DateTime<Utc>`-based fields.
+- `render::StaleOpenStart` (this task) is authoritative for the
+  render-ready fact — a local `NaiveTime` plus age, matching every
+  other time field this task's types carry (`latest_open_start`,
+  `LookbackKind::SingleOpenStart { time }`), since `render.rs` never
+  formats a UTC instant directly.
+- Task 3's builder is where one becomes the other: it reads
+  `stint::stale_open_start(...)`'s `Option<stint::StaleOpenStart>` and,
+  when `Some`, constructs a `render::StaleOpenStart { time: <local
+  time derived from `.at`>, age_days: <copied> }`. Task 3's own plan
+  should spell out the UTC-to-local conversion it uses (matching
+  however the rest of `status.rs` already renders a punch's local
+  time); this task does not perform that conversion since it never
+  sees a `DateTime<Utc>` at all.
+- Both plans refer to their own module's type by its bare name
+  (`StaleOpenStart`) throughout; readers should track which file's
+  section they're in rather than assume a single global type.
+
 ## Published interface (Contract A)
 
 This section is authoritative for Task 3 and Task 5's field/method
 names, since neither of those tasks' plans exist yet. Every output
 string is quoted verbatim.
 
-### Replacing `Anomalies`
+### Adding `DateAnomalies` beside `Anomalies`
 
 The existing `render::Anomalies` (two fields: `open_stint_count`,
-`orphaned_end_times`) is **replaced**, not extended in place, by a new
-type carrying every fact one date's anomaly block needs. `Anomalies`'s
-only two call sites today (`status.rs::to_anomalies`,
-`week_view.rs`'s per-row construction, both literal-field struct
-constructions) will fail to compile against the new type — this is
-expected: Task 3 and Task 5 both already have "construct the finished
-shape" as a stated acceptance-criterion dependency in the changeset
-plan (Contract B). See "Risks" for why an in-place field-add was
-rejected instead.
+`orphaned_end_times`) is left exactly as it is — same fields, same
+methods, same tests, still called by `status.rs::to_anomalies` and
+`week_view.rs`'s per-row construction. This task adds a new, separate
+type, `DateAnomalies`, carrying every fact one date's anomaly block
+needs under the new, wider behavior. Nothing about `Anomalies` changes
+until Task 3 and Task 5 each switch their own call site over to
+`DateAnomalies` (Contract B); Task 4 then deletes `Anomalies` once both
+have (see "Additive, not replacing" above).
 
 ```rust
 /// Everything one calendar date's `status`/`week` anomaly rendering
@@ -282,8 +368,8 @@ style in `stint.rs`'s `classify_at`.
 
 | Dependency | Status | What Task 2 does about it |
 |---|---|---|
-| Task 1's stale/refused-join predicates (`stint.rs`) | Not landed | Not needed — this task never calls `stint.rs`. `StaleOpenStart`/`refused_join_with_*` are plain fields Task 3/5 populate from Task 1's predicates once those land. No stub needed since this task supplies no logic that depends on them, only the shape they get poured into. |
-| Task 3's `status.rs` wiring (`to_anomalies`, lookback scan) | Not landed | Out of scope. This task's own tests construct `DateAnomalies`/`LookbackFinding` values by hand (unit tests, same style as the current `render.rs` test module), never via `status.rs`. The one integration test this task edits (`tests/status_cli.rs` line 83) exercises the real binary and therefore transitively depends on Task 3 rewiring `status.rs` to use the new type before it can pass — see "Risks". |
+| Task 1's stale/refused-join predicates (`stint.rs`) | Not landed | Not needed — this task never calls `stint.rs`. `render::StaleOpenStart`/`refused_join_with_*` are plain fields Task 3/5 populate from Task 1's predicates once those land. No stub needed since this task supplies no logic that depends on them, only the shape they get poured into. |
+| Task 3's `status.rs` wiring (`to_anomalies`, lookback scan, `tests/status_cli.rs`) | Not landed | Out of scope, and no longer this task's file. This task's own tests construct `DateAnomalies`/`LookbackFinding` values by hand (unit tests, same style as the current `render.rs` test module), never via `status.rs`. `DateAnomalies`/`LookbackFinding` have no in-crate caller until Task 3/5 land, same as `Anomalies` had none of its own callers before its original milestone — `#![allow(dead_code)]` covers this, so this task's own `cargo build`/`test`/`clippy` stay green regardless of Task 3's status. |
 | Task 5's `week_view.rs` wiring | Not landed | Out of scope; `WEEK_ANOMALY_FOOTER` and `row_marker()` are ready for it to consume as-is. |
 
 ## Implementation plan
@@ -294,10 +380,12 @@ style in `stint.rs`'s `classify_at`.
      (currently only `format_weekday_full` is imported — confirmed
      line 18 of the current file).
 
-1.2. Delete the current `Anomalies` struct and its `impl` block
-     (current lines 119-168), replacing with `DateAnomalies`,
-     `StaleOpenStart`, `LookbackFinding`, `LookbackKind`, and
-     `WEEK_ANOMALY_FOOTER` as specified above.
+1.2. Add `DateAnomalies`, `StaleOpenStart`, `LookbackFinding`,
+     `LookbackKind`, and `WEEK_ANOMALY_FOOTER` as specified above,
+     placed directly after the existing `Anomalies` struct and its
+     `impl` block (current lines 119-168). The existing `Anomalies`
+     struct and `impl` block are left untouched, byte-for-byte, at
+     their current location.
 
 1.3. Implement `DateAnomalies::has_any`:
 ```rust
@@ -394,9 +482,11 @@ fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> 
 }
 ```
 
-1.5. `row_marker` unchanged in body from today's `Anomalies` version,
-     just moved onto `DateAnomalies` and now keying off the wider
-     `has_any()`.
+1.5. `DateAnomalies::row_marker` is a new method, same body shape as
+     `Anomalies::row_marker` (unchanged, still present on `Anomalies`
+     too), now keying off `DateAnomalies::has_any()`'s wider
+     definition. Both `row_marker` methods coexist until Task 4 deletes
+     the old type.
 
 1.6. `LookbackFinding` methods:
 
@@ -448,39 +538,50 @@ impl LookbackFinding {
      until Task 3/5 land, same situation Milestone 9 was in
      originally).
 
-1.8. Update the module's test block:
-   - Delete/replace tests 4.8-4.12 (`t16`-`t33`, the ones built against
-     the old two-field `Anomalies`) with equivalents against
-     `DateAnomalies`. Where a test's *point* survives unchanged
-     (multi-open-then-orphan ordering, no-divergence invariants,
-     ASCII sweep), keep its name and intent, just retarget the
-     construction and the expected strings.
-   - Add new tests per the acceptance criteria (see Test plan below).
+1.8. Extend the module's test block, additively:
+   - Leave every existing test targeting `Anomalies` untouched — same
+     names, same bodies, same expected strings, still passing.
+   - Add new tests for `DateAnomalies`/`StaleOpenStart`/
+     `LookbackFinding`/`LookbackKind`/`WEEK_ANOMALY_FOOTER` per the
+     acceptance criteria (see Test plan below). These are new test
+     functions with new names, not replacements of the `t16`-`t33`
+     family.
+   - Extend the module's existing plain-ASCII sweep test (AC6) to also
+     cover the new literals, rather than adding a second, parallel
+     sweep test.
 
-### 2. `tests/status_cli.rs`
+## Handoff to Task 3
 
-2.1. Update `t14_status_with_anomalies_exits_zero_and_prints_to_stdout`
-     (current line 83) from:
-     ```rust
-     out.contains("[!] 2 open stints for this date (unmatched starts)")
-     ```
-     to the new E7 header line:
-     ```rust
-     out.contains("[!] 2 open stints for this date (only one can be open at a time)")
-     ```
-     Consider also asserting the two new fix/or lines are present
-     (`out.contains("fix: mlm delete punch --date")` and
-     `out.contains("or: mlm stop HH:MM --date")`), since this is the
-     one binary-level test this changeset has for E7 and the whole
-     point of the changeset is that fix lines now exist. This is a
-     judgment call within this task's owned file, not a spec
-     requirement of exactly this test.
+`tests/status_cli.rs` is Task 3's file now, not this task's. This
+task's own tests never touch it. The exact change Task 3 needs there,
+so it doesn't have to re-derive it:
 
-2.2. No other existing assertion in this file names anomaly wording
-     (confirmed by grep across the file — only line 83 matches
-     `"open stints"`/`"orphaned end"`/`"unmatched starts"`).
+- Update `t14_status_with_anomalies_exits_zero_and_prints_to_stdout`
+  (current line 83) from:
+  ```rust
+  out.contains("[!] 2 open stints for this date (unmatched starts)")
+  ```
+  to the new E7 header line:
+  ```rust
+  out.contains("[!] 2 open stints for this date (only one can be open at a time)")
+  ```
+  Consider also asserting the two new fix/or lines are present
+  (`out.contains("fix: mlm delete punch --date")` and
+  `out.contains("or: mlm stop HH:MM --date")`), since this is the one
+  binary-level test this changeset has for E7 and the whole point of
+  the changeset is that fix lines now exist. This is a judgment call
+  within Task 3's owned file, not a spec requirement of exactly this
+  test.
+- No other existing assertion in that file names anomaly wording
+  (confirmed by grep across the file during this task's planning —
+  only line 83 matches `"open stints"`/`"orphaned end"`/`"unmatched
+  starts"`).
+- This assertion cannot pass until `status.rs` itself switches to
+  `render::DateAnomalies` and produces the new wording — it is not
+  something Task 2 can verify in isolation, since it exercises the
+  compiled binary.
 
-## Handoff to Task 3 / Task 5
+Further handoff, beyond the test file:
 
 - Task 3 must replace `status.rs::to_anomalies` (current lines
   311-328) with a builder that populates every new `DateAnomalies`
@@ -501,9 +602,18 @@ impl LookbackFinding {
   add the neighbor-fetch this needs (already flagged in the changeset
   plan's Task 5 section), and append `WEEK_ANOMALY_FOOTER` once, after
   a blank line, iff any row's `has_any()` is true.
-- Until Task 3 and Task 5 both land, `cargo build` for the whole crate
-  fails (see Risks). This is an expected, temporary state of this
-  changeset's parallel-worktree structure, not a defect in this task.
+- Once Task 3 and Task 5 have both switched their call sites to
+  `DateAnomalies`, the old `render::Anomalies` type (struct, `impl`
+  block, and its own now-dead tests) becomes unreferenced. Deleting it
+  is **Task 4's job**, sequenced after both have merged (see the parent
+  plan's Task 4 file ownership and "Additive, not replacing" above) —
+  not something Task 3 or Task 5 does as a side effect of switching
+  over, and not something this task does either.
+- Between this task's merge and Task 3/Task 5 each switching over,
+  `render::Anomalies` and `render::DateAnomalies` both compile and both
+  have passing tests, so `cargo build`/`test`/`clippy` stay green at
+  every commit in between — no temporary red window, unlike the
+  discarded replace-in-place approach (see "Additive, not replacing").
 
 ## Test plan
 
@@ -576,15 +686,27 @@ Task 2 section), each citing the spec case it proves.
   differ exactly in that one respect, so a future accidental unify
   regresses loudly).
 
-### AC5 — no test left asserting old E7/E8 text (within this task's file)
+### AC5 — no test left asserting old E7/E8 text (reframed for the
+additive approach — within this task's own new-type fixtures)
 
-- Grep-equivalent assertion at the end of the `render.rs` test module:
-  a single test that greps every literal produced by the module's own
-  fixtures for the strings `"(unmatched starts)"` (old E7 suffix) and
-  confirms zero matches, guarding against a stray leftover.
-- `tests/status_cli.rs` line 83 updated per Implementation §2.1 — see
-  Handoff section for why the equivalent status.rs golden tests are
-  explicitly out of scope, not silently skipped.
+Under the additive approach, `render::Anomalies`'s own existing tests
+correctly keep asserting the old E7/E8 text, because `Anomalies` itself
+still renders that old text unchanged (it is not touched, deleted, or
+reworded until Task 4). This AC therefore applies only to this task's
+new `DateAnomalies`/`LookbackFinding` fixtures, not to `Anomalies`'s
+pre-existing ones:
+
+- Grep-equivalent assertion at the end of the new `DateAnomalies`
+  fixtures in the `render.rs` test module: a single test that greps
+  every literal produced by those new fixtures for the strings
+  `"(unmatched starts)"` (old E7 suffix) and confirms zero matches,
+  guarding against a stray leftover in the new code path only.
+- `tests/status_cli.rs` line 83 is no longer this task's file (see
+  Scope) — the "no test elsewhere is left asserting the old E7/E8
+  text," changeset-wide, is Task 3's acceptance criterion to close out
+  once it switches `status.rs` over; the exact replacement text is
+  spelled out under "Handoff to Task 3" above so Task 3 doesn't have to
+  re-derive it.
 
 ### AC6 — every new literal is plain ASCII
 
@@ -598,23 +720,15 @@ Task 2 section), each citing the spec case it proves.
 
 ## Risks, ambiguities, and disagreement with the plan/spec
 
-1. **Replacing `Anomalies` outright breaks `cargo build` until Task
-   3/5 land.** The changeset plan's own ordering diagram already
-   sequences Task 3/5 strictly after Task 1+2, so this is expected,
-   but the plan doesn't say *how* broken the intermediate state is
-   allowed to be. An in-place field-add (keeping `Anomalies`'s name,
-   adding new `Option` fields with sensible defaults via a `Default`
-   impl) would have kept `status.rs`/`week_view.rs` compiling
-   unchanged in the interim, at the cost of a stale/misleading
-   `has_any()`/`detail_lines()` on a type that no longer matches its
-   own doc comment. I chose the breaking rename because (a) the
-   architecture prose explicitly sanctions it ("its `Anomalies` type
-   (or whatever replaces it)"), and (b) a compile error is a much
-   louder, more precise signal to Task 3/5's authors about exactly
-   what needs wiring than a type that compiles but silently renders
-   incomplete anomaly blocks. Flagging this choice explicitly in case
-   the coordinator wants the non-breaking path instead for CI-green-at-
-   every-commit reasons.
+1. **Resolved (was: replacing `Anomalies` outright breaks `cargo build`
+   until Task 3/5 land).** An earlier draft of this plan replaced
+   `Anomalies` in place, which left the build red between this task's
+   merge and Task 3/Task 5's. NOTES.md entry 79 settled this: Task 2 is
+   additive (adds `DateAnomalies` beside `Anomalies`, deletes nothing),
+   Task 3 and Task 5 each switch their own call site over, and Task 4
+   deletes the now-unused `Anomalies` once both have. This task's
+   `cargo build`/`test`/`clippy` are green on its own commit; see
+   "Additive, not replacing" above.
 
 2. **Contract A (as written in the changeset plan) never mentions
    `latest_open_start`**, but spec §3.4's E7 fix line requires a real
@@ -640,13 +754,12 @@ Task 2 section), each citing the spec case it proves.
    invariant from spec §3.1 lives entirely in Task 1's predicate and
    Task 3's builder, with no defense-in-depth here.
 
-4. **`tests/status_cli.rs`'s updated assertion cannot be run to a
-   passing result by this task alone** — it exercises the real
-   compiled binary, which needs Task 3's `status.rs` rewiring to even
-   compile, let alone produce the new wording. I've written the exact
-   expected string in Implementation §2.1 so Task 3's author (or
-   whoever integrates last) can verify it mechanically rather than
-   re-deriving it.
+4. **Resolved (was: `tests/status_cli.rs`'s updated assertion cannot be
+   run to a passing result by this task alone).** That file is no
+   longer this task's to edit — it moved to Task 3 (see Scope), which
+   is also where the rewiring that makes the new assertion pass
+   happens. The exact expected string is written under "Handoff to
+   Task 3" above so Task 3 doesn't have to re-derive it.
 
 5. **Minor spec ambiguity, not blocking**: spec §3.4 shows the E7
    `or:` line as `"a time after 14:00 closes the 14:00 start"` —

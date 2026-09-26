@@ -95,31 +95,23 @@ now_utc)` (current line 245). `build_rows` already carries `today`
 as a parameter used for `is_ongoing`; the new per-row anomaly
 computation reuses that same parameter, no new plumbing.
 
-## Dependencies (not yet landed — verify signatures at integration)
+## Dependencies (both landed — real signatures, per each task's own plan)
 
-| Symbol (assumed) | Assumed signature | Stub to develop this task's tests against today | Swap at integration |
-|---|---|---|---|
-| `stint::stale_open_start` | `pub(crate) fn stale_open_start(day: &DayStints, date: NaiveDate, today: NaiveDate) -> bool` — per Contract B: "takes a date's classification plus that date and today, answers whether its lone open start is stale." Formula per spec §2/§3.1: `day.open.len() == 1 && (today - date).num_days() >= 2`. | Add a private `fn stub_stale_open_start(day: &DayStints, date: NaiveDate, today: NaiveDate) -> bool { day.open.len() == 1 && (today - date).num_days() >= 2 }` next to `row_anomalies` (below), used only until Task 1 lands. | Delete the stub; `use crate::stint::stale_open_start;` and call it in place of `stub_stale_open_start`. If Task 1's landed signature takes the age as a caller-supplied `i64` instead of computing it internally, adjust the one call site only. |
-| `stint::refused_join` | `pub(crate) fn refused_join(earlier: &DayStints, later: &DayStints, later_punches: &[Punch]) -> bool` — mirrors `splice_candidate`'s parameter shape per Contract B: "the earlier date has at least one open start, the later date has at least one orphaned end, and the existing splice gate rejects the pair." Formula: `!earlier.open.is_empty() && !later.orphaned_ends.is_empty() && !splice_candidate(earlier.open.len(), later, later_punches)`. | Add a private `fn stub_refused_join(earlier: &DayStints, later: &DayStints, later_punches: &[Punch]) -> bool` with the formula above, calling the already-landed `stint::splice_candidate` (this one already exists, `pub(crate)`, line 334). | Delete the stub; `use crate::stint::refused_join;`. If Task 1 exposes this under a different name (e.g. `is_refused_join`) or bundles the "which side" naming into the return type instead of a bare `bool`, adjust `row_anomalies` accordingly — the direction (which date is `earlier`/`later`) is still decided by this task's two call sites either way. |
-| `stint::age_in_days` (optional) | `pub(crate) fn age_in_days(date: NaiveDate, today: NaiveDate) -> i64` | Not stubbed separately — this task computes age inline as `(today - date).num_days()` wherever needed, since it is a one-line `chrono` expression. | If Task 1 lands a shared helper (likely, since Task 3's lookback needs the same age walk), swap the inline expression for the call — behaviorally identical, so this is a pure textual substitution, not a logic change. |
-| `render::Anomalies` (extended) | New fields beyond today's `open_stint_count`/`orphaned_end_times`: `stale_open_start: Option<(NaiveTime, i64)>` (start time, age in days) and `refused_join_prev: Option<NaiveDate>` / `refused_join_next: Option<NaiveDate>` (per Contract A's fact list). `has_any()` extended to `open_stint_count > 1 \|\| !orphaned_end_times.is_empty() \|\| stale_open_start.is_some() \|\| refused_join_prev.is_some() \|\| refused_join_next.is_some()`. | Add a private test-only mirror struct `StubAnomalies` with the same fields and a `has_any()` matching the formula above, used only in this task's own unit tests until Task 2 lands (production code cannot compile against a struct that does not exist yet — see note below). | Once Task 2 lands, delete `StubAnomalies`; the production `row_anomalies` function is written directly against `render::Anomalies`'s real field names (whatever Task 2 actually calls them) — this is the one place in this task most likely to need a mechanical rename pass if Task 2's field names differ from the ones assumed here. |
-| `render` footer literal | Assumed `pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";` or an equivalent zero-argument function — spec §3.5's line is fixed text with no per-date substitution (`DATE` is literal, not a placeholder filled per row). | This task's own footer-presence tests can inline the literal string directly (spec-quoted) without importing anything, since the check is "does `render_week`'s output contain this exact line," not "does it call a specific Task 2 symbol." | At integration, `render_week` calls whatever Task 2 actually exports (constant or function) instead of a local `const` copy of the string, so the two files can never drift on this text. |
+| Symbol | Real signature (source) | Import at this task's call sites |
+|---|---|---|
+| `stint::stale_open_start` | `pub(crate) fn stale_open_start(day: &DayStints, date: NaiveDate, today: NaiveDate) -> Option<StaleOpenStart>` where `pub(crate) struct StaleOpenStart { pub at: DateTime<Utc>, pub age_days: i64 }` (Task 1 plan, Published interface). `at` is a UTC instant, not a local time — `row_anomalies` converts it with `.with_timezone(&Local).time()` when building `render::StaleOpenStart` below. | Call as `stint::stale_open_start(...)`, module-qualified. `stint::StaleOpenStart` is never imported by bare name (it would collide with `render::StaleOpenStart`, a distinct type — see next row). |
+| `stint::is_refused_join` | `pub(crate) fn is_refused_join(earlier: &DayStints, later: &DayStints, later_punches: &[Punch]) -> bool` (Task 1 plan, Published interface). **Named `is_refused_join`, not `refused_join`.** | Call as `stint::is_refused_join(...)`, module-qualified. |
+| `render::DateAnomalies` | Replaces the old `render::Anomalies` outright (Task 2 plan: "replaced, not extended in place" — the old two-field struct no longer exists). Fields this task populates: `date: NaiveDate`, `open_stint_count: usize`, `latest_open_start: Option<NaiveTime>`, `orphaned_end_times: Vec<NaiveTime>`, `stale_open_start: Option<render::StaleOpenStart>`, `refused_join_with_previous: Option<NaiveDate>`, `refused_join_with_next: Option<NaiveDate>`. Method `has_any() -> bool` (unchanged formula from what this plan assumed for the old `Anomalies`, just on the new type). | `use crate::render::{self, DateAnomalies};` |
+| `render::StaleOpenStart` | `pub struct StaleOpenStart { pub time: NaiveTime, pub age_days: i64 }` (Task 2 plan, Published interface) — a **distinct type** from `stint::StaleOpenStart`: field is `time: NaiveTime` here, not `at: DateTime<Utc>`. Referenced fully qualified as `render::StaleOpenStart { .. }` at its one construction site, never imported bare, so the two same-named structs never collide. | Not imported by name; used via `render::StaleOpenStart { .. }`. |
+| `render::WEEK_ANOMALY_FOOTER` | `pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";` (Task 2 plan, Published interface) — confirmed, matches this plan's original guess exactly, both name and text. | `render::WEEK_ANOMALY_FOOTER` (via the `render::{self, ...}` import above). |
 
-**Important compile-order note**: because `render::Anomalies` does not
-yet have the new fields, this task's *production* code (not just
-tests) cannot be written and compiled until Task 2 actually lands —
-Contract A's fact-shape agreement is exactly what unblocks this. The
-`StubAnomalies` row above is for drafting and unit-testing the
-*predicate wiring logic* (which dates get checked, in which direction)
-against Task 1's stub before Task 2 lands; the final `row_anomalies`
-function this task ships is written directly against the real
-`render::Anomalies`, not the stub. If Task 1 lands first and Task 2 is
-still pending, this task can be fully implemented and tested for the
-predicate-wiring half, with `row_anomalies`'s return type temporarily
-`(bool /* has_anomaly */,)` or similar, then finished once Task 2
-lands. If Task 2 lands first, the reverse: `row_anomalies` can be
-written and tested against real `Anomalies` fields fed by the two
-local stub predicates.
+No stub predicates or mirror structs are needed: both sibling plans
+now pin real, authoritative signatures, so this task's production code
+(`row_anomalies`, `refused_join_neighbor`) is written directly against
+them from the start. The two structs sharing the name `StaleOpenStart`
+(`stint`'s and `render`'s) are the one thing to watch — this task
+never imports either by bare name, only module-qualified or at its one
+construction site, so `use` never has to pick a winner.
 
 ## Design
 
@@ -129,7 +121,9 @@ local stub predicates.
 inside `std::array::from_fn` that: buckets punches once, then per date
 looks up `bucket`/`prev_bucket`/`next_bucket`, calls
 `stint::classify_at`, builds an `Anomalies { open_stint_count:
-day.open.len(), orphaned_end_times: ... }`, and constructs `WeekRow`.
+day.open.len(), orphaned_end_times: ... }` (the pre-Task-2 two-field
+type; Task 2 replaces it with `DateAnomalies`, see Dependencies above),
+and constructs `WeekRow`.
 `render_week` (`src/week_view.rs:72-116`) is a pure string builder:
 header, headline, 7 row lines, blank line, 4 trailing label lines.
 
@@ -143,13 +137,13 @@ header, headline, 7 row lines, blank line, 4 trailing label lines.
    risks the cognitive-complexity gate).
 
 ```rust
-/// Builds the full anomaly fact set for one row's date (Contract A):
-/// the existing E7/E8 facts plus (new) whether the date's lone open
-/// start is stale, and whether it forms a refused join with either
-/// calendar neighbor. Refused-join checks use each date's *raw*
-/// single-date classification (`stint::classify`), never the
-/// splice-resolved `day` passed in — matching Contract B exactly, so
-/// `status` and `week` can never disagree on a date pair.
+/// Builds the full anomaly fact set for one row's date (Contract A /
+/// `render::DateAnomalies`): the existing E7/E8 facts plus (new)
+/// whether the date's lone open start is stale, and whether it forms a
+/// refused join with either calendar neighbor. Refused-join checks use
+/// each date's *raw* single-date classification (`stint::classify`),
+/// never the splice-resolved `day` passed in — matching Contract B
+/// exactly, so `status` and `week` can never disagree on a date pair.
 fn row_anomalies(
     day: &DayStints,
     prev_bucket: &[Punch],
@@ -158,40 +152,44 @@ fn row_anomalies(
     date: NaiveDate,
     today: NaiveDate,
     now_utc: DateTime<Utc>,
-) -> Anomalies {
+) -> DateAnomalies {
     let raw_prev = stint::classify(prev_bucket, now_utc);
     let raw_day = stint::classify(bucket, now_utc);
     let raw_next = stint::classify(next_bucket, now_utc);
 
-    let stale_open_start = stint::stale_open_start(day, date, today)
-        .then(|| {
-            let age = (today - date).num_days();
-            (day.open[0].start.at_utc.with_timezone(&Local).time(), age)
-        });
+    let stale_open_start = stint::stale_open_start(day, date, today).map(|s| render::StaleOpenStart {
+        time: s.at.with_timezone(&Local).time(),
+        age_days: s.age_days,
+    });
 
-    let refused_join_prev = refused_join_neighbor(
+    let refused_join_with_previous = refused_join_neighbor(
         &raw_prev,
         &raw_day,
         bucket,
         date.pred_opt().expect("every calendar date has a predecessor"),
     );
-    let refused_join_next = refused_join_neighbor(
+    let refused_join_with_next = refused_join_neighbor(
         &raw_day,
         &raw_next,
         next_bucket,
         date.succ_opt().expect("every calendar date has a successor"),
     );
 
-    Anomalies {
+    DateAnomalies {
+        date,
         open_stint_count: day.open.len(),
+        latest_open_start: day
+            .open
+            .last()
+            .map(|o| o.start.at_utc.with_timezone(&Local).time()),
         orphaned_end_times: day
             .orphaned_ends
             .iter()
             .map(|o| o.punch.at_utc.with_timezone(&Local).time())
             .collect(),
         stale_open_start,
-        refused_join_prev,
-        refused_join_next,
+        refused_join_with_previous,
+        refused_join_with_next,
     }
 }
 
@@ -206,9 +204,17 @@ fn refused_join_neighbor(
     later_punches: &[Punch],
     neighbor_date: NaiveDate,
 ) -> Option<NaiveDate> {
-    stint::refused_join(earlier, later, later_punches).then_some(neighbor_date)
+    stint::is_refused_join(earlier, later, later_punches).then_some(neighbor_date)
 }
 ```
+
+`day.open` is ascending by start instant (`stint.rs`'s own doc comment
+on `DayStints::open`), so `day.open.last()` is the *most recently*
+opened start — the value `latest_open_start` needs (Task 2's field doc:
+"the most recently opened start's local time"). `day.open[0]` would be
+the *earliest* open start instead, which is only equivalent to `.last()`
+when there is exactly one — wrong once E7 (2+ opens) is in play, which
+is exactly the case `latest_open_start` exists to serve.
 
 2. `build_rows` changes only its per-row body to call the new helper:
 
@@ -255,7 +261,7 @@ for row in &view.rows {
 out.push('\n');
 
 if view.rows.iter().any(|r| r.has_anomaly) {
-    out.push_str(render::WEEK_ANOMALY_FOOTER); // Task 2's literal — swap name at integration
+    out.push_str(render::WEEK_ANOMALY_FOOTER); // confirmed name/text, Task 2 Published interface
     out.push('\n');
     out.push('\n');
 }
@@ -295,11 +301,19 @@ one blank line), landing at 18 lines total, table -> blank -> footer
 ### Imports needed
 
 `src/week_view.rs`'s existing `use crate::render::{self, Anomalies};`
-already covers the extended `Anomalies` struct and the footer
-constant/function once Task 2 lands — no new `use` line required
-beyond what is already there, assuming Task 2 keeps both in
-`render.rs`'s existing public surface (very likely, since Contract A
-puts both there explicitly).
+becomes `use crate::render::{self, DateAnomalies};` — `Anomalies` no
+longer exists (Task 2 replaced it outright with `DateAnomalies`).
+`render::StaleOpenStart` and `render::WEEK_ANOMALY_FOOTER` are reached
+through the `render::` prefix already brought in by `self` in that same
+`use` line, not imported by their own bare names — `StaleOpenStart` in
+particular must stay qualified (`render::StaleOpenStart`) since
+`stint::StaleOpenStart` is a same-named, differently-shaped type this
+file also touches (via `stint::stale_open_start`'s return type,
+unqualified when only used through `.map(...)` inference, never named
+directly). `stint::classify`, `stint::stale_open_start`,
+`stint::is_refused_join` are called module-qualified through the
+existing `use crate::stint;`-style access this file already has to
+`stint::classify_at`/`stint::DayStints`.
 
 ## Test plan
 
@@ -392,14 +406,13 @@ kept unmodified and re-asserted to still pass).
 
 ## Risks and ambiguities
 
-1. **Field-name/shape guesses for `render::Anomalies` and the footer
-   are unpinned.** No Task 2 plan exists yet to read; this plan's
-   assumed field names (`stale_open_start`, `refused_join_prev`,
-   `refused_join_next`, `WEEK_ANOMALY_FOOTER`) are my best-fit reading
-   of Contract A's prose, not a confirmed interface. The Dependencies
-   table above is written so a mechanical rename is the only fallout
-   if Task 2 lands with different names — no logic in `row_anomalies`
-   depends on the exact field names beyond construction syntax.
+1. **Resolved**: field names for `render::DateAnomalies` and the
+   footer are now pinned by Task 2's own plan (Published interface),
+   not guessed. The only names this plan's earlier draft got wrong were
+   `refused_join_prev`/`refused_join_next` (real: `refused_join_with_previous`/
+   `refused_join_with_next`) and the predicate name `stint::refused_join`
+   (real: `stint::is_refused_join`); both are corrected throughout this
+   plan's Design/Dependencies sections above.
 2. **Redundant `classify()` calls.** `row_anomalies` calls
    `stint::classify` on `prev_bucket`/`bucket`/`next_bucket`
    independently for every one of the 7 rows, even though e.g. row
