@@ -945,6 +945,24 @@ SPEC.md and PLAN.md:
     to warn. A lookback line not mentioning its refused join is
     accepted and added to the spec's §1.2.
 
+79. **`open-punch-visibility` task plans written (phase 8).** Six
+    plans, `docs/dev/plans/open-punch-visibility-task-{1..6}-*.md`.
+    Task 2's plan replaced the existing render anomaly type outright,
+    which leaves the build red between batch 1 and batch 2 and would
+    fail the pre-commit test gate on Task 2's own commit. Decided:
+    Task 2 is additive and keeps the old type working; Tasks 3 and 5
+    switch to the new type; Task 4 deletes the old type once both have
+    merged (sequential ownership of `render.rs`, never parallel).
+    `tests/status_cli.rs` moves from Task 2 to Task 3, since new E7
+    wording reaches the binary only when `status` switches. Task 2's
+    per-date fact gains the latest open start's time, which the spec's
+    E7 hint needs and Contract A had omitted. Task 1's refused-join
+    predicate stays a plain bool; the caller's argument order already
+    says which date is which. Task 6 drops a changelog-style clause
+    from the spec's §1.2 bullet when copying it into SPEC.md, per
+    AGENTS.md's self-containment rule. Phase 9 re-aligns Tasks 2-6 to
+    the pinned signatures in Tasks 1 and 2.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

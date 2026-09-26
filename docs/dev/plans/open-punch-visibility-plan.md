@@ -246,9 +246,13 @@ reading (predicates take already-classified data).
 logic itself), §3.6 (the stderr wording, not the warning trigger),
 §3.7.
 
-**Files owned exclusively**: `src/render.rs`, `tests/status_cli.rs`
-(its line-83 assertion pins the old E7 wording through the real
-binary, and this task rewords E7).
+**Files owned exclusively**: `src/render.rs` (batch 1).
+
+Task 2 is **additive**. It adds the new per-date anomaly type and its
+renderers beside the existing ones and leaves every existing render
+type and function working, so the build and the pre-commit test gate
+stay green after its merge. The binary's output does not change until
+Task 3 switches `status` over.
 
 **Acceptance criteria**:
 
@@ -288,7 +292,10 @@ text and the per-date line text used elsewhere).
 **Spec citations**: §3.1, §3.2, §3.3, §3.4 (assembly, not wording),
 terms in §2.
 
-**Files owned exclusively**: `src/status.rs`.
+**Files owned exclusively**: `src/status.rs`, `tests/status_cli.rs`.
+Task 3 is where the new E7 wording first reaches the binary, so it
+updates `tests/status_cli.rs`'s E7 assertion and every old-wording
+fixture in `status.rs`'s own tests.
 
 **Acceptance criteria**:
 
@@ -334,7 +341,10 @@ anything else in `status` untouched by this spec.
 
 **Spec citations**: §3.6.
 
-**Files owned exclusively**: `src/commands.rs`.
+**Files owned exclusively**: `src/commands.rs`; and, sequentially
+after Tasks 3 and 5 have merged, `src/render.rs` for one job only —
+deleting the render type and functions the new per-date type replaced,
+once nothing calls them.
 
 **Acceptance criteria**:
 
