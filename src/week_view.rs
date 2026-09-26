@@ -11,7 +11,7 @@
 //! - `render::week_headline`/`status_week_line` take same-typed adjacent
 //!   `i64` minute parameters; every call site here is written and
 //!   commented to make the argument identity obvious at the call.
-//! - Per-row anomaly detection goes through `render::Anomalies`
+//! - Per-row anomaly detection goes through `render::DateAnomalies`
 //!   exclusively (`has_any()`), never `DayStints::has_anomaly()` /
 //!   `DayStints::anomalies()` directly, even though the latter are public
 //!   and would compile.
@@ -23,7 +23,7 @@ use rusqlite::Connection;
 
 use crate::cli::WeekArgs;
 use crate::date::{WeekId, format_date, parse_week_id};
-use crate::render::{self, Anomalies};
+use crate::render::{self, DateAnomalies};
 use crate::stint;
 use crate::storage::{self, Punch};
 use crate::time::format_minutes;
@@ -48,7 +48,7 @@ pub struct WeekRow {
     pub minutes: i64,
     /// `(ongoing)` marker: an open stint AND this date is today.
     pub is_ongoing: bool,
-    /// `[!]` marker, via `render::Anomalies::has_any()` exclusively.
+    /// `[!]` marker, via `render::DateAnomalies::has_any()` exclusively.
     pub has_anomaly: bool,
 }
 
@@ -97,6 +97,12 @@ pub fn render_week(view: &WeekView) -> String {
         out.push('\n');
     }
     out.push('\n');
+
+    if view.rows.iter().any(|r| r.has_anomaly) {
+        out.push_str(render::WEEK_ANOMALY_FOOTER);
+        out.push('\n');
+        out.push('\n');
+    }
 
     for (label, minutes) in [
         ("Carry-in:", view.carry_in_minutes),
@@ -147,16 +153,17 @@ fn build_rows(
             .unwrap_or_default();
         let day = stint::classify_at(&prev_bucket, &bucket, &next_bucket, now_utc);
 
-        // Landmine 2: go through `render::Anomalies` exclusively, never
+        // Landmine 2: go through `render::DateAnomalies` exclusively, never
         // `day.has_anomaly()`/`day.anomalies()` directly.
-        let anomalies = Anomalies {
-            open_stint_count: day.open.len(),
-            orphaned_end_times: day
-                .orphaned_ends
-                .iter()
-                .map(|o| o.punch.at_utc.time())
-                .collect(),
-        };
+        let anomalies = row_anomalies(
+            &day,
+            &prev_bucket,
+            &bucket,
+            &next_bucket,
+            date,
+            today,
+            now_utc,
+        );
 
         WeekRow {
             weekday_abbrev: WEEKDAY_ABBREVS[i],
@@ -166,6 +173,79 @@ fn build_rows(
             has_anomaly: anomalies.has_any(),
         }
     })
+}
+
+/// Builds the full anomaly fact set for one row's date (Contract A /
+/// `render::DateAnomalies`): the existing E7/E8 facts plus whether the
+/// date's lone open start is stale, and whether it forms a refused join
+/// with either calendar neighbor. Refused-join checks use each date's
+/// *raw* single-date classification (`stint::classify`), never the
+/// splice-resolved `day` passed in -- matching Contract B exactly, so
+/// `status` and `week` can never disagree on a date pair.
+fn row_anomalies(
+    day: &stint::DayStints,
+    prev_bucket: &[Punch],
+    bucket: &[Punch],
+    next_bucket: &[Punch],
+    date: NaiveDate,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> DateAnomalies {
+    let raw_prev = stint::classify(prev_bucket, now_utc);
+    let raw_day = stint::classify(bucket, now_utc);
+    let raw_next = stint::classify(next_bucket, now_utc);
+
+    let stale_open_start =
+        stint::stale_open_start(day, date, today).map(|s| render::StaleOpenStart {
+            time: s.at.with_timezone(&Local).time(),
+            age_days: s.age_days,
+        });
+
+    let refused_join_with_previous = refused_join_neighbor(
+        &raw_prev,
+        &raw_day,
+        bucket,
+        date.pred_opt()
+            .expect("every calendar date has a predecessor"),
+    );
+    let refused_join_with_next = refused_join_neighbor(
+        &raw_day,
+        &raw_next,
+        next_bucket,
+        date.succ_opt()
+            .expect("every calendar date has a successor"),
+    );
+
+    DateAnomalies {
+        date,
+        open_stint_count: day.open.len(),
+        latest_open_start: day
+            .open
+            .last()
+            .map(|o| o.start.at_utc.with_timezone(&Local).time()),
+        orphaned_end_times: day
+            .orphaned_ends
+            .iter()
+            .map(|o| o.punch.at_utc.with_timezone(&Local).time())
+            .collect(),
+        stale_open_start,
+        refused_join_with_previous,
+        refused_join_with_next,
+    }
+}
+
+/// One direction of the refused-join check (Contract B: `earlier` has the
+/// open start(s), `later` has the orphaned end(s)); returns the neighbor
+/// date to name when it fires, `None` otherwise. Shared by both call
+/// sites in `row_anomalies` so the two directions can never diverge in
+/// how they interpret the predicate's result.
+fn refused_join_neighbor(
+    earlier: &stint::DayStints,
+    later: &stint::DayStints,
+    later_punches: &[Punch],
+    neighbor_date: NaiveDate,
+) -> Option<NaiveDate> {
+    stint::is_refused_join(earlier, later, later_punches).then_some(neighbor_date)
 }
 
 /// `WeekData`/`WeekTargets` adapter over live storage (contract 4/10's
@@ -494,7 +574,12 @@ Target:        40h 00m
         let mut view = example_b();
         view.rows[2].has_anomaly = true; // Wed
         let out = render_week(&view);
-        let marker_lines: Vec<&str> = out.lines().filter(|l| l.contains("[!]")).collect();
+        // Row markers only -- the anomaly-present footer (§3.5) also
+        // contains "[!]" now, so this filters to date-row lines specifically.
+        let marker_lines: Vec<&str> = out
+            .lines()
+            .filter(|l| l.starts_with("  ") && l.contains("[!]"))
+            .collect();
         assert_eq!(marker_lines.len(), 1);
         assert_eq!(marker_lines[0], "  Wed 2026-02-04   07h 45m  [!]");
     }
@@ -582,6 +667,33 @@ Target:        40h 00m
             assert_eq!(lines[3], "");
             assert_eq!(lines[11], "");
         }
+    }
+
+    // A15 (Task 5 AC2): footer absent on the anomaly-free golden examples.
+    #[test]
+    fn a15_footer_absent_when_no_row_anomalous() {
+        for out in [render_week(&example_a()), render_week(&example_b())] {
+            assert!(!out.contains(render::WEEK_ANOMALY_FOOTER));
+        }
+    }
+
+    // A16 (Task 5 AC2): footer present exactly once when any row is marked.
+    #[test]
+    fn a16_footer_present_when_any_row_anomalous() {
+        let mut view = example_b();
+        view.rows[2].has_anomaly = true;
+        let out = render_week(&view);
+        assert_eq!(out.matches(render::WEEK_ANOMALY_FOOTER).count(), 1);
+    }
+
+    // A17 (Task 5 AC2): exact line count on the anomalous path -- 16 (the
+    // existing no-anomaly layout) + 2 (footer line + its separating blank).
+    #[test]
+    fn a17_footer_line_count_when_present() {
+        let mut view = example_b();
+        view.rows[2].has_anomaly = true;
+        let out = render_week(&view);
+        assert_eq!(out.matches('\n').count(), 18);
     }
 
     // A13
@@ -778,6 +890,93 @@ Target:        40h 00m
         );
         assert_eq!(rows[0].minutes, 0);
         assert!(!rows[0].has_anomaly);
+    }
+
+    // B10 (Task 5 AC1/AC4): a lone open start at age >= 2 gets `[!]`,
+    // and no other row does. This is also the regression proof required
+    // by AC4 -- this exact shape rendered with no marker at all before
+    // Task 5.
+    #[test]
+    fn b10_stale_open_start_row_is_marked() {
+        use PunchKind::Start;
+        let today = d(2026, 2, 12); // Thu, week's own day-4
+        let mon = week_dates()[0]; // 2026-02-09, age 3 from `today`
+        let punches = vec![punch(1, mon, (9, 0), Start)];
+        let rows = build_rows(week_dates(), &punches, today, now_utc(2026, 2, 12, 18, 0));
+        assert!(rows[0].has_anomaly, "stale open start at age 3 must mark");
+        for (i, r) in rows.iter().enumerate().skip(1) {
+            assert!(!r.has_anomaly, "unexpected anomaly on row {i}");
+        }
+    }
+
+    // B11 (Task 5 AC1): a lone open start at age 1 (yesterday) must NOT
+    // be marked -- regression against spec §3.1's age-1 exemption.
+    #[test]
+    fn b11_stale_open_start_at_age_one_not_marked() {
+        use PunchKind::Start;
+        let today = d(2026, 2, 12); // Thu
+        let wed = week_dates()[2]; // 2026-02-11, age 1 from `today`
+        let punches = vec![punch(1, wed, (9, 0), Start)];
+        let rows = build_rows(week_dates(), &punches, today, now_utc(2026, 2, 12, 18, 0));
+        assert!(!rows[2].has_anomaly, "age 1 must not be marked stale");
+    }
+
+    // B12 (Task 5 AC1): a refused join between two dates both inside the
+    // displayed week marks both rows. Shape: one open start on Monday, an
+    // ordinary start/end pair on Tuesday followed by an orphaned end whose
+    // punch is not Tuesday's chronologically-first one -- `splice_candidate`
+    // rejects on the "first punch" check, matching Task 1's own fixture.
+    #[test]
+    fn b12_refused_join_both_rows_marked_same_week() {
+        use PunchKind::{End, Start};
+        let mon = week_dates()[0];
+        let tue = week_dates()[1];
+        let punches = vec![
+            punch(1, mon, (23, 0), Start),
+            punch(2, tue, (9, 0), Start),
+            punch(3, tue, (10, 0), End),
+            punch(4, tue, (13, 0), End),
+        ];
+        let rows = build_rows(
+            week_dates(),
+            &punches,
+            d(2026, 2, 9),
+            now_utc(2026, 2, 10, 14, 0),
+        );
+        assert!(rows[0].has_anomaly, "Monday's refused-join-with-next");
+        assert!(rows[1].has_anomaly, "Tuesday's refused-join-with-previous");
+        for (i, r) in rows.iter().enumerate() {
+            if i != 0 && i != 1 {
+                assert!(!r.has_anomaly, "unexpected anomaly on row {i}");
+            }
+        }
+    }
+
+    // B13 (Task 5 AC1): a refused join across the week's own trailing
+    // boundary (Sunday <-> the following Monday, outside the displayed
+    // week) still marks Sunday's row, even though the other date never
+    // appears among `rows`.
+    #[test]
+    fn b13_refused_join_across_week_boundary_still_marks_boundary_row() {
+        use PunchKind::{End, Start};
+        let sun = week_dates()[6];
+        let next_mon = sun.succ_opt().unwrap();
+        let punches = vec![
+            punch(1, sun, (23, 0), Start),
+            punch(2, next_mon, (9, 0), Start),
+            punch(3, next_mon, (10, 0), End),
+            punch(4, next_mon, (13, 0), End),
+        ];
+        let rows = build_rows(
+            week_dates(),
+            &punches,
+            d(2026, 2, 9),
+            now_utc(2026, 2, 16, 14, 0),
+        );
+        assert!(rows[6].has_anomaly, "Sunday's refused-join-with-next");
+        for (i, r) in rows.iter().enumerate().take(6) {
+            assert!(!r.has_anomaly, "unexpected anomaly on row {i}");
+        }
     }
 
     // B8 (Risk R3)
