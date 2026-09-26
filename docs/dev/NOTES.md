@@ -963,6 +963,17 @@ SPEC.md and PLAN.md:
     AGENTS.md's self-containment rule. Phase 9 re-aligns Tasks 2-6 to
     the pinned signatures in Tasks 1 and 2.
 
+80. **`open-punch-visibility` cross-document review (phase 10)**
+    (`docs/dev/plans/reports/open-punch-visibility-consistency.md`,
+    2 findings, both stale prose with no effect on code). Task 5's plan
+    still says Task 2 replaces `render::Anomalies` outright; Task 2 is
+    additive and Task 4 deletes the old type. Task 4's plan still warns
+    about Task 3 names that Task 3's re-align already fixed. Neither
+    changes what gets built, so each is passed to the implementer as a
+    correction note in its dispatch instead of another re-align round.
+    Signatures, ownership, batch order and output strings otherwise
+    agree across all six plans.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
