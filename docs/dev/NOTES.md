@@ -898,6 +898,20 @@ SPEC.md and PLAN.md:
     wording) confirms a known issue already filed by this changeset,
     so nothing changes.
 
+76. **`open-punch-visibility` changeset started.** Scope is the four
+    SPEC §1.2a known issues on unclosed and unpaired punches: the
+    forgotten multi-day `stop`, missing remedies on `[!]` lines, the
+    lone-vs-double open start asymmetry, and the unobservable §4.3.1
+    join gate. The user picked all four plus a `mlm start` stderr
+    warning in chat 2026-09-26, with a 14-day lookback window. Phase 0
+    profile reused from entry 65 unchanged. Baseline `v0.3.6` (`main`
+    at `267060b`); branch `open-punch-visibility`. Spec
+    `docs/dev/specs/2026-09-26-open-punch-visibility.md`. A stale open
+    start uses the existing `(unclosed)` age threshold of 2 days, so a
+    lone open start dated yesterday stays silent for overnight
+    sessions. Phase 14 runs, because the change alters `status`,
+    `week` and `start` output.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
