@@ -912,6 +912,23 @@ SPEC.md and PLAN.md:
     sessions. Phase 14 runs, because the change alters `status`,
     `week` and `start` output.
 
+77. **`open-punch-visibility` spec reviewed and locked**
+    (`docs/dev/plans/reports/open-punch-visibility-spec-review.md`,
+    9 findings, all folded). `status -0` is a hard error in
+    `resolve_date`, so the spec's `-0` alias is dropped. `delete punch
+    --date D` only lists, so each delete hint says to rerun with the
+    number. `stop HH:MM` pairs by time, so a too-early time makes a new
+    orphan and E7 closes the latest start; hints now name the start
+    time the stop must follow, and E7 leads with delete. The `start`
+    warning's written-date skip hid a self-inflicted E7; the written
+    date now warns when it has two or more open starts. Orphaned ends
+    outside today's page and the 15-date read cost on every `status`
+    are accepted and listed in the spec's §1.2. Tests added for fix
+    commands resolving their anomaly. Phase 14 runs at tier
+    `returning`, since existing users read `status` daily. Provisional
+    task count is 3+ (detection, rendering, `start` warning, docs), so
+    the full ladder runs, phase 10 included.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.

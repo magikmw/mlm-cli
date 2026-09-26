@@ -1,7 +1,9 @@
 # Open-punch visibility and anomaly remedies — design spec
 
 **Baseline**: written against `v0.3.6` (`main` at `267060b`).
-**Status**: draft, awaiting adversarial review.
+**Status**: adversarially reviewed 2026-09-26
+(`docs/dev/plans/reports/open-punch-visibility-spec-review.md`,
+9 findings, folded — NOTES.md entry 77). Locked.
 
 ## 1. Summary
 
@@ -34,6 +36,13 @@ commonest one, a forgotten `stop`.
   date's `status` and its own `week` row. Today's `status` and
   `mlm start` stop mentioning it once it leaves the window. Replaces
   the current §1.2a forgotten-`stop` bullet.
+- The lookback (§3.3, §3.6) counts open starts only. An orphaned end
+  older than yesterday stays visible only on its own date and its
+  `week` row. An orphaned end adds no time, so it cannot inflate a
+  total the way a forgotten `stop` hides one.
+- Every plain `status` for today now reads 15 extra dates (one range
+  query). A future cheap prompt query (AGENTS.md stretch) would skip
+  the lookback.
 - A lone open start dated yesterday is never flagged, because an
   overnight session may still be running. Intended; recorded in SPEC
   §4.3, not filed in §1.2a.
@@ -80,7 +89,8 @@ lines carry the fixes.
 
 ### 3.3 Today's `status` lists stale starts in the lookback window
 
-When `status` shows today (`DATE` omitted, `-0`, or today's date), it
+When `status` shows today (`DATE` omitted, or today's date given
+explicitly), it
 also classifies every date in the lookback window. Each window date
 with one or more open starts adds one line to today's anomaly block,
 oldest date first. Each line is a normal `[!]` line with `fix:` lines
@@ -104,33 +114,46 @@ is the `<weekday abbrev> <YYYY-MM-DD>` header form. `HH:MM` inside a
 real time. Every other value is filled in. Each `fix:`/`or:` line is
 indented 4 spaces so its text aligns under the text after `[!] `.
 
+Two properties of the fix commands shape their wording:
+
+- `mlm delete punch --date D` only lists and numbers that date's
+  punches (§7.4). Deleting takes a second run with the number. The
+  hint says so.
+- `mlm stop HH:MM --date D` pairs by time (§4.3). An end before the
+  open start becomes a new orphaned end, and with several open starts
+  the end closes the latest one before it. So the stop hint names the
+  start time the new end must follow, and E7 leads with delete.
+
+In the E7 hint, `14:00` is the latest open start on the date.
+
 E7 (reworded):
 
 ```
 [!] 2 open stints for this date (only one can be open at a time)
-    fix: mlm stop HH:MM --date D
-     or: mlm delete punch --date D
+    fix: mlm delete punch --date D  (lists punches; rerun with the extra start's number)
+     or: mlm stop HH:MM --date D  (a time after 14:00 closes the 14:00 start)
 ```
 
 Stale open start (new):
 
 ```
 [!] unclosed start at 09:00, 5 days old (no stop recorded)
-    fix: mlm stop HH:MM --date D
-     or: mlm delete punch --date D
+    fix: mlm stop HH:MM --date D  (a time after 09:00)
+     or: mlm delete punch --date D  (lists punches; rerun with the start's number)
 ```
 
 E8 (text unchanged, fix lines added):
 
 ```
 [!] orphaned end at 18:00 (no matching start)
-    fix: mlm start HH:MM --date D
-     or: mlm delete punch --date D
+    fix: mlm start HH:MM --date D  (a time before 18:00)
+     or: mlm delete punch --date D  (lists punches; rerun with the end's number)
 ```
 
 Refused join (new). No `fix:` lines of its own, because the E7/E8/stale
 lines on the two dates already carry them. The reason text is the same
-on both dates.
+on both dates. It states the gate's full condition even when an E7 or
+extra E8 line on the same page already shows which part failed.
 
 ```
 [!] not joined to Tue 2026-09-22 across midnight (a join needs exactly one open start on Mon 2026-09-21 and exactly one unmatched end, as Tue 2026-09-22's first punch)
@@ -143,8 +166,8 @@ Lookback, one open start on the window date:
 
 ```
 [!] unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)
-    fix: mlm stop HH:MM --date 2026-09-21
-     or: mlm delete punch --date 2026-09-21
+    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)
+     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)
 ```
 
 Lookback, two or more open starts on the window date:
@@ -171,12 +194,14 @@ Lookback, two or more open starts on the window date:
 ### 3.6 `mlm start` warns about stale starts
 
 After a successful `start` write (with or without `--date`), `start`
-runs the §3.3 lookback relative to today. It skips the date it just
-wrote to. For each remaining window date with open starts it prints
-one line to **stderr**, oldest first:
+runs the §3.3 lookback relative to today. For each window date with
+open starts it prints one line to **stderr**, oldest first. The date
+the command just wrote to counts only when it now has two or more
+open starts (so the new punch made an E7); a single open start there
+is the punch just written and gets no line.
 
 ```
-warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21
+warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21 (a time after 09:00)
 warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
 ```
 
@@ -184,8 +209,10 @@ warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
   to stdout. SPEC §7.4 gains this as a named exception.
 - The check is best-effort. If the lookback read fails after the write
   committed, `start` prints nothing extra and still exits `0`.
-- Skipping the written date keeps a backdated `start --date D` from
-  warning about the punch it just wrote.
+- The written-date rule keeps a backdated `start --date D` from
+  warning about its own punch, but still reports an E7 it caused.
+- `start` for today writes to a date outside the window, so the rule
+  only matters for a backdated `start`.
 
 ### 3.7 Output stays plain ASCII
 
@@ -236,3 +263,11 @@ unicode arrows.
 - `start`: warning on stderr, stdout empty, exit `0`; no warning for
   the date just written; no warning when the window is clean.
 - All new output is plain ASCII.
+- Fix commands resolve what they claim: running the stale-start hint
+  (a stop after the start time), then `status` for that date, shows no
+  anomaly; the delete hint lists the offending punch.
+- `status` with an explicit today's date does the lookback.
+- Backdated `start --date D` into a stale date with an existing open
+  start warns with the multi-open form; into an empty stale date it
+  does not warn.
+- An orphaned end inside the window produces no lookback line.
