@@ -30,12 +30,18 @@ use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::date::{self, WeekId};
-use crate::render::{self, Anomalies};
+use crate::render::{self, DateAnomalies};
 use crate::stint::{self, DayStints};
-use crate::storage;
+use crate::storage::{self, Punch};
 use crate::time::format_minutes;
 use crate::week::{self, WeekAccounting, WeekLedger};
 use crate::week_target;
+
+/// One dated finding from the §3.3/§3.6 14-day lookback scan. Defined in
+/// `render.rs` (Task 2); re-exported here so Task 4 can call
+/// `status::lookback` and name its return type without importing `render`
+/// directly.
+pub use crate::render::{LookbackFinding, LookbackKind};
 
 // ---------------------------------------------------------------------------
 // StatusView and its component types
@@ -308,23 +314,155 @@ fn week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
     )
 }
 
-/// Builds a `render::Anomalies` from `DayStints`'s raw fields.
-///
-/// Deliberately does NOT call `DayStints::has_anomaly()` or
-/// `DayStints::anomalies()` (Milestone 9 review finding 3): those two
-/// methods duplicate `render::Anomalies`'s formula without being bound
-/// to it by any test. Going through the raw `open`/`orphaned_ends`
-/// fields and `render::Anomalies` itself keeps anomaly rendering behind
-/// exactly one implementation.
-fn to_anomalies(day: &DayStints) -> Anomalies {
-    Anomalies {
-        open_stint_count: day.open.len(),
-        orphaned_end_times: day
+/// `at_utc`'s local wall-clock time, factoring out the
+/// `.with_timezone(&Local).time()` pattern repeated across this module's
+/// stint/anomaly/lookback fact-building.
+fn local_time(at_utc: DateTime<Utc>) -> NaiveTime {
+    at_utc.with_timezone(&Local).time()
+}
+
+/// Every classification `resolve()` needs for one target date: the
+/// post-splice view (`day`) plus the three raw, pre-splice views
+/// (`prev_raw`/`day_raw`/`next_raw`) the refused-join predicate requires
+/// (Contract B: "raw single-date classifications ... never
+/// classify_at-resolved ones").
+struct DateContext {
+    day: DayStints,
+    prev_raw: DayStints,
+    day_raw: DayStints,
+    next_raw: DayStints,
+}
+
+fn classify_date_context(
+    prev_punches: &[Punch],
+    punches: &[Punch],
+    next_punches: &[Punch],
+    now_utc: DateTime<Utc>,
+) -> DateContext {
+    DateContext {
+        day: stint::classify_at(prev_punches, punches, next_punches, now_utc),
+        prev_raw: stint::classify(prev_punches, now_utc),
+        day_raw: stint::classify(punches, now_utc),
+        next_raw: stint::classify(next_punches, now_utc),
+    }
+}
+
+/// Builds `target_date`'s `render::DateAnomalies` from its `DateContext`
+/// plus Task 1's predicates. `stale_open_start` reads `ctx.day`
+/// (post-splice, matching §2's "open start" definition); `is_refused_join`
+/// reads the raw pair, per Contract B.
+fn anomaly_facts_for_date(
+    ctx: &DateContext,
+    target_date: NaiveDate,
+    today: NaiveDate,
+    punches: &[Punch],
+    next_punches: &[Punch],
+) -> DateAnomalies {
+    DateAnomalies {
+        date: target_date,
+        open_stint_count: ctx.day.open.len(),
+        latest_open_start: ctx
+            .day
+            .open
+            .iter()
+            .map(|o| local_time(o.start.at_utc))
+            .max(),
+        orphaned_end_times: ctx
+            .day
             .orphaned_ends
             .iter()
-            .map(|o| o.punch.at_utc.with_timezone(&Local).time())
+            .map(|o| local_time(o.punch.at_utc))
             .collect(),
+        stale_open_start: stint::stale_open_start(&ctx.day, target_date, today).map(|s| {
+            render::StaleOpenStart {
+                time: local_time(s.at),
+                age_days: s.age_days,
+            }
+        }),
+        refused_join_with_previous: stint::is_refused_join(&ctx.prev_raw, &ctx.day_raw, punches)
+            .then(|| target_date.pred_opt().unwrap()),
+        refused_join_with_next: stint::is_refused_join(&ctx.day_raw, &ctx.next_raw, next_punches)
+            .then(|| target_date.succ_opt().unwrap()),
     }
+}
+
+/// Groups `punches` by their local `date`, for the lookback scan's
+/// per-date/per-neighbor lookups.
+fn group_punches_by_date(punches: &[Punch]) -> BTreeMap<NaiveDate, Vec<Punch>> {
+    let mut map: BTreeMap<NaiveDate, Vec<Punch>> = BTreeMap::new();
+    for p in punches {
+        map.entry(p.date).or_default().push(*p);
+    }
+    map
+}
+
+/// One window date's lookback finding, or `None` when that date has no
+/// open start after splice resolution (idle, or an orphaned end only --
+/// §1.2's known residual gap).
+fn lookback_finding_for_date(
+    date: NaiveDate,
+    age: i64,
+    by_date: &BTreeMap<NaiveDate, Vec<Punch>>,
+    now_utc: DateTime<Utc>,
+) -> Option<LookbackFinding> {
+    let empty = Vec::new();
+    let prev = by_date.get(&date.pred_opt().unwrap()).unwrap_or(&empty);
+    let cur = by_date.get(&date).unwrap_or(&empty);
+    let next = by_date.get(&date.succ_opt().unwrap()).unwrap_or(&empty);
+    if cur.is_empty() {
+        return None;
+    }
+    let day = stint::classify_at(prev, cur, next, now_utc);
+    let kind = match day.open.len() {
+        0 => return None,
+        1 => LookbackKind::SingleOpenStart {
+            time: local_time(day.open[0].start.at_utc),
+        },
+        n => LookbackKind::MultipleOpenStints { count: n },
+    };
+    Some(LookbackFinding {
+        date,
+        age_days: age,
+        kind,
+    })
+}
+
+/// Walks ages 2 through 14 relative to `today` (§2's lookback window),
+/// oldest date first, and returns one `LookbackFinding` per window date
+/// that has one or more open starts after splice resolution. A window
+/// date with zero open starts (idle, or an orphaned end only) produces no
+/// finding -- §1.2's orphan gap is deliberate, not a bug.
+///
+/// Pure aside from a single `punches_in_range` read spanning
+/// `[today - 15d, today - 1d]` (15 dates: the 13 window dates plus the
+/// one-day neighbor each end of the window needs for its own
+/// `classify_at`). `now_utc` is the caller's already-resolved clock
+/// instant (contract 6: never read from a system clock in here).
+///
+/// Called by `status::resolve` for today's own `status` (§3.3) and by
+/// `commands::start` after every successful write (§3.6) -- this is the
+/// one place the scan is implemented, so the two callers can never
+/// disagree about what counts as a stale window date.
+pub fn lookback(
+    conn: &Connection,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> anyhow::Result<Vec<LookbackFinding>> {
+    let window_start = today - ChronoDuration::days(15); // (today - 14) - 1
+    let window_end = today - ChronoDuration::days(1); // (today - 2) + 1
+    let punches = storage::punches_in_range(conn, window_start, window_end)?;
+    let by_date = group_punches_by_date(&punches);
+
+    let mut findings = Vec::new();
+    for age in (2..=14).rev() {
+        // .rev() walks age 14 down to 2, i.e. the OLDEST window date
+        // (smallest calendar date) first -- oldest-first per §3.3.
+        let date = today - ChronoDuration::days(age);
+        if let Some(finding) = lookback_finding_for_date(date, age, &by_date, now_utc) {
+            findings.push(finding);
+        }
+    }
+    Ok(findings)
 }
 
 /// Builds stint rows from `DayStints`, sorted by start time ascending
@@ -335,8 +473,8 @@ fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<Stint
     let mut rows: Vec<StintLine> = Vec::new();
     for s in &day.completed {
         rows.push(StintLine {
-            start: s.start.at_utc.with_timezone(&Local).time(),
-            end: StintEnd::At(s.end.at_utc.with_timezone(&Local).time()),
+            start: local_time(s.start.at_utc),
+            end: StintEnd::At(local_time(s.end.at_utc)),
             duration_minutes: s.minutes,
             spans_to_next_day: s.start.date != s.end.date,
             open_stint_age: None,
@@ -344,7 +482,7 @@ fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<Stint
     }
     for o in &day.open {
         rows.push(StintLine {
-            start: o.start.at_utc.with_timezone(&Local).time(),
+            start: local_time(o.start.at_utc),
             end: StintEnd::Now,
             duration_minutes: o.minutes_so_far,
             spans_to_next_day: false,
@@ -448,37 +586,29 @@ pub fn resolve(
     let next_punches = storage::punches_for_date(conn, target_date.succ_opt().unwrap())?;
 
     let now_utc = now.with_timezone(&Utc);
-    let day = stint::classify_at(&prev_punches, &punches, &next_punches, now_utc);
+    let ctx = classify_date_context(&prev_punches, &punches, &next_punches, now_utc);
 
-    let receiving_end_time = {
-        let prev_classified = stint::classify(&prev_punches, now_utc);
-        let fresh_target_classified = stint::classify(&punches, now_utc);
-        stint::splice_candidate(
-            prev_classified.open.len(),
-            &fresh_target_classified,
-            &punches,
-        )
-        .then(|| {
-            fresh_target_classified.orphaned_ends[0]
-                .punch
-                .at_utc
-                .with_timezone(&Local)
-                .time()
-        })
-    };
+    let receiving_end_time =
+        stint::splice_candidate(ctx.prev_raw.open.len(), &ctx.day_raw, &punches)
+            .then(|| local_time(ctx.day_raw.orphaned_ends[0].punch.at_utc));
     let receiving_date_suffix = receiving_end_time
         .map(|t| format!("  ({} continues previous day's stint)", t.format("%H:%M")));
 
-    let day_total_minutes = day.completed_minutes();
-    let has_open_stint = day.is_ongoing();
+    let day_total_minutes = ctx.day.completed_minutes();
+    let has_open_stint = ctx.day.is_ongoing();
 
     let target_week = WeekId::from_date(target_date);
     let ledger = build_ledger(conn, target_week, now_utc)?;
     let acct = week::week_accounting(target_week, &ledger, &ledger);
     let week_line_str = week_line(&acct, today);
 
-    let anomalies = to_anomalies(&day);
-    let anomaly_lines = anomalies.detail_lines();
+    let facts = anomaly_facts_for_date(&ctx, target_date, today, &punches, &next_punches);
+    let mut anomaly_lines = facts.detail_lines();
+    if is_today {
+        for finding in lookback(conn, today, now_utc)? {
+            anomaly_lines.extend(finding.detail_lines());
+        }
+    }
 
     let (daily_target, eod, weekday_name) = if is_today {
         let daily_target_minutes = week::daily_target_minutes(acct.target);
@@ -508,7 +638,7 @@ pub fn resolve(
         (None, None, None)
     };
 
-    let stints = build_stint_lines(&day, open_stint_age);
+    let stints = build_stint_lines(&ctx.day, open_stint_age);
     let note_bodies = notes.into_iter().map(|n| n.body).collect();
 
     Ok(StatusView {
@@ -1182,7 +1312,8 @@ mod tests {
     fn t9_e7_multi_open_anomaly_rendering() {
         let mut view = base_view();
         view.has_open_stint = true;
-        view.anomaly_lines = vec!["[!] 3 open stints for this date (unmatched starts)".to_string()];
+        view.anomaly_lines =
+            vec!["[!] 3 open stints for this date (only one can be open at a time)".to_string()];
         view.stints = vec![
             StintLine {
                 start: t(9, 0),
@@ -1212,7 +1343,7 @@ mod tests {
             1,
             "exactly one anomaly line: {out}"
         );
-        assert!(out.contains("[!] 3 open stints for this date (unmatched starts)"));
+        assert!(out.contains("[!] 3 open stints for this date (only one can be open at a time)"));
         let idx_anomaly = out.find("[!]").unwrap();
         let idx_first_stint = out.find("09:00-now").unwrap();
         assert!(idx_anomaly < idx_first_stint);
@@ -1626,9 +1757,9 @@ mod tests {
         storage::insert_punch(&conn, PunchKind::End, today(), t(8, 0), &Local).expect("insert");
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        assert_eq!(view.anomaly_lines.len(), 2);
+        assert_eq!(view.anomaly_lines.len(), 6, "{:?}", view.anomaly_lines);
         assert!(view.anomaly_lines[0].contains("2 open stints"));
-        assert!(view.anomaly_lines[1].contains("orphaned end at 08:00"));
+        assert!(view.anomaly_lines[3].contains("orphaned end at 08:00"));
         assert_eq!(view.stints.len(), 2, "the orphan produces no stint line");
         assert_eq!(view.weekday_name, Some("Thursday".to_string()));
         assert!(view.daily_target.is_some());
@@ -1766,13 +1897,9 @@ mod tests {
     // accidentally always splice -- only ever mechanically, per Task 1's
     // 1:1 gate. `D` has two trailing opens (E7, not 1:1), so `D+1`'s
     // single `End 00:30` cannot close either of them and stays a genuine
-    // orphaned end (note: this is a deliberate deviation from the task
-    // plan's stated expectation of "no anomaly on that side either" --
-    // `render::Anomalies::has_any()`/`detail_lines()` flag ANY orphaned
-    // end regardless of open-stint count, as
-    // `resolve_e7_multi_open_and_e8_orphaned_end_via_anomalies_only`
-    // above already establishes for the same-date case; see the task 2
-    // completion report for the full explanation).
+    // orphaned end. Since the pair isn't 1:1, it's also a refused join
+    // (§3.2): both dates carry their own headline plus a line naming the
+    // other.
     #[test]
     fn resolve_midnight_boundary_still_flags_non_1to1_shapes() {
         let conn = test_db();
@@ -1783,14 +1910,36 @@ mod tests {
         storage::insert_punch(&conn, PunchKind::End, d2, t(0, 30), &Local).expect("insert");
 
         let view_d1 = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
-        assert_eq!(view_d1.anomaly_lines.len(), 1);
+        assert_eq!(
+            view_d1.anomaly_lines.len(),
+            4,
+            "{:?}",
+            view_d1.anomaly_lines
+        );
         assert!(view_d1.anomaly_lines[0].contains("2 open stints"));
+        assert!(
+            view_d1
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
         assert_eq!(view_d1.day_total_minutes, 0);
 
         let view_d2 = resolve(Some("2026-02-10"), now_thu_1800(), &conn).expect("resolve");
         assert_eq!(view_d2.day_total_minutes, 0);
-        assert_eq!(view_d2.anomaly_lines.len(), 1);
+        assert_eq!(
+            view_d2.anomaly_lines.len(),
+            4,
+            "{:?}",
+            view_d2.anomaly_lines
+        );
         assert!(view_d2.anomaly_lines[0].contains("orphaned end at 00:30"));
+        assert!(
+            view_d2
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
         assert!(
             view_d2.receiving_date_suffix.is_none(),
             "prev has 2 opens (not 1:1), so the fresh classify(prev) gate blocks the suffix"
@@ -2006,5 +2155,649 @@ mod tests {
             today(),
         );
         assert_eq!(week_line(&acct, today()), want);
+    }
+
+    // -----------------------------------------------------------------
+    // open-punch-visibility Task 3: stale open start, refused join, and
+    // the shared 14-day lookback (spec §3.1-§3.4, §5).
+    // -----------------------------------------------------------------
+
+    // §3.1 -- a lone open start at age >= 2 gets the new stale-open-start
+    // anomaly line, with the right time and age.
+    #[test]
+    fn resolve_stale_open_start_age_5_shows_stale_line_with_time_and_age() {
+        let conn = test_db();
+        let target = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, target, t(9, 0), &Local).expect("insert");
+
+        let view = resolve(
+            Some(&target.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert_eq!(view.anomaly_lines.len(), 3, "{:?}", view.anomaly_lines);
+        assert_eq!(
+            view.anomaly_lines[0],
+            "[!] unclosed start at 09:00, 5 days old (no stop recorded)"
+        );
+        assert!(view.anomaly_lines[1].contains(&target.format("%Y-%m-%d").to_string()));
+    }
+
+    // §3.1 -- age 0 and age 1 stay non-anomalies.
+    #[test]
+    fn resolve_lone_open_start_age_zero_or_one_is_not_an_anomaly() {
+        for age in [0i64, 1i64] {
+            let conn = test_db();
+            let target = today() - ChronoDuration::days(age);
+            storage::insert_punch(&conn, PunchKind::Start, target, t(9, 0), &Local)
+                .expect("insert");
+            let view = resolve(
+                Some(&target.format("%Y-%m-%d").to_string()),
+                now_thu_1800(),
+                &conn,
+            )
+            .expect("resolve");
+            assert!(
+                view.anomaly_lines.is_empty(),
+                "age {age}: {:?}",
+                view.anomaly_lines
+            );
+        }
+    }
+
+    // §3.1 -- ages 2, 14, and 15 are all stale (age doesn't stop being
+    // stale past the 14-day lookback window -- that cutoff belongs to
+    // the lookback scan, not this predicate).
+    #[test]
+    fn resolve_stale_boundary_ages_two_fourteen_fifteen_all_stale() {
+        for age in [2i64, 14, 15] {
+            let conn = test_db();
+            let target = today() - ChronoDuration::days(age);
+            storage::insert_punch(&conn, PunchKind::Start, target, t(9, 0), &Local)
+                .expect("insert");
+            let view = resolve(
+                Some(&target.format("%Y-%m-%d").to_string()),
+                now_thu_1800(),
+                &conn,
+            )
+            .expect("resolve");
+            assert!(
+                view.anomaly_lines
+                    .iter()
+                    .any(|l| l.contains("unclosed start at 09:00")
+                        && l.contains(&format!("{age} days old"))),
+                "age {age}: {:?}",
+                view.anomaly_lines
+            );
+        }
+    }
+
+    // §3.1 -- two or more open starts on a date show only the E7 line;
+    // no stale line, even though one of the opens individually qualifies
+    // by age.
+    #[test]
+    fn resolve_two_open_starts_shows_only_e7_no_stale_line() {
+        let conn = test_db();
+        let target = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, target, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, target, t(11, 0), &Local).expect("insert");
+
+        let view = resolve(
+            Some(&target.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert_eq!(view.anomaly_lines.len(), 3, "{:?}", view.anomaly_lines);
+        assert!(view.anomaly_lines[0].contains("2 open stints for this date"));
+        assert!(!view.anomaly_lines.iter().any(|l| l.contains("days old")));
+    }
+
+    // §3.2 -- refused join shape 1: two opens on the earlier date. Both
+    // dates' status pages name each other.
+    #[test]
+    fn resolve_refused_join_two_opens_on_earlier_date_flags_both_dates() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(11, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view_d1 = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d1
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to")),
+            "{:?}",
+            view_d1.anomaly_lines
+        );
+
+        let view_d2 = resolve(
+            Some(&d2.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d2
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to")),
+            "{:?}",
+            view_d2.anomaly_lines
+        );
+    }
+
+    // §3.2 -- refused join shape 2: the orphan isn't the later date's
+    // chronologically first punch.
+    #[test]
+    fn resolve_refused_join_orphan_not_first_on_later_date_flags_both_dates() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, d2, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(10, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(13, 0), &Local).expect("insert");
+
+        let view_d1 = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d1
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+
+        let view_d2 = resolve(
+            Some(&d2.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d2
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+    }
+
+    // §3.2 -- refused join shape 3: two orphans on the later date.
+    #[test]
+    fn resolve_refused_join_two_orphans_on_later_date_flags_both_dates() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(1, 0), &Local).expect("insert");
+
+        let view_d1 = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d1
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+
+        let view_d2 = resolve(
+            Some(&d2.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view_d2
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+    }
+
+    // §3.2 -- regression: the clean-splice shape produces no refused
+    // join line on either date.
+    #[test]
+    fn resolve_clean_splice_produces_no_refused_join_line() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(23, 30), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view_d1 = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            !view_d1
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+
+        let view_d2 = resolve(
+            Some(&d2.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            !view_d2
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to"))
+        );
+    }
+
+    // §3.2 -- a refused join between yesterday and today shows on
+    // today's status.
+    #[test]
+    fn resolve_refused_join_at_yesterday_today_boundary_shows_on_todays_status() {
+        let conn = test_db();
+        let yesterday = today() - ChronoDuration::days(1);
+        storage::insert_punch(&conn, PunchKind::Start, yesterday, t(23, 0), &Local)
+            .expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, yesterday, t(23, 30), &Local)
+            .expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, today(), t(0, 15), &Local).expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            view.anomaly_lines
+                .iter()
+                .any(|l| l.contains("not joined to")),
+            "{:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §3.4 -- ordering: E7 lines precede the refused-join-with-next
+    // line.
+    #[test]
+    fn resolve_ordering_e7_then_refused_join_with_next() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(11, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+
+        let view = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        let idx_e7 = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("open stints for this date"))
+            .expect("e7 line");
+        let idx_refused = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("not joined to"))
+            .expect("refused line");
+        assert!(idx_e7 < idx_refused, "{:?}", view.anomaly_lines);
+    }
+
+    // §3.4 -- ordering: stale, then E8 (ascending instant), then the
+    // refused-join-with-next line.
+    #[test]
+    fn resolve_ordering_stale_then_e8_then_refused_join_with_next() {
+        let conn = test_db();
+        let d1 = today() - ChronoDuration::days(6);
+        let d2 = d1.succ_opt().unwrap();
+        // d1: one stale open start (age 6) plus an unrelated orphaned end.
+        storage::insert_punch(&conn, PunchKind::Start, d1, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d1, t(8, 0), &Local).expect("insert");
+        // d1/d2 boundary: two orphans on d2 refuse the join.
+        storage::insert_punch(&conn, PunchKind::End, d2, t(0, 45), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::End, d2, t(1, 0), &Local).expect("insert");
+
+        let view = resolve(
+            Some(&d1.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        let idx_stale = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("days old"))
+            .expect("stale line");
+        let idx_e8 = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("orphaned end at 08:00"))
+            .expect("e8 line");
+        let idx_refused = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("not joined to"))
+            .expect("refused line");
+        assert!(
+            idx_stale < idx_e8 && idx_e8 < idx_refused,
+            "{:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §3.3 -- today's status lists stale starts from the lookback
+    // window, oldest first.
+    #[test]
+    fn resolve_lookback_lists_stale_starts_oldest_first() {
+        let conn = test_db();
+        for age in [3i64, 7, 14] {
+            let d = today() - ChronoDuration::days(age);
+            storage::insert_punch(&conn, PunchKind::Start, d, t(9, 0), &Local).expect("insert");
+        }
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        let idx14 = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("14 days ago"))
+            .expect("age 14 line");
+        let idx7 = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("7 days ago"))
+            .expect("age 7 line");
+        let idx3 = view
+            .anomaly_lines
+            .iter()
+            .position(|l| l.contains("3 days ago"))
+            .expect("age 3 line");
+        assert!(idx14 < idx7 && idx7 < idx3, "{:?}", view.anomaly_lines);
+    }
+
+    // §3.3 -- a window date with two or more open starts uses the
+    // multi-open lookback form.
+    #[test]
+    fn resolve_lookback_multi_open_form_for_two_opens_at_one_age() {
+        let conn = test_db();
+        let d = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, d, t(9, 0), &Local).expect("insert");
+        storage::insert_punch(&conn, PunchKind::Start, d, t(11, 0), &Local).expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            view.anomaly_lines
+                .iter()
+                .any(|l| l.contains("2 open stints on") && l.contains("5 days ago")),
+            "{:?}",
+            view.anomaly_lines
+        );
+        assert!(
+            view.anomaly_lines
+                .iter()
+                .any(|l| l.contains(&format!("see mlm status {}", d.format("%Y-%m-%d")))),
+            "{:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §3.3 -- status for a non-today date runs no lookback at all, even
+    // though another window-aged date has an open start.
+    #[test]
+    fn resolve_status_for_non_today_date_runs_no_lookback() {
+        let conn = test_db();
+        let stale_date = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, stale_date, t(9, 0), &Local)
+            .expect("insert");
+        let other_date = today() - ChronoDuration::days(1);
+
+        let view = resolve(
+            Some(&other_date.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view.anomaly_lines.is_empty(),
+            "no lookback for a non-today date: {:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §3.3 -- an explicit today's-own-date string still runs the
+    // lookback (a distinct code path from DATE omitted).
+    #[test]
+    fn resolve_explicit_todays_date_string_still_runs_lookback() {
+        let conn = test_db();
+        let stale_date = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, stale_date, t(9, 0), &Local)
+            .expect("insert");
+
+        let view = resolve(
+            Some(&today().format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            view.anomaly_lines.iter().any(|l| l.contains("5 days ago")),
+            "{:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §1.2 -- an orphaned end alone at a window age produces no lookback
+    // line for that date (the scan counts open starts only).
+    #[test]
+    fn resolve_lookback_orphan_alone_produces_no_lookback_line() {
+        let conn = test_db();
+        let d = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::End, d, t(18, 0), &Local).expect("insert");
+
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            !view.anomaly_lines.iter().any(|l| l.contains("days ago")),
+            "{:?}",
+            view.anomaly_lines
+        );
+    }
+
+    // §3.1/§3.3 boundary -- age 15 is stale on its own status DATE but
+    // absent from today's lookback (window is ages 2-14 only).
+    #[test]
+    fn resolve_age_fifteen_stale_on_own_date_but_absent_from_lookback() {
+        let conn = test_db();
+        let d = today() - ChronoDuration::days(15);
+        storage::insert_punch(&conn, PunchKind::Start, d, t(9, 0), &Local).expect("insert");
+
+        let own_view = resolve(
+            Some(&d.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(
+            own_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("15 days old")),
+            "{:?}",
+            own_view.anomaly_lines
+        );
+
+        let today_view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            !today_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("days ago")),
+            "age 15 must not appear in today's lookback: {:?}",
+            today_view.anomaly_lines
+        );
+    }
+
+    // §5 -- fix-command round trip: a stop after the stale start's time
+    // clears the anomaly on re-resolve.
+    #[test]
+    fn resolve_stale_start_fix_round_trip_via_stop_clears_anomaly() {
+        let conn = test_db();
+        let d = today() - ChronoDuration::days(5);
+        storage::insert_punch(&conn, PunchKind::Start, d, t(9, 0), &Local).expect("insert");
+
+        let before = resolve(
+            Some(&d.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(!before.anomaly_lines.is_empty());
+
+        storage::insert_punch(&conn, PunchKind::End, d, t(17, 0), &Local).expect("insert");
+
+        let after = resolve(
+            Some(&d.format("%Y-%m-%d").to_string()),
+            now_thu_1800(),
+            &conn,
+        )
+        .expect("resolve");
+        assert!(after.anomaly_lines.is_empty(), "{:?}", after.anomaly_lines);
+    }
+
+    // §5 -- fix-command round trip: deleting the offending orphaned end
+    // clears the E8 anomaly on re-resolve.
+    #[test]
+    fn resolve_orphaned_end_fix_round_trip_via_delete_clears_anomaly() {
+        let conn = test_db();
+        let id = storage::insert_punch(&conn, PunchKind::End, today(), t(18, 0), &Local)
+            .expect("insert");
+
+        let before = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(
+            before
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains("orphaned end at 18:00"))
+        );
+
+        storage::delete_punch(&conn, id).expect("delete");
+
+        let after = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(after.anomaly_lines.is_empty(), "{:?}", after.anomaly_lines);
+    }
+
+    // §3.4/§5 -- every fix/or line carries the anomaly's own real date,
+    // never a placeholder, for E7, stale, E8, and the lookback form.
+    #[test]
+    fn resolve_fix_lines_carry_the_real_date_for_every_anomaly_kind() {
+        // Each kind gets its own connection so adjacent-date splice/
+        // refused-join checks from one fixture can never interact with
+        // another's.
+        let e7_conn = test_db();
+        let e7_date = today() - ChronoDuration::days(6);
+        storage::insert_punch(&e7_conn, PunchKind::Start, e7_date, t(9, 0), &Local)
+            .expect("insert");
+        storage::insert_punch(&e7_conn, PunchKind::Start, e7_date, t(11, 0), &Local)
+            .expect("insert");
+        let e7_str = e7_date.format("%Y-%m-%d").to_string();
+        let e7_view = resolve(Some(&e7_str), now_thu_1800(), &e7_conn).expect("resolve");
+        assert!(
+            e7_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains(&format!("--date {e7_str}")))
+        );
+
+        let stale_conn = test_db();
+        let stale_date = today() - ChronoDuration::days(5);
+        storage::insert_punch(&stale_conn, PunchKind::Start, stale_date, t(9, 0), &Local)
+            .expect("insert");
+        let stale_str = stale_date.format("%Y-%m-%d").to_string();
+        let stale_view = resolve(Some(&stale_str), now_thu_1800(), &stale_conn).expect("resolve");
+        assert!(
+            stale_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains(&format!("--date {stale_str}")))
+        );
+
+        let e8_conn = test_db();
+        let e8_date = today() - ChronoDuration::days(4);
+        storage::insert_punch(&e8_conn, PunchKind::End, e8_date, t(18, 0), &Local).expect("insert");
+        let e8_str = e8_date.format("%Y-%m-%d").to_string();
+        let e8_view = resolve(Some(&e8_str), now_thu_1800(), &e8_conn).expect("resolve");
+        assert!(
+            e8_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains(&format!("--date {e8_str}")))
+        );
+
+        let lookback_conn = test_db();
+        let lookback_date = today() - ChronoDuration::days(9);
+        storage::insert_punch(
+            &lookback_conn,
+            PunchKind::Start,
+            lookback_date,
+            t(9, 0),
+            &Local,
+        )
+        .expect("insert");
+        let lookback_str = lookback_date.format("%Y-%m-%d").to_string();
+        let today_view = resolve(None, now_thu_1800(), &lookback_conn).expect("resolve");
+        assert!(
+            today_view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.contains(&format!("--date {lookback_str}"))),
+            "{:?}",
+            today_view.anomaly_lines
+        );
+    }
+
+    // Published interface: `lookback` itself, independent of `resolve()`
+    // wiring -- Task 4 (`commands::start`) calls this directly.
+    #[test]
+    fn lookback_returns_findings_oldest_first() {
+        let conn = test_db();
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            today() - ChronoDuration::days(10),
+            t(9, 0),
+            &Local,
+        )
+        .expect("insert");
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            today() - ChronoDuration::days(4),
+            t(9, 0),
+            &Local,
+        )
+        .expect("insert");
+
+        let findings =
+            lookback(&conn, today(), now_thu_1800().with_timezone(&Utc)).expect("lookback");
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].date, today() - ChronoDuration::days(10));
+        assert_eq!(findings[1].date, today() - ChronoDuration::days(4));
+        assert_eq!(findings[0].age_days, 10);
+        assert_eq!(findings[1].age_days, 4);
     }
 }

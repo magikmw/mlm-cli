@@ -80,8 +80,16 @@ fn t14_status_with_anomalies_exits_zero_and_prints_to_stdout() {
 
     let out = stdout(&status);
     assert!(
-        out.contains("[!] 2 open stints for this date (unmatched starts)"),
+        out.contains("[!] 2 open stints for this date (only one can be open at a time)"),
         "anomaly line missing from stdout: {out:?}"
+    );
+    assert!(
+        out.contains("fix: mlm delete punch --date"),
+        "fix line missing from stdout: {out:?}"
+    );
+    assert!(
+        out.contains("or: mlm stop HH:MM --date"),
+        "or line missing from stdout: {out:?}"
     );
     assert!(
         stderr(&status).is_empty(),
