@@ -40,6 +40,9 @@ commonest one, a forgotten `stop`.
   older than yesterday stays visible only on its own date and its
   `week` row. An orphaned end adds no time, so it cannot inflate a
   total the way a forgotten `stop` hides one.
+- A lookback line (§3.3) names only the unclosed start. When that
+  start is also half of a refused join, the line does not say so; the
+  refused-join line shows on the window date's own `status`.
 - Every plain `status` for today now reads 15 extra dates (one range
   query). A future cheap prompt query (AGENTS.md stretch) would skip
   the lookback.

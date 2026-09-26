@@ -929,6 +929,22 @@ SPEC.md and PLAN.md:
     task count is 3+ (detection, rendering, `start` warning, docs), so
     the full ladder runs, phase 10 included.
 
+78. **`open-punch-visibility` plan reviewed and folded.** Plan
+    `docs/dev/plans/open-punch-visibility-plan.md`, six tasks: stint
+    predicates, rendering, `status` wiring plus the shared lookback,
+    `start` warning, `week` markers, docs. Order is (1 ∥ 2) → (3 ∥ 5)
+    → 4 → 6. Review (`docs/dev/plans/reports/open-punch-visibility-plan-review.md`,
+    ship-with-followups, 5 findings) all folded. `tests/status_cli.rs`
+    pins the old E7 wording and had no owner; Task 2 now owns it.
+    Contract B now pins the refused-join predicate to raw
+    single-date classifications, so `status` and `week` cannot wire it
+    differently. Task 1's boundary tests gain age 0. Task 4's
+    read-failure path is tested only if a seam exists, since adding
+    one would be production plumbing for a test. Task 4's test list
+    had also contradicted the spec on a self-inflicted E7; corrected
+    to warn. A lookback line not mentioning its refused join is
+    accepted and added to the spec's §1.2.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
