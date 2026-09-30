@@ -116,57 +116,6 @@ pub fn status_week_line(
     )
 }
 
-/// The §4.3 pairing anomalies for one date, in the minimal shape the
-/// §7.3 renderers need. Milestone 5's classification result converts
-/// into this; nothing here re-derives pairing.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Anomalies {
-    /// How many unmatched trailing `start`s the date has (i.e. how many
-    /// open stints). 0 or 1 is normal and is NOT an anomaly (§4.3,
-    /// §1.3, F1); 2 or more is the multi-open anomaly (E7).
-    pub open_stint_count: usize,
-    /// Local wall-clock time of each orphaned `end` (§4.3's empty-stack
-    /// case), in the date's punch order (chronological, insertion-order
-    /// tie-break). One entry per orphan — never deduplicated, never
-    /// coalesced, even when two share a timestamp (E8, NOTES.md 32).
-    pub orphaned_end_times: Vec<NaiveTime>,
-}
-
-impl Anomalies {
-    /// The single definition of "this date has an anomaly", shared by
-    /// both rendering forms. §4.3: exactly one trailing unmatched start
-    /// is the ordinary open stint, not an anomaly.
-    pub fn has_any(&self) -> bool {
-        self.open_stint_count > 1 || !self.orphaned_end_times.is_empty()
-    }
-
-    /// `status`'s form (§7.3): one full line per anomaly, already
-    /// prefixed with `[!] `, no trailing newline on any element.
-    /// Empty vec when `has_any()` is false.
-    pub fn detail_lines(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if self.open_stint_count > 1 {
-            out.push(format!(
-                "[!] {} open stints for this date (unmatched starts)",
-                self.open_stint_count
-            ));
-        }
-        for t in &self.orphaned_end_times {
-            out.push(format!(
-                "[!] orphaned end at {} (no matching start)",
-                t.format("%H:%M")
-            ));
-        }
-        out
-    }
-
-    /// `week`'s form (§7.3): the suffix to append to a date's row.
-    /// `"  [!]"` when `has_any()`, `""` otherwise.
-    pub fn row_marker(&self) -> &'static str {
-        if self.has_any() { "  [!]" } else { "" }
-    }
-}
-
 /// Everything one calendar date's `status`/`week` anomaly rendering
 /// needs, as plain data (SPEC.md §3.1/§3.2/§3.4). Callers (Task 1's
 /// predicates via Task 3/5) compute every fact; this type never reads
@@ -178,7 +127,7 @@ pub struct DateAnomalies {
     pub date: NaiveDate,
 
     /// How many trailing unmatched starts this date has. 0 or 1 is
-    /// normal; >= 2 is E7. Unchanged meaning from the old `Anomalies`.
+    /// normal; >= 2 is E7.
     pub open_stint_count: usize,
 
     /// The most recently opened start's local time, when
@@ -188,8 +137,7 @@ pub struct DateAnomalies {
     /// `open_stint_count == 0`.
     pub latest_open_start: Option<NaiveTime>,
 
-    /// One entry per orphaned end (E8), ascending by instant. Same
-    /// contract as the old `Anomalies::orphaned_end_times` — never
+    /// One entry per orphaned end (E8), ascending by instant. Never
     /// deduplicated, never coalesced.
     pub orphaned_end_times: Vec<NaiveTime>,
 
@@ -313,8 +261,7 @@ impl DateAnomalies {
         out
     }
 
-    /// `week`'s per-row suffix (§3.5, §3.4's "row gets `[!]`" rule,
-    /// unchanged text/shape from the old `Anomalies::row_marker`):
+    /// `week`'s per-row suffix (§3.5, §3.4's "row gets `[!]`" rule):
     /// `"  [!]"` when `has_any()`, `""` otherwise.
     pub fn row_marker(&self) -> &'static str {
         if self.has_any() { "  [!]" } else { "" }
@@ -660,245 +607,6 @@ mod tests {
         );
     }
 
-    // ---- 4.8 anomaly detail lines ----
-
-    #[test]
-    fn t16_multi_open_then_orphan_in_that_order() {
-        let a = Anomalies {
-            open_stint_count: 2,
-            orphaned_end_times: vec![t(18, 0)],
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] 2 open stints for this date (unmatched starts)".to_string(),
-                "[!] orphaned end at 18:00 (no matching start)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t17_three_open_stints_reports_the_count() {
-        let a = Anomalies {
-            open_stint_count: 3,
-            orphaned_end_times: vec![],
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec!["[!] 3 open stints for this date (unmatched starts)".to_string()]
-        );
-    }
-
-    #[test]
-    fn t18_three_orphans_are_never_coalesced() {
-        let a = Anomalies {
-            open_stint_count: 0,
-            orphaned_end_times: vec![t(9, 15), t(13, 0), t(18, 0)],
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] orphaned end at 09:15 (no matching start)".to_string(),
-                "[!] orphaned end at 13:00 (no matching start)".to_string(),
-                "[!] orphaned end at 18:00 (no matching start)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t19_same_timestamp_orphans_are_distinct_not_deduplicated() {
-        let a = Anomalies {
-            open_stint_count: 0,
-            orphaned_end_times: vec![t(13, 0), t(13, 0)],
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] orphaned end at 13:00 (no matching start)".to_string(),
-                "[!] orphaned end at 13:00 (no matching start)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t20_one_open_stint_is_not_an_anomaly() {
-        let a = Anomalies {
-            open_stint_count: 1,
-            orphaned_end_times: vec![],
-        };
-        assert!(a.detail_lines().is_empty());
-    }
-
-    #[test]
-    fn t21_default_has_no_detail_lines() {
-        assert!(Anomalies::default().detail_lines().is_empty());
-    }
-
-    #[test]
-    fn t22_orphan_hour_is_zero_padded() {
-        let a = Anomalies {
-            open_stint_count: 0,
-            orphaned_end_times: vec![t(7, 5)],
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec!["[!] orphaned end at 07:05 (no matching start)".to_string()]
-        );
-    }
-
-    #[test]
-    fn every_detail_line_starts_with_the_marker_and_has_no_trailing_whitespace() {
-        let cases = [
-            Anomalies {
-                open_stint_count: 2,
-                orphaned_end_times: vec![t(18, 0)],
-            },
-            Anomalies {
-                open_stint_count: 0,
-                orphaned_end_times: vec![t(9, 15), t(13, 0)],
-            },
-        ];
-        for a in cases {
-            for line in a.detail_lines() {
-                assert!(line.starts_with("[!] "), "{line}");
-                assert_eq!(line, line.trim_end(), "{line}");
-                assert!(!line.contains('\n'), "{line}");
-            }
-        }
-    }
-
-    // ---- 4.9 has_any / row_marker ----
-
-    #[test]
-    fn t23_default_has_no_anomaly_and_no_marker() {
-        let a = Anomalies::default();
-        assert!(!a.has_any());
-        assert_eq!(a.row_marker(), "");
-    }
-
-    #[test]
-    fn t24_one_open_stint_has_no_anomaly_and_no_marker() {
-        let a = Anomalies {
-            open_stint_count: 1,
-            orphaned_end_times: vec![],
-        };
-        assert!(!a.has_any());
-        assert_eq!(a.row_marker(), "");
-    }
-
-    #[test]
-    fn t25_two_open_stints_has_anomaly_and_marker() {
-        let a = Anomalies {
-            open_stint_count: 2,
-            orphaned_end_times: vec![],
-        };
-        assert!(a.has_any());
-        assert_eq!(a.row_marker(), "  [!]");
-    }
-
-    #[test]
-    fn t26_one_orphan_has_anomaly_and_marker() {
-        let a = Anomalies {
-            open_stint_count: 0,
-            orphaned_end_times: vec![t(18, 0)],
-        };
-        assert!(a.has_any());
-        assert_eq!(a.row_marker(), "  [!]");
-    }
-
-    #[test]
-    fn t27_one_open_plus_one_orphan_has_anomaly_and_marker() {
-        let a = Anomalies {
-            open_stint_count: 1,
-            orphaned_end_times: vec![t(18, 0)],
-        };
-        assert!(a.has_any());
-        assert_eq!(a.row_marker(), "  [!]");
-    }
-
-    #[test]
-    fn t28_five_open_plus_two_orphans_has_anomaly_and_marker() {
-        let a = Anomalies {
-            open_stint_count: 5,
-            orphaned_end_times: vec![t(1, 0), t(2, 0)],
-        };
-        assert!(a.has_any());
-        assert_eq!(a.row_marker(), "  [!]");
-    }
-
-    // ---- 4.10 no-divergence invariant ----
-
-    fn fixtures() -> Vec<Anomalies> {
-        vec![
-            Anomalies::default(),
-            Anomalies {
-                open_stint_count: 1,
-                orphaned_end_times: vec![],
-            },
-            Anomalies {
-                open_stint_count: 2,
-                orphaned_end_times: vec![],
-            },
-            Anomalies {
-                open_stint_count: 0,
-                orphaned_end_times: vec![t(18, 0)],
-            },
-            Anomalies {
-                open_stint_count: 1,
-                orphaned_end_times: vec![t(18, 0)],
-            },
-            Anomalies {
-                open_stint_count: 5,
-                orphaned_end_times: vec![t(1, 0), t(2, 0)],
-            },
-        ]
-    }
-
-    #[test]
-    fn t29_has_any_agrees_with_detail_lines_nonempty() {
-        for a in fixtures() {
-            assert_eq!(a.has_any(), !a.detail_lines().is_empty(), "{a:?}");
-        }
-    }
-
-    #[test]
-    fn t30_row_marker_empty_iff_not_has_any() {
-        for a in fixtures() {
-            assert_eq!(a.row_marker().is_empty(), !a.has_any(), "{a:?}");
-        }
-    }
-
-    #[test]
-    fn t31_exhaustive_sweep_of_open_count_and_orphan_length() {
-        for open_stint_count in 0..=4usize {
-            for orphan_len in 0..=3usize {
-                let orphaned_end_times = (0..orphan_len).map(|i| t(i as u32, 0)).collect();
-                let a = Anomalies {
-                    open_stint_count,
-                    orphaned_end_times,
-                };
-                assert_eq!(a.has_any(), !a.detail_lines().is_empty(), "{a:?}");
-                assert_eq!(a.row_marker().is_empty(), !a.has_any(), "{a:?}");
-            }
-        }
-    }
-
-    // ---- 4.11 row composition sanity ----
-
-    #[test]
-    fn t32_row_marker_matches_the_spec_example_byte_for_byte() {
-        let a = Anomalies {
-            open_stint_count: 0,
-            orphaned_end_times: vec![t(18, 0)],
-        };
-        assert_eq!(
-            format!("  Wed 2026-02-11   08h 00m{}", a.row_marker()),
-            "  Wed 2026-02-11   08h 00m  [!]"
-        );
-    }
-
-    // ---- 4.12 plain-ASCII audit ----
-
     // ---- DateAnomalies / LookbackFinding (open-punch-visibility) ----
 
     fn da(date: NaiveDate) -> DateAnomalies {
@@ -1161,12 +869,6 @@ mod tests {
         ];
         for h in headlines {
             assert!(h.is_ascii(), "{h}");
-        }
-        for a in fixtures() {
-            for line in a.detail_lines() {
-                assert!(line.is_ascii(), "{line}");
-            }
-            assert!(a.row_marker().is_ascii());
         }
     }
 

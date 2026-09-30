@@ -12,21 +12,73 @@ use rusqlite::Connection;
 
 use crate::cli::{DeleteEntryArgs, NoteArgs, PunchArgs};
 use crate::date::{format_date, resolve_future_checked_date};
+use crate::render;
+use crate::status;
 use crate::storage::{self, Note, Punch, PunchKind};
 use crate::time::{TimeParseError, parse_time};
 
 /// Record a start punch for today, optionally with an inline note
 /// (SPEC §3.2), or against another day via `--date`
-/// (backdated-punches spec §4).
+/// (backdated-punches spec §4). After a successful write, warns on
+/// stderr about stale open starts in the last 14 days (§3.6) —
+/// best-effort, never turns a successful write into a failed command.
 pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
-    punch(conn, now, PunchKind::Start, args)
+    let written_date = punch(conn, now, PunchKind::Start, args)?;
+    warn_stale_starts(
+        conn,
+        now.date_naive(),
+        now.with_timezone(&Utc),
+        written_date,
+        &mut std::io::stderr(),
+    );
+    Ok(())
 }
 
 /// Record an end punch for today, optionally with an inline note
 /// (SPEC §3.3 — "same shape as start"), or against another day via
 /// `--date` (backdated-punches spec §4).
 pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
-    punch(conn, now, PunchKind::End, args)
+    punch(conn, now, PunchKind::End, args)?;
+    Ok(())
+}
+
+/// §3.6: after a successful `start` write, warn on stderr about every
+/// stale open start the shared lookback (`status::lookback`) can see.
+/// Best-effort — a read failure here is swallowed, never surfaced as
+/// an error and never turns a successful write into a failed command.
+fn warn_stale_starts<W: std::io::Write>(
+    conn: &Connection,
+    today: chrono::NaiveDate,
+    now_utc: DateTime<Utc>,
+    written_date: chrono::NaiveDate,
+    out: &mut W,
+) {
+    let Ok(findings) = status::lookback(conn, today, now_utc) else {
+        return;
+    };
+    emit_warnings(findings, written_date, out);
+}
+
+/// Pure line-emitting half of `warn_stale_starts`, split out so tests
+/// can feed a findings list directly instead of seeding a live DB.
+/// The date just written to is suppressed only when its one finding is
+/// a `SingleOpenStart` — that single entry is definitionally the punch
+/// this command just made. A `MultipleOpenStints` finding on that same
+/// date still prints, since it proves the new punch collided with an
+/// existing open start (an E7).
+fn emit_warnings<W: std::io::Write>(
+    findings: Vec<render::LookbackFinding>,
+    written_date: chrono::NaiveDate,
+    out: &mut W,
+) {
+    for finding in findings {
+        if finding.date == written_date
+            && matches!(finding.kind, render::LookbackKind::SingleOpenStart { .. })
+        {
+            continue;
+        }
+        let _ = writeln!(out, "{}", finding.stderr_line());
+    }
 }
 
 /// Record a standalone work-log note (SPEC §3.4), against today or, with
@@ -258,7 +310,7 @@ fn punch(
     now: DateTime<Local>,
     kind: PunchKind,
     args: &PunchArgs,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<chrono::NaiveDate> {
     let today = now.date_naive();
     let target_date = resolve_target_date(&args.date, today)?;
 
@@ -279,7 +331,7 @@ fn punch(
         note_text.as_deref(),
         now.with_timezone(&Utc),
     )?;
-    Ok(())
+    Ok(target_date)
 }
 
 /// `Vec<String>` positionals joined with single spaces (§1.2). `None`
@@ -1688,5 +1740,105 @@ mod tests {
         let after =
             crate::status::resolve(Some("2026-02-02"), fixed_now(), &conn).expect("resolve");
         assert_ne!(before.week_line, after.week_line);
+    }
+
+    // --- §3.6 start stale-start warning --------------------------------
+
+    fn finding(
+        date: NaiveDate,
+        age_days: i64,
+        kind: crate::render::LookbackKind,
+    ) -> crate::render::LookbackFinding {
+        crate::render::LookbackFinding {
+            date,
+            age_days,
+            kind,
+        }
+    }
+
+    #[test]
+    fn stale_warning_lines_are_oldest_first_and_match_stderr_line() {
+        let f_young = finding(
+            d(2026, 2, 7),
+            5,
+            crate::render::LookbackKind::SingleOpenStart { time: t(9, 0) },
+        );
+        let f_old = finding(
+            d(2026, 2, 2),
+            10,
+            crate::render::LookbackKind::SingleOpenStart { time: t(8, 30) },
+        );
+        let mut out = Vec::new();
+        // Fed out of chronological order; emit_warnings must not reorder
+        // -- oldest-first ordering is the lookback scan's own job
+        // (status::lookback already returns oldest-first), this
+        // function just streams what it's given.
+        emit_warnings(vec![f_old, f_young], d(2026, 2, 12), &mut out);
+        let text = String::from_utf8(out).expect("utf8");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines, vec![f_old.stderr_line(), f_young.stderr_line()]);
+    }
+
+    #[test]
+    fn start_stdout_stays_empty_and_exit_is_zero() {
+        let mut conn = test_db();
+        let r = start(&mut conn, fixed_now(), &punch_args(&[]));
+        assert_eq!(crate::exit_code(&r), 0);
+    }
+
+    #[test]
+    fn no_warning_for_just_written_date_with_single_open_start() {
+        let written_date = d(2026, 2, 7);
+        let f = finding(
+            written_date,
+            5,
+            crate::render::LookbackKind::SingleOpenStart { time: t(9, 0) },
+        );
+        let mut out = Vec::new();
+        emit_warnings(vec![f], written_date, &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn multi_open_warning_on_written_date_still_prints() {
+        let written_date = d(2026, 2, 7);
+        let f = finding(
+            written_date,
+            5,
+            crate::render::LookbackKind::MultipleOpenStints { count: 2 },
+        );
+        let mut out = Vec::new();
+        emit_warnings(vec![f], written_date, &mut out);
+        let text = String::from_utf8(out).expect("utf8");
+        assert_eq!(text.lines().count(), 1);
+        assert_eq!(text.trim_end(), f.stderr_line());
+    }
+
+    #[test]
+    fn no_warning_when_window_is_clean() {
+        let mut out = Vec::new();
+        emit_warnings(Vec::new(), d(2026, 2, 12), &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn read_failure_after_write_is_best_effort() {
+        let mut conn = test_db();
+        start(&mut conn, fixed_now(), &punch_args(&[])).expect("ok");
+        conn.execute_batch("DROP TABLE punches")
+            .expect("drop table");
+        let mut out = Vec::new();
+        warn_stale_starts(
+            &conn,
+            fixed_now().date_naive(),
+            fixed_now().with_timezone(&Utc),
+            today(),
+            &mut out,
+        );
+        assert!(out.is_empty());
+    }
+
+    fn t(h: u32, m: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, 0).expect("test fixture is a real time")
     }
 }
