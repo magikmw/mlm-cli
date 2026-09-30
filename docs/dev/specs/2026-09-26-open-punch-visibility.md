@@ -1,6 +1,8 @@
 # Open-punch visibility and anomaly remedies — design spec
 
 **Baseline**: written against `v0.3.6` (`main` at `267060b`).
+**Amended** 2026-09-30 at phase 15 triage (§3.6 written-date rule and
+warning layout; §1.2 pairing overlap) — NOTES.md entry 82.
 **Status**: adversarially reviewed 2026-09-26
 (`docs/dev/plans/reports/open-punch-visibility-spec-review.md`,
 9 findings, folded — NOTES.md entry 77). Locked.
@@ -46,6 +48,16 @@ commonest one, a forgotten `stop`.
 - Every plain `status` for today now reads 15 extra dates (one range
   query). A future cheap prompt query (AGENTS.md stretch) would skip
   the lookback.
+- Pairing (§4.3) is LIFO and accepts nested entry, so
+  `start 09:00, start 10:00, stop 11:00, stop 12:00` counts 09:00-12:00
+  and 10:00-11:00 both, double-counting an hour. The stale-start hint
+  ("a time after 09:00") can lead a user into that shape. Pre-existing;
+  the next changeset changes pairing so the outer stint wins and inner
+  punches are ignored and flagged.
+- A session still open from yesterday is not flagged, and today's
+  `status` shows no sign of it either.
+- An unresolved anomaly in a past week changes later weeks' carry-in,
+  and the later week's view shows no `[!]` for it.
 - A lone open start dated yesterday is never flagged, because an
   overnight session may still be running. Intended; recorded in SPEC
   §4.3, not filed in §1.2a.
@@ -198,13 +210,20 @@ Lookback, two or more open starts on the window date:
 
 After a successful `start` write (with or without `--date`), `start`
 runs the §3.3 lookback relative to today. For each window date with
-open starts it prints one line to **stderr**, oldest first. The date
-the command just wrote to counts only when it now has two or more
-open starts (so the new punch made an E7); a single open start there
-is the punch just written and gets no line.
+open starts it prints a finding to **stderr**, oldest first. The date
+the command just wrote to is skipped only when its single open start
+is the exact punch this command inserted. Two or more open starts
+there (the new punch made an E7) still warn, and so does a single open
+start that is an older punch (the new start paired off with an
+orphaned end, leaving the old start open).
+
+A single open start prints three lines, laid out like `status`'s
+(§3.4). Two or more print one line.
 
 ```
-warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21 (a time after 09:00)
+warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)
+    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)
+     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)
 warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
 ```
 
@@ -213,7 +232,8 @@ warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
 - The check is best-effort. If the lookback read fails after the write
   committed, `start` prints nothing extra and still exits `0`.
 - The written-date rule keeps a backdated `start --date D` from
-  warning about its own punch, but still reports an E7 it caused.
+  warning about its own punch, but still reports an E7 it caused or
+  an older open start it left behind.
 - `start` for today writes to a date outside the window, so the rule
   only matters for a backdated `start`.
 

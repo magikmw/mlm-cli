@@ -991,6 +991,30 @@ SPEC.md and PLAN.md:
     `status.rs` still name the deleted type and a removed
     `to_anomalies`; queued for the fix pass.
 
+82. **`open-punch-visibility` phase 13/14 back and triaged.** Final
+    review ran on Opus at the user's choice
+    (`docs/dev/plans/reports/open-punch-visibility-final-review.md`,
+    ship-with-followups, 7 findings). Fresh-eyes check at tier
+    `returning` (`docs/dev/plans/reports/open-punch-visibility-fresh-eyes.md`,
+    4 findings). User triage in chat 2026-09-30:
+    - Review F2 (the stale hint can lead to nested, double-counted
+      stints) exposes a pre-existing pairing flaw in §4.3, not a
+      regression. User ruling for the next changeset: pairing matches
+      the outer stint, inner starts/stops are ignored and flagged, and
+      time never double-counts — "you can't work double time". Filed
+      as a known issue now; hint wording unchanged here.
+    - Fresh-eyes F1 (`HH:MM` placeholder looks literal): dropped.
+    - Review F3: fixed. The `start` warning skips the written date only
+      when its single open start is the punch just inserted. User also
+      asked for a delete alternative on the warning, so the single
+      form becomes three lines laid out like `status`'s (spec §3.6
+      amended).
+    - Review F1, F6, F4, F5, F7 and fresh-eyes F4: fixed in one fix pass
+      (docs, tests, comments, README carry-in note).
+    - Fresh-eyes F2 (yesterday's open session invisible on today's
+      page) and F3 (a past week's anomaly skews carry-in unflagged):
+      filed as known issues.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
