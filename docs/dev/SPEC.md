@@ -64,6 +64,25 @@ yet, a known issue works but has a rough edge.
 - An unclosed start more than 14 days old shows only on its own date's
   `status` and its own `week` row. Today's `status` and `mlm start`
   stop mentioning it once it leaves that 14-day window.
+- Stint pairing (§4.3) is LIFO and accepts nested entry. A day like
+  `start 09:00, start 10:00, stop 11:00, stop 12:00` pairs into
+  09:00-12:00 *and* 10:00-11:00, double-counting the overlapping hour
+  in the day total, with no anomaly raised. The stale-open-start hint
+  ("a time after 09:00") can lead a user straight into this shape,
+  since it never rules out a stop that lands inside an already-closed
+  stint.
+- A lone open start dated yesterday is never flagged, on `status` or
+  `mlm start`, because an overnight session may still be legitimately
+  running (the 2-day stale threshold is intentional, §4.3). This means
+  a session still open from the previous evening gives no signal at
+  all on today's `status` — only querying yesterday's date directly
+  shows it.
+- An unresolved anomaly (a forgotten `stop`, a refused join, and so
+  on) in a past, closed week changes that week's own fulfillment
+  figure, which then carries into later weeks' `Carry-in`. A later
+  week's `status`/`week` view shows the skewed carry-in figure with no
+  `[!]` marker pointing back at the week that actually has the
+  problem.
 - `status DATE` silently accepts a future `DATE` — undocumented; only
   `start`/`stop`/`note`'s future-date rejection is documented (§6.1).
   When accepted, the week line's deadline phrase (`... by end of
@@ -725,17 +744,18 @@ zero.
     duration figure entirely — at that age the number is noise, not
     information — and renders as `09:00-now  (unclosed)` instead. That
     same date now also carries a `[!]` stale-open-start anomaly
-    (§7.3), and, while it's within the last 14 days, today's own
-    `status` surfaces it too (the lookback bullet below). See §1.2a
-    for what's still not covered once a date passes the 14-day window.
+    (§7.3), and, while it's within the 2-to-14-day lookback window,
+    today's own `status` surfaces it too (the lookback bullet below).
+    See §1.2a for what's still not covered once a date passes the
+    14-day window.
 - Notes render only if any exist for the date (section omitted
   otherwise, not shown empty).
 - Anomalies (§4.3), if any, print between the two lead lines and the
   stint list — see §7.3 for the line shapes, including the
   stale-open-start and refused-join kinds.
 - For today only (`DATE` omitted, or today's own date given
-  explicitly), the anomaly block also lists every date in the last 14
-  days that still has an open start, oldest first, each as its own
+  explicitly), the anomaly block also lists every date 2 to 14 days
+  old that still has an open start, oldest first, each as its own
   `[!]` line with `fix:`/`or:` hints (§7.3). `status DATE` for any
   other date runs no lookback.
 
@@ -819,18 +839,16 @@ to it.)
   date with an open stint." This distinction still matters for the
   §4.3.1 residual case: when a cross-midnight session's earlier date
   *doesn't* qualify for the boundary splice (not the ordinary 1:1,
-  first-punch shape — e.g. two dangling starts that date), it's left
-  with a stale, permanently-open `start`, an ordinary
-  single-trailing-start under §4.3 (not an anomaly on its own) but
-  **not** what `(ongoing)` is for. That stale date renders as a plain
-  total excluding the open stint's live minutes, with no `(ongoing)`.
-  Once that date turns 2 or more calendar days old, its lone open
-  start is itself a stale-open-start anomaly, so the row does carry
-  `[!]` (§7.3) even without `(ongoing)` — the two markers answer
-  different questions and aren't mutually exclusive. The ordinary case
-  (a clean cross-midnight session) now splices into one completed
-  stint on the earlier date instead of reaching this fallback at all.
-  `status`'s own rendering of that stale date does show the open
+  first-punch shape — e.g. two dangling starts that date), the join is
+  refused. Both dates flag a `[!]` refused-join line naming each other
+  (§7.3/E17), at any age, alongside whatever E7/E8 anomaly the shape
+  itself produces (two dangling starts is E7 on the earlier date; an
+  extra orphaned end is E8 on the later one). Neither marker is
+  `(ongoing)` — that stays reserved for a clean open stint dated today.
+  The ordinary case (a clean cross-midnight session) splices into one
+  completed stint on the earlier date instead of reaching this
+  fallback at all.
+  `status`'s own rendering of a refused-join date does show the open
   stint's age-based caption/`(unclosed)` form (§7.1); `week`'s row
   shows the total and `[!]` but no equivalent caption, another
   instance of the same status/week asymmetry the header suffix (§7.1)
@@ -855,18 +873,20 @@ to it.)
 
 ### 7.3 Anomaly rendering
 
-Plain-ASCII marker, no color/unicode dependency: prefix `[!] `. Every
-`status` anomaly line also carries one or two indented `fix:`/`or:`
+Plain-ASCII marker, no color/unicode dependency: prefix `[!] `. Most
+`status` anomaly lines also carry one or two indented `fix:`/`or:`
 lines naming a command to run — there's no automatic repair, the user
-runs the named command themselves. Below, `D` stands for the
+runs the named command themselves. The refused-join line is the one
+exception: it carries no `fix:` lines of its own, since the E7/E8/stale
+lines already on the two dates carry them. Below, `D` stands for the
 anomaly's own date (`YYYY-MM-DD`), and `HH:MM` inside a `fix:`/`or:`
 line is a literal placeholder the user replaces with a real time.
 
 Lines for one date print in this fixed order: multiple open stints
 (E7), stale open start, orphaned ends (E8, ascending by instant), a
 refused join with the previous date then the next date, and, for
-today only, one lookback line per stale date found in the last 14
-days (oldest first, §7.1).
+today only, one lookback line per date 2 to 14 days old that still
+has an open start (oldest first, §7.1).
 
 Two fix-command details shape the wording throughout: `mlm delete
 punch --date D` only lists and numbers that date's punches (§7.4) —
@@ -952,14 +972,26 @@ none), and a successful delete prints a ready-to-run recreate command.
 
 `start` gains one more narrow exception, on stderr only. After a
 successful write, it runs the same 14-day lookback `status` uses for
-today (§7.1) and prints one warning line per stale date found, oldest
+today (§7.1) and prints one warning per stale date found, oldest
 first — stdout stays silent and exit stays `0` regardless. The date
-just written to draws no warning unless the new punch left it with two
-or more open starts (E7); a single open start there is the punch just
-written.
+just written to draws no warning only when its single open start is
+the exact punch this command just inserted. Two or more open starts
+there (the new punch made an E7) still warn, and so does a single open
+start that is an older punch — the new start paired off with an
+existing orphaned end there, leaving the old start open.
+
+A single open start warns with three lines, laid out like `status`'s
+own lookback line (§7.3):
 
 ```
-warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21 (a time after 09:00)
+warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)
+    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)
+     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)
+```
+
+Two or more open starts on the date still warn in one line:
+
+```
 warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
 ```
 
@@ -1081,9 +1113,10 @@ or less directly.
   next). The later date shows nothing for it: no stint, no anomaly, no
   footnote (§1.2a notes this as a known rough edge, not a bug). Outside
   that exact shape — e.g. two dangling starts on the earlier date —
-  falls back to the pre-splice behavior: an ordinary (non-anomalous)
-  open `start` on day one, silent in `week`'s view (no `(ongoing)`, no
-  `[!]`, §7.2), plus a flagged orphaned-`end` anomaly on day two.
+  the join is refused: both dates flag a `[!]` line naming each other
+  (§7.3/E17), at any age, alongside whatever E7/E8 anomaly the shape
+  itself produces (two dangling starts is E7 on the earlier date; an
+  extra orphaned end is E8 on the later one).
 - **E16** — A lone open `start` at least 2 calendar days old (§4.3):
   flagged as a stale-open-start anomaly, distinct from the ordinary
   open-stint case at age 0-1, with `fix:`/`or:` lines pointing at
@@ -1097,13 +1130,16 @@ or less directly.
   clean splice (E15) produces no refused join.
 - **E18** — Today's lookback (§7.1): a plain `status` for today
   (`DATE` omitted, or given explicitly) additionally lists every date
-  in the last 14 days that still has an open start, oldest first, each
+  2 to 14 days old that still has an open start, oldest first, each
   as its own `[!]` line with `fix:` lines. `status DATE` for any other
   date runs no lookback; a date whose open start is 15 or more days
   old falls outside the window and isn't listed (§1.2a).
 - **E19** — `mlm start`'s stale-start warning (§7.4): a successful
-  `start`, today or backdated, prints one line per stale date found by
-  the same 14-day lookback to stderr, oldest first; stdout stays
+  `start`, today or backdated, prints one warning per stale date found
+  by the same 14-day lookback to stderr, oldest first; stdout stays
   silent and exit stays `0`. The date just written to draws no warning
-  unless the new punch left it with two or more open starts.
+  only when its single open start is the exact punch just inserted —
+  two or more open starts there, or a single older open start left
+  behind by the new punch pairing off an existing orphaned end, still
+  warn.
 

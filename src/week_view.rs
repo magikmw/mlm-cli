@@ -175,12 +175,12 @@ fn build_rows(
     })
 }
 
-/// Builds the full anomaly fact set for one row's date (Contract A /
-/// `render::DateAnomalies`): the existing E7/E8 facts plus whether the
-/// date's lone open start is stale, and whether it forms a refused join
-/// with either calendar neighbor. Refused-join checks use each date's
-/// *raw* single-date classification (`stint::classify`), never the
-/// splice-resolved `day` passed in -- matching Contract B exactly, so
+/// Builds the full `render::DateAnomalies` fact set for one row's date:
+/// the existing E7/E8 facts plus whether the date's lone open start is
+/// stale, and whether it forms a refused join with either calendar
+/// neighbor. Refused-join checks use each date's *raw* single-date
+/// classification (`stint::classify`), never the splice-resolved `day`
+/// passed in -- the same raw-classification rule `status.rs` uses, so
 /// `status` and `week` can never disagree on a date pair.
 fn row_anomalies(
     day: &stint::DayStints,
@@ -234,8 +234,8 @@ fn row_anomalies(
     }
 }
 
-/// One direction of the refused-join check (Contract B: `earlier` has the
-/// open start(s), `later` has the orphaned end(s)); returns the neighbor
+/// One direction of the refused-join check (`earlier` has the open
+/// start(s), `later` has the orphaned end(s)); returns the neighbor
 /// date to name when it fires, `None` otherwise. Shared by both call
 /// sites in `row_anomalies` so the two directions can never diverge in
 /// how they interpret the predicate's result.
@@ -669,7 +669,7 @@ Target:        40h 00m
         }
     }
 
-    // A15 (Task 5 AC2): footer absent on the anomaly-free golden examples.
+    // A15: footer absent on the anomaly-free golden examples.
     #[test]
     fn a15_footer_absent_when_no_row_anomalous() {
         for out in [render_week(&example_a()), render_week(&example_b())] {
@@ -677,7 +677,7 @@ Target:        40h 00m
         }
     }
 
-    // A16 (Task 5 AC2): footer present exactly once when any row is marked.
+    // A16: footer present exactly once when any row is marked.
     #[test]
     fn a16_footer_present_when_any_row_anomalous() {
         let mut view = example_b();
@@ -686,7 +686,7 @@ Target:        40h 00m
         assert_eq!(out.matches(render::WEEK_ANOMALY_FOOTER).count(), 1);
     }
 
-    // A17 (Task 5 AC2): exact line count on the anomalous path -- 16 (the
+    // A17: exact line count on the anomalous path -- 16 (the
     // existing no-anomaly layout) + 2 (footer line + its separating blank).
     #[test]
     fn a17_footer_line_count_when_present() {
@@ -892,10 +892,8 @@ Target:        40h 00m
         assert!(!rows[0].has_anomaly);
     }
 
-    // B10 (Task 5 AC1/AC4): a lone open start at age >= 2 gets `[!]`,
-    // and no other row does. This is also the regression proof required
-    // by AC4 -- this exact shape rendered with no marker at all before
-    // Task 5.
+    // B10: a lone open start at age >= 2 gets `[!]`, and no other
+    // row does.
     #[test]
     fn b10_stale_open_start_row_is_marked() {
         use PunchKind::Start;
@@ -909,8 +907,8 @@ Target:        40h 00m
         }
     }
 
-    // B11 (Task 5 AC1): a lone open start at age 1 (yesterday) must NOT
-    // be marked -- regression against spec §3.1's age-1 exemption.
+    // B11: a lone open start at age 1 (yesterday) must NOT be
+    // marked -- the stale-open-start threshold starts at age 2.
     #[test]
     fn b11_stale_open_start_at_age_one_not_marked() {
         use PunchKind::Start;
@@ -921,11 +919,11 @@ Target:        40h 00m
         assert!(!rows[2].has_anomaly, "age 1 must not be marked stale");
     }
 
-    // B12 (Task 5 AC1): a refused join between two dates both inside the
+    // B12: a refused join between two dates both inside the
     // displayed week marks both rows. Shape: one open start on Monday, an
     // ordinary start/end pair on Tuesday followed by an orphaned end whose
     // punch is not Tuesday's chronologically-first one -- `splice_candidate`
-    // rejects on the "first punch" check, matching Task 1's own fixture.
+    // rejects on the "first punch" check.
     #[test]
     fn b12_refused_join_both_rows_marked_same_week() {
         use PunchKind::{End, Start};
@@ -952,7 +950,7 @@ Target:        40h 00m
         }
     }
 
-    // B13 (Task 5 AC1): a refused join across the week's own trailing
+    // B13: a refused join across the week's own trailing
     // boundary (Sunday <-> the following Monday, outside the displayed
     // week) still marks Sunday's row, even though the other date never
     // appears among `rows`.

@@ -19,11 +19,12 @@
 //!   minutes, so there is exactly one place a transposition could hide
 //!   and it is directly tested (see `week_line_matches_status_week_line`).
 //! - `stint::DayStints` exposes its own `has_anomaly()`/`anomalies()`,
-//!   computed by a formula that duplicates `render::Anomalies` but is
-//!   not bound to it by any test. This module never calls those two
-//!   methods; [`to_anomalies`] builds a `render::Anomalies` directly
-//!   from `DayStints`'s raw `open`/`orphaned_ends` fields instead, so
-//!   anomaly rendering goes through `render::Anomalies` exclusively.
+//!   computed by a formula that duplicates `render::DateAnomalies` but
+//!   is not bound to it by any test. This module never calls those two
+//!   methods; [`anomaly_facts_for_date`] builds a `render::DateAnomalies`
+//!   directly from `DayStints`'s raw `open`/`orphaned_ends` fields
+//!   instead, so anomaly rendering goes through `render::DateAnomalies`
+//!   exclusively.
 
 use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, Utc};
 use rusqlite::Connection;
@@ -37,10 +38,9 @@ use crate::time::format_minutes;
 use crate::week::{self, WeekAccounting, WeekLedger};
 use crate::week_target;
 
-/// One dated finding from the §3.3/§3.6 14-day lookback scan. Defined in
-/// `render.rs` (Task 2); re-exported here so Task 4 can call
-/// `status::lookback` and name its return type without importing `render`
-/// directly.
+/// One dated finding from the §7.1/§7.4 14-day lookback scan. Defined in
+/// `render.rs`; re-exported here so callers of [`lookback`] can name its
+/// return type without importing `render` directly.
 pub use crate::render::{LookbackFinding, LookbackKind};
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,8 @@ pub struct StatusView {
     /// from `render::status_week_line` via the [`week_line`] wrapper.
     pub week_line: String,
     /// §7.3 anomaly detail lines, already `[!] `-prefixed, verbatim from
-    /// `render::Anomalies::detail_lines()`.
+    /// `render::DateAnomalies::detail_lines()`, plus any lookback lines
+    /// appended for today (§7.1).
     pub anomaly_lines: Vec<String>,
     /// Stint rows, already sorted by start time ascending.
     pub stints: Vec<StintLine>,
@@ -323,9 +324,9 @@ fn local_time(at_utc: DateTime<Utc>) -> NaiveTime {
 
 /// Every classification `resolve()` needs for one target date: the
 /// post-splice view (`day`) plus the three raw, pre-splice views
-/// (`prev_raw`/`day_raw`/`next_raw`) the refused-join predicate requires
-/// (Contract B: "raw single-date classifications ... never
-/// classify_at-resolved ones").
+/// (`prev_raw`/`day_raw`/`next_raw`) the refused-join predicate needs --
+/// it always classifies each date on its own, never against the
+/// `classify_at`-resolved (splice-aware) view.
 struct DateContext {
     day: DayStints,
     prev_raw: DayStints,
@@ -348,9 +349,10 @@ fn classify_date_context(
 }
 
 /// Builds `target_date`'s `render::DateAnomalies` from its `DateContext`
-/// plus Task 1's predicates. `stale_open_start` reads `ctx.day`
-/// (post-splice, matching §2's "open start" definition); `is_refused_join`
-/// reads the raw pair, per Contract B.
+/// plus `stint`'s stale-open-start/refused-join predicates.
+/// `stale_open_start` reads `ctx.day` (post-splice, an open start after
+/// splice resolution); `is_refused_join` reads the raw, pre-splice
+/// pair.
 fn anomaly_facts_for_date(
     ctx: &DateContext,
     target_date: NaiveDate,
@@ -417,6 +419,7 @@ fn lookback_finding_for_date(
         0 => return None,
         1 => LookbackKind::SingleOpenStart {
             time: local_time(day.open[0].start.at_utc),
+            punch_id: day.open[0].start.id,
         },
         n => LookbackKind::MultipleOpenStints { count: n },
     };
@@ -439,8 +442,8 @@ fn lookback_finding_for_date(
 /// `classify_at`). `now_utc` is the caller's already-resolved clock
 /// instant (contract 6: never read from a system clock in here).
 ///
-/// Called by `status::resolve` for today's own `status` (§3.3) and by
-/// `commands::start` after every successful write (§3.6) -- this is the
+/// Called by `status::resolve` for today's own `status` (§7.1) and by
+/// `commands::start` after every successful write (§7.4) -- this is the
 /// one place the scan is implemented, so the two callers can never
 /// disagree about what counts as a stale window date.
 pub fn lookback(
@@ -456,7 +459,7 @@ pub fn lookback(
     let mut findings = Vec::new();
     for age in (2..=14).rev() {
         // .rev() walks age 14 down to 2, i.e. the OLDEST window date
-        // (smallest calendar date) first -- oldest-first per §3.3.
+        // (smallest calendar date) first -- oldest-first per §7.1.
         let date = today - ChronoDuration::days(age);
         if let Some(finding) = lookback_finding_for_date(date, age, &by_date, now_utc) {
             findings.push(finding);
@@ -1893,13 +1896,12 @@ mod tests {
         assert!(view.receiving_date_suffix.is_none());
     }
 
-    // Direct regression companion: confirms the new call site doesn't
-    // accidentally always splice -- only ever mechanically, per Task 1's
-    // 1:1 gate. `D` has two trailing opens (E7, not 1:1), so `D+1`'s
-    // single `End 00:30` cannot close either of them and stays a genuine
-    // orphaned end. Since the pair isn't 1:1, it's also a refused join
-    // (§3.2): both dates carry their own headline plus a line naming the
-    // other.
+    // Confirms this call site doesn't accidentally always splice -- only
+    // when the shape is the exact 1:1, first-punch match. `D` has two
+    // trailing opens (E7, not 1:1), so `D+1`'s single `End 00:30` cannot
+    // close either of them and stays a genuine orphaned end. Since the
+    // pair isn't 1:1, it's also a refused join: both dates carry their
+    // own headline plus a line naming the other.
     #[test]
     fn resolve_midnight_boundary_still_flags_non_1to1_shapes() {
         let conn = test_db();
@@ -2158,11 +2160,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // open-punch-visibility Task 3: stale open start, refused join, and
-    // the shared 14-day lookback (spec §3.1-§3.4, §5).
+    // Stale open start, refused join, and the shared 14-day lookback
+    // (§4.3, §4.3.1, §7.1, §7.3).
     // -----------------------------------------------------------------
 
-    // §3.1 -- a lone open start at age >= 2 gets the new stale-open-start
+    // §4.3 -- a lone open start at age >= 2 gets the new stale-open-start
     // anomaly line, with the right time and age.
     #[test]
     fn resolve_stale_open_start_age_5_shows_stale_line_with_time_and_age() {
@@ -2184,7 +2186,7 @@ mod tests {
         assert!(view.anomaly_lines[1].contains(&target.format("%Y-%m-%d").to_string()));
     }
 
-    // §3.1 -- age 0 and age 1 stay non-anomalies.
+    // §4.3 -- age 0 and age 1 stay non-anomalies.
     #[test]
     fn resolve_lone_open_start_age_zero_or_one_is_not_an_anomaly() {
         for age in [0i64, 1i64] {
@@ -2206,7 +2208,7 @@ mod tests {
         }
     }
 
-    // §3.1 -- ages 2, 14, and 15 are all stale (age doesn't stop being
+    // §4.3 -- ages 2, 14, and 15 are all stale (age doesn't stop being
     // stale past the 14-day lookback window -- that cutoff belongs to
     // the lookback scan, not this predicate).
     #[test]
@@ -2233,7 +2235,7 @@ mod tests {
         }
     }
 
-    // §3.1 -- two or more open starts on a date show only the E7 line;
+    // §4.3 -- two or more open starts on a date show only the E7 line;
     // no stale line, even though one of the opens individually qualifies
     // by age.
     #[test]
@@ -2254,7 +2256,7 @@ mod tests {
         assert!(!view.anomaly_lines.iter().any(|l| l.contains("days old")));
     }
 
-    // §3.2 -- refused join shape 1: two opens on the earlier date. Both
+    // §4.3.1 -- refused join shape 1: two opens on the earlier date. Both
     // dates' status pages name each other.
     #[test]
     fn resolve_refused_join_two_opens_on_earlier_date_flags_both_dates() {
@@ -2294,9 +2296,34 @@ mod tests {
             "{:?}",
             view_d2.anomaly_lines
         );
+
+        // F4: pin the full line, not just a substring, on both dates --
+        // each must name the OTHER date as its neighbor, not its own.
+        let expected_on_d1 = format!(
+            "[!] not joined to {} across midnight (a join needs exactly one open start on {} and exactly one unmatched end, as {}'s first punch)",
+            date::format_date_with_weekday(d2),
+            date::format_date_with_weekday(d1),
+            date::format_date_with_weekday(d2),
+        );
+        assert!(
+            view_d1.anomaly_lines.contains(&expected_on_d1),
+            "{:?}",
+            view_d1.anomaly_lines
+        );
+        let expected_on_d2 = format!(
+            "[!] not joined to {} across midnight (a join needs exactly one open start on {} and exactly one unmatched end, as {}'s first punch)",
+            date::format_date_with_weekday(d1),
+            date::format_date_with_weekday(d1),
+            date::format_date_with_weekday(d2),
+        );
+        assert!(
+            view_d2.anomaly_lines.contains(&expected_on_d2),
+            "{:?}",
+            view_d2.anomaly_lines
+        );
     }
 
-    // §3.2 -- refused join shape 2: the orphan isn't the later date's
+    // §4.3.1 -- refused join shape 2: the orphan isn't the later date's
     // chronologically first punch.
     #[test]
     fn resolve_refused_join_orphan_not_first_on_later_date_flags_both_dates() {
@@ -2335,7 +2362,7 @@ mod tests {
         );
     }
 
-    // §3.2 -- refused join shape 3: two orphans on the later date.
+    // §4.3.1 -- refused join shape 3: two orphans on the later date.
     #[test]
     fn resolve_refused_join_two_orphans_on_later_date_flags_both_dates() {
         let conn = test_db();
@@ -2372,7 +2399,7 @@ mod tests {
         );
     }
 
-    // §3.2 -- regression: the clean-splice shape produces no refused
+    // §4.3.1 -- regression: the clean-splice shape produces no refused
     // join line on either date.
     #[test]
     fn resolve_clean_splice_produces_no_refused_join_line() {
@@ -2409,7 +2436,7 @@ mod tests {
         );
     }
 
-    // §3.2 -- a refused join between yesterday and today shows on
+    // §4.3.1 -- a refused join between yesterday and today shows on
     // today's status.
     #[test]
     fn resolve_refused_join_at_yesterday_today_boundary_shows_on_todays_status() {
@@ -2431,7 +2458,7 @@ mod tests {
         );
     }
 
-    // §3.4 -- ordering: E7 lines precede the refused-join-with-next
+    // §7.3 -- ordering: E7 lines precede the refused-join-with-next
     // line.
     #[test]
     fn resolve_ordering_e7_then_refused_join_with_next() {
@@ -2461,7 +2488,7 @@ mod tests {
         assert!(idx_e7 < idx_refused, "{:?}", view.anomaly_lines);
     }
 
-    // §3.4 -- ordering: stale, then E8 (ascending instant), then the
+    // §7.3 -- ordering: stale, then E8 (ascending instant), then the
     // refused-join-with-next line.
     #[test]
     fn resolve_ordering_stale_then_e8_then_refused_join_with_next() {
@@ -2503,7 +2530,7 @@ mod tests {
         );
     }
 
-    // §3.3 -- today's status lists stale starts from the lookback
+    // §7.1 -- today's status lists stale starts from the lookback
     // window, oldest first.
     #[test]
     fn resolve_lookback_lists_stale_starts_oldest_first() {
@@ -2531,7 +2558,7 @@ mod tests {
         assert!(idx14 < idx7 && idx7 < idx3, "{:?}", view.anomaly_lines);
     }
 
-    // §3.3 -- a window date with two or more open starts uses the
+    // §7.1 -- a window date with two or more open starts uses the
     // multi-open lookback form.
     #[test]
     fn resolve_lookback_multi_open_form_for_two_opens_at_one_age() {
@@ -2557,7 +2584,7 @@ mod tests {
         );
     }
 
-    // §3.3 -- status for a non-today date runs no lookback at all, even
+    // §7.1 -- status for a non-today date runs no lookback at all, even
     // though another window-aged date has an open start.
     #[test]
     fn resolve_status_for_non_today_date_runs_no_lookback() {
@@ -2580,7 +2607,7 @@ mod tests {
         );
     }
 
-    // §3.3 -- an explicit today's-own-date string still runs the
+    // §7.1 -- an explicit today's-own-date string still runs the
     // lookback (a distinct code path from DATE omitted).
     #[test]
     fn resolve_explicit_todays_date_string_still_runs_lookback() {
@@ -2618,7 +2645,7 @@ mod tests {
         );
     }
 
-    // §3.1/§3.3 boundary -- age 15 is stale on its own status DATE but
+    // §4.3/§7.1 boundary -- age 15 is stale on its own status DATE but
     // absent from today's lookback (window is ages 2-14 only).
     #[test]
     fn resolve_age_fifteen_stale_on_own_date_but_absent_from_lookback() {
@@ -2701,7 +2728,7 @@ mod tests {
         assert!(after.anomaly_lines.is_empty(), "{:?}", after.anomaly_lines);
     }
 
-    // §3.4/§5 -- every fix/or line carries the anomaly's own real date,
+    // §7.3 -- every fix/or line carries the anomaly's own real date,
     // never a placeholder, for E7, stale, E8, and the lookback form.
     #[test]
     fn resolve_fix_lines_carry_the_real_date_for_every_anomaly_kind() {
@@ -2771,7 +2798,7 @@ mod tests {
     }
 
     // Published interface: `lookback` itself, independent of `resolve()`
-    // wiring -- Task 4 (`commands::start`) calls this directly.
+    // wiring -- `commands::start` calls this directly.
     #[test]
     fn lookback_returns_findings_oldest_first() {
         let conn = test_db();
@@ -2799,5 +2826,35 @@ mod tests {
         assert_eq!(findings[1].date, today() - ChronoDuration::days(4));
         assert_eq!(findings[0].age_days, 10);
         assert_eq!(findings[1].age_days, 4);
+    }
+
+    // F5: the lookback's lower age bound was only ever caught by a
+    // debug_assert!, never a real assertion. Age 1 (yesterday) must be
+    // excluded even though it has an open start.
+    #[test]
+    fn lookback_excludes_age_one_open_start() {
+        let conn = test_db();
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            today() - ChronoDuration::days(1),
+            t(9, 0),
+            &Local,
+        )
+        .expect("insert");
+        storage::insert_punch(
+            &conn,
+            PunchKind::Start,
+            today() - ChronoDuration::days(4),
+            t(9, 0),
+            &Local,
+        )
+        .expect("insert");
+
+        let findings =
+            lookback(&conn, today(), now_thu_1800().with_timezone(&Utc)).expect("lookback");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].date, today() - ChronoDuration::days(4));
+        assert!(!findings.iter().any(|f| f.age_days == 1), "{:?}", findings);
     }
 }

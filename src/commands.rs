@@ -20,15 +20,15 @@ use crate::time::{TimeParseError, parse_time};
 /// Record a start punch for today, optionally with an inline note
 /// (SPEC §3.2), or against another day via `--date`
 /// (backdated-punches spec §4). After a successful write, warns on
-/// stderr about stale open starts in the last 14 days (§3.6) —
+/// stderr about stale open starts in the last 14 days (§7.4) —
 /// best-effort, never turns a successful write into a failed command.
 pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
-    let written_date = punch(conn, now, PunchKind::Start, args)?;
+    let (_, written_id) = punch(conn, now, PunchKind::Start, args)?;
     warn_stale_starts(
         conn,
         now.date_naive(),
         now.with_timezone(&Utc),
-        written_date,
+        written_id,
         &mut std::io::stderr(),
     );
     Ok(())
@@ -42,7 +42,7 @@ pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> an
     Ok(())
 }
 
-/// §3.6: after a successful `start` write, warn on stderr about every
+/// §7.4: after a successful `start` write, warn on stderr about every
 /// stale open start the shared lookback (`status::lookback`) can see.
 /// Best-effort — a read failure here is swallowed, never surfaced as
 /// an error and never turns a successful write into a failed command.
@@ -50,30 +50,33 @@ fn warn_stale_starts<W: std::io::Write>(
     conn: &Connection,
     today: chrono::NaiveDate,
     now_utc: DateTime<Utc>,
-    written_date: chrono::NaiveDate,
+    written_punch_id: i64,
     out: &mut W,
 ) {
     let Ok(findings) = status::lookback(conn, today, now_utc) else {
         return;
     };
-    emit_warnings(findings, written_date, out);
+    emit_warnings(findings, written_punch_id, out);
 }
 
 /// Pure line-emitting half of `warn_stale_starts`, split out so tests
 /// can feed a findings list directly instead of seeding a live DB.
-/// The date just written to is suppressed only when its one finding is
-/// a `SingleOpenStart` — that single entry is definitionally the punch
-/// this command just made. A `MultipleOpenStints` finding on that same
-/// date still prints, since it proves the new punch collided with an
-/// existing open start (an E7).
+/// A finding is suppressed only when it's a `SingleOpenStart` whose
+/// punch id equals the one this command just inserted -- that's the
+/// only case where the lookback is seeing the write we just made
+/// rather than a pre-existing problem. A `MultipleOpenStints` finding
+/// on the written date still prints (the new punch made an E7), and so
+/// does a `SingleOpenStart` on the written date whose punch id is
+/// older (the new start paired off with an existing orphaned end,
+/// leaving that older start open).
 fn emit_warnings<W: std::io::Write>(
     findings: Vec<render::LookbackFinding>,
-    written_date: chrono::NaiveDate,
+    written_punch_id: i64,
     out: &mut W,
 ) {
     for finding in findings {
-        if finding.date == written_date
-            && matches!(finding.kind, render::LookbackKind::SingleOpenStart { .. })
+        if let render::LookbackKind::SingleOpenStart { punch_id, .. } = finding.kind
+            && punch_id == written_punch_id
         {
             continue;
         }
@@ -305,12 +308,16 @@ fn resolve_target_date(
 /// transaction (E5) and wraps the punch+note pair in one transaction so
 /// a failure at either insert rolls back both (§6.1: a rejected note
 /// leaves no orphaned punch).
+///
+/// Returns the target date and the new punch's row id -- `start` needs
+/// the id to tell its own just-written punch apart from a pre-existing
+/// open start on the same date (§7.4).
 fn punch(
     conn: &mut Connection,
     now: DateTime<Local>,
     kind: PunchKind,
     args: &PunchArgs,
-) -> anyhow::Result<chrono::NaiveDate> {
+) -> anyhow::Result<(chrono::NaiveDate, i64)> {
     let today = now.date_naive();
     let target_date = resolve_target_date(&args.date, today)?;
 
@@ -322,7 +329,7 @@ fn punch(
 
     let note_text = join_note(&args.note);
 
-    storage::insert_punch_with_note(
+    let (punch_id, _) = storage::insert_punch_with_note(
         conn,
         kind,
         target_date,
@@ -331,7 +338,7 @@ fn punch(
         note_text.as_deref(),
         now.with_timezone(&Utc),
     )?;
-    Ok(target_date)
+    Ok((target_date, punch_id))
 }
 
 /// `Vec<String>` positionals joined with single spaces (§1.2). `None`
@@ -1742,7 +1749,7 @@ mod tests {
         assert_ne!(before.week_line, after.week_line);
     }
 
-    // --- §3.6 start stale-start warning --------------------------------
+    // --- §7.4 start stale-start warning --------------------------------
 
     fn finding(
         date: NaiveDate,
@@ -1761,22 +1768,28 @@ mod tests {
         let f_young = finding(
             d(2026, 2, 7),
             5,
-            crate::render::LookbackKind::SingleOpenStart { time: t(9, 0) },
+            crate::render::LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 101,
+            },
         );
         let f_old = finding(
             d(2026, 2, 2),
             10,
-            crate::render::LookbackKind::SingleOpenStart { time: t(8, 30) },
+            crate::render::LookbackKind::SingleOpenStart {
+                time: t(8, 30),
+                punch_id: 102,
+            },
         );
         let mut out = Vec::new();
         // Fed out of chronological order; emit_warnings must not reorder
         // -- oldest-first ordering is the lookback scan's own job
         // (status::lookback already returns oldest-first), this
         // function just streams what it's given.
-        emit_warnings(vec![f_old, f_young], d(2026, 2, 12), &mut out);
+        emit_warnings(vec![f_old, f_young], 999, &mut out);
         let text = String::from_utf8(out).expect("utf8");
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines, vec![f_old.stderr_line(), f_young.stderr_line()]);
+        let expected = format!("{}\n{}\n", f_old.stderr_line(), f_young.stderr_line());
+        assert_eq!(text, expected);
     }
 
     #[test]
@@ -1787,16 +1800,39 @@ mod tests {
     }
 
     #[test]
-    fn no_warning_for_just_written_date_with_single_open_start() {
+    fn no_warning_when_single_open_start_is_the_punch_just_written() {
         let written_date = d(2026, 2, 7);
         let f = finding(
             written_date,
             5,
-            crate::render::LookbackKind::SingleOpenStart { time: t(9, 0) },
+            crate::render::LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 42,
+            },
         );
         let mut out = Vec::new();
-        emit_warnings(vec![f], written_date, &mut out);
+        emit_warnings(vec![f], 42, &mut out);
         assert!(out.is_empty());
+    }
+
+    // F3: the suppression is keyed on punch id, not date. A single open
+    // start on the written date that is a DIFFERENT (older) punch still
+    // warns.
+    #[test]
+    fn warning_still_prints_when_single_open_start_on_written_date_is_an_older_punch() {
+        let written_date = d(2026, 2, 7);
+        let f = finding(
+            written_date,
+            5,
+            crate::render::LookbackKind::SingleOpenStart {
+                time: t(18, 0),
+                punch_id: 7, // an older punch, not the one just written
+            },
+        );
+        let mut out = Vec::new();
+        emit_warnings(vec![f], 42, &mut out);
+        let text = String::from_utf8(out).expect("utf8");
+        assert_eq!(text.trim_end(), f.stderr_line());
     }
 
     #[test]
@@ -1808,7 +1844,7 @@ mod tests {
             crate::render::LookbackKind::MultipleOpenStints { count: 2 },
         );
         let mut out = Vec::new();
-        emit_warnings(vec![f], written_date, &mut out);
+        emit_warnings(vec![f], 42, &mut out);
         let text = String::from_utf8(out).expect("utf8");
         assert_eq!(text.lines().count(), 1);
         assert_eq!(text.trim_end(), f.stderr_line());
@@ -1817,14 +1853,15 @@ mod tests {
     #[test]
     fn no_warning_when_window_is_clean() {
         let mut out = Vec::new();
-        emit_warnings(Vec::new(), d(2026, 2, 12), &mut out);
+        emit_warnings(Vec::new(), 42, &mut out);
         assert!(out.is_empty());
     }
 
     #[test]
     fn read_failure_after_write_is_best_effort() {
         let mut conn = test_db();
-        start(&mut conn, fixed_now(), &punch_args(&[])).expect("ok");
+        let (_, written_id) =
+            punch(&mut conn, fixed_now(), PunchKind::Start, &punch_args(&[])).expect("punch ok");
         conn.execute_batch("DROP TABLE punches")
             .expect("drop table");
         let mut out = Vec::new();
@@ -1832,10 +1869,127 @@ mod tests {
             &conn,
             fixed_now().date_naive(),
             fixed_now().with_timezone(&Utc),
-            today(),
+            written_id,
             &mut out,
         );
         assert!(out.is_empty());
+    }
+
+    // F3 reproduction (final review): a backdated `start` into a stale
+    // date can pair off with an existing orphaned end on that date,
+    // leaving an OLDER open start on the same date. The written-date
+    // suppression must not swallow that warning just because it shares
+    // the written date.
+    //
+    // 2026-02-07 (age 5): `stop 17:00` leaves an orphaned end (E8);
+    // `start 18:00` leaves a new open start dangling next to it; then
+    // `start 08:00` (the "E8 fix") pairs 08:00-17:00, leaving the OLDER
+    // 18:00 start open. `start`'s own warning must still report it.
+    #[test]
+    fn start_warns_about_older_open_start_left_open_by_orphan_pairing() {
+        let mut conn = test_db();
+        let stale_date = "2026-02-07";
+
+        stop(
+            &mut conn,
+            fixed_now(),
+            &stop_args(&["17:00", "--date", stale_date]),
+        )
+        .expect("stop");
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["18:00", "--date", stale_date]),
+        )
+        .expect("start");
+
+        let (target_date, written_id) = punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["08:00", "--date", stale_date]),
+        )
+        .expect("punch ok");
+        assert_eq!(target_date, d(2026, 2, 7));
+
+        let mut out = Vec::new();
+        warn_stale_starts(
+            &conn,
+            today(),
+            fixed_now().with_timezone(&Utc),
+            written_id,
+            &mut out,
+        );
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(
+            text.contains("unclosed start on Sat 2026-02-07 at 18:00"),
+            "expected a warning about the still-open 18:00 start, got: {text:?}"
+        );
+    }
+
+    // F5: backdated `start --date D` into a stale date that already has
+    // an open start warns with the multi-open form.
+    #[test]
+    fn start_into_stale_date_with_existing_open_start_warns_multi_open_form() {
+        let mut conn = test_db();
+        let stale_date = "2026-02-07"; // age 5
+
+        start(
+            &mut conn,
+            fixed_now(),
+            &punch_args(&["09:00", "--date", stale_date]),
+        )
+        .expect("first start");
+
+        // A second start on the same stale date collides (E7) with the
+        // first, and also drives the lookback -- capture stderr via
+        // warn_stale_starts directly (start() hardcodes real stderr).
+        let (_, written_id) = punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["10:00", "--date", stale_date]),
+        )
+        .expect("second start");
+
+        let mut out = Vec::new();
+        warn_stale_starts(
+            &conn,
+            today(),
+            fixed_now().with_timezone(&Utc),
+            written_id,
+            &mut out,
+        );
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(
+            text.contains("2 open stints on Sat 2026-02-07"),
+            "expected the multi-open form, got: {text:?}"
+        );
+    }
+
+    // F5: `start` into an empty stale date raises no warning for it.
+    #[test]
+    fn start_into_empty_stale_date_raises_no_warning_for_it() {
+        let mut conn = test_db();
+        let stale_date = "2026-02-07"; // age 5, otherwise untouched
+
+        let (_, written_id) = punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["09:00", "--date", stale_date]),
+        )
+        .expect("start");
+
+        let mut out = Vec::new();
+        warn_stale_starts(
+            &conn,
+            today(),
+            fixed_now().with_timezone(&Utc),
+            written_id,
+            &mut out,
+        );
+        assert!(out.is_empty(), "{:?}", String::from_utf8_lossy(&out));
     }
 
     fn t(h: u32, m: u32) -> NaiveTime {

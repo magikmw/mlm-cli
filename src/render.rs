@@ -117,13 +117,13 @@ pub fn status_week_line(
 }
 
 /// Everything one calendar date's `status`/`week` anomaly rendering
-/// needs, as plain data (SPEC.md §3.1/§3.2/§3.4). Callers (Task 1's
-/// predicates via Task 3/5) compute every fact; this type never reads
+/// needs, as plain data (SPEC.md §4.3/§4.3.1/§7.3). Callers compute
+/// every fact; this type never reads
 /// a clock, a database, or `stint.rs` itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateAnomalies {
     /// The date this block belongs to. Fills every `D` in this date's
-    /// own `fix:`/`or:` lines (§3.4).
+    /// own `fix:`/`or:` lines (§7.3).
     pub date: NaiveDate,
 
     /// How many trailing unmatched starts this date has. 0 or 1 is
@@ -142,36 +142,36 @@ pub struct DateAnomalies {
     pub orphaned_end_times: Vec<NaiveTime>,
 
     /// Set iff this date has exactly one open start AND it is stale
-    /// (age >= 2, Task 1's predicate). Never set when
-    /// `open_stint_count != 1` (E7 owns the 2+ case entirely, §3.1).
+    /// (age >= 2). Never set when
+    /// `open_stint_count != 1` (E7 owns the 2+ case entirely, §4.3).
     pub stale_open_start: Option<StaleOpenStart>,
 
     /// Set to the previous calendar date iff this date and its
     /// predecessor form a refused join with THIS date as the later
-    /// (orphaned-end) side (Task 1's predicate, §3.2).
+    /// (orphaned-end) side (§4.3.1).
     pub refused_join_with_previous: Option<NaiveDate>,
 
     /// Set to the next calendar date iff this date and its successor
     /// form a refused join with THIS date as the earlier
-    /// (open-start) side (§3.2).
+    /// (open-start) side (§4.3.1).
     pub refused_join_with_next: Option<NaiveDate>,
 }
 
-/// The one stale-open-start fact a date can carry (§3.1/§3.4).
+/// The one stale-open-start fact a date can carry (§4.3/§7.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StaleOpenStart {
     /// Local time of the (only) open start.
     pub time: NaiveTime,
-    /// `today - date` in whole days. Always >= 2 (Task 1's predicate
-    /// contract) — callers never construct this with a smaller value.
+    /// `today - date` in whole days. Always >= 2 -- callers never
+    /// construct this with a smaller value.
     pub age_days: i64,
 }
 
 impl DateAnomalies {
     /// True iff this date has ANY anomaly under the new, wider
     /// definition: E7, E8, stale, or either refused-join direction.
-    /// The single definition `week`'s per-row `[!]` (Task 5) and
-    /// `status`'s block-or-not decision (Task 3) both key off.
+    /// The single definition `week`'s per-row `[!]` and `status`'s
+    /// block-or-not decision both key off.
     pub fn has_any(&self) -> bool {
         self.open_stint_count > 1
             || !self.orphaned_end_times.is_empty()
@@ -180,12 +180,12 @@ impl DateAnomalies {
             || self.refused_join_with_next.is_some()
     }
 
-    /// `status`'s per-date block (§3.4), in the fixed order: E7, then
+    /// `status`'s per-date block (§7.3), in the fixed order: E7, then
     /// stale, then E8 (ascending instant), then refused-join-with-
     /// previous, then refused-join-with-next. Empty vec when
     /// `has_any()` is false. Does NOT include lookback lines — those
     /// come from separate `LookbackFinding`s, appended by the caller
-    /// (Task 3), never by this type.
+    /// never by this type.
     pub fn detail_lines(&self) -> Vec<String> {
         let mut out = Vec::new();
         out.extend(self.e7_lines());
@@ -261,7 +261,7 @@ impl DateAnomalies {
         out
     }
 
-    /// `week`'s per-row suffix (§3.5, §3.4's "row gets `[!]`" rule):
+    /// `week`'s per-row suffix (§7.2's "row gets `[!]`" rule):
     /// `"  [!]"` when `has_any()`, `""` otherwise.
     pub fn row_marker(&self) -> &'static str {
         if self.has_any() { "  [!]" } else { "" }
@@ -277,7 +277,7 @@ fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> 
     )
 }
 
-/// One window date's finding from the §3.3/§3.6 14-day lookback.
+/// One window date's finding from the §7.1/§7.4 14-day lookback.
 /// Deliberately narrower than `DateAnomalies`: a lookback line never
 /// carries E8/refused-join detail (§1.2's residual-gap bullets), only
 /// "this window date has an open start" in one of two shapes.
@@ -285,23 +285,25 @@ fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> 
 pub struct LookbackFinding {
     /// The window date (age 2-14) this finding is about.
     pub date: NaiveDate,
-    /// `today - date`. Always in 2..=14 (Task 3's scan contract).
+    /// `today - date`. Always in 2..=14.
     pub age_days: i64,
     pub kind: LookbackKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LookbackKind {
-    /// Exactly one open start on the window date.
-    SingleOpenStart { time: NaiveTime },
+    /// Exactly one open start on the window date. `punch_id` is that
+    /// start's row id, so `commands::start` can tell whether it's the
+    /// punch it just wrote (§7.4).
+    SingleOpenStart { time: NaiveTime, punch_id: i64 },
     /// Two or more open starts on the window date (that date's own E7).
     MultipleOpenStints { count: usize },
 }
 
 impl LookbackFinding {
-    /// `status`'s block form (§3.3, one finding per line-group,
+    /// `status`'s block form (§7.1, one finding per line-group,
     /// appended after a date's own `DateAnomalies::detail_lines()`,
-    /// oldest window date first — Task 3's job to order/append).
+    /// oldest window date first).
     pub fn detail_lines(&self) -> Vec<String> {
         debug_assert!(
             (2..=14).contains(&self.age_days),
@@ -310,7 +312,7 @@ impl LookbackFinding {
         let d = format_date(self.date);
         let wdy = format_date_with_weekday(self.date);
         match self.kind {
-            LookbackKind::SingleOpenStart { time } => {
+            LookbackKind::SingleOpenStart { time, .. } => {
                 let time = time.format("%H:%M");
                 vec![
                     format!(
@@ -333,8 +335,10 @@ impl LookbackFinding {
         }
     }
 
-    /// `start`'s compressed one-line stderr form (§3.6), no trailing
-    /// newline.
+    /// `start`'s stderr form (§7.4). A single open start prints three
+    /// lines laid out like `detail_lines()`, `warning: ` in place of
+    /// `[!] `; two or more open starts stay one line. No trailing
+    /// newline either way.
     pub fn stderr_line(&self) -> String {
         debug_assert!(
             (2..=14).contains(&self.age_days),
@@ -343,10 +347,10 @@ impl LookbackFinding {
         let d = format_date(self.date);
         let wdy = format_date_with_weekday(self.date);
         match self.kind {
-            LookbackKind::SingleOpenStart { time } => {
+            LookbackKind::SingleOpenStart { time, .. } => {
                 let time = time.format("%H:%M");
                 format!(
-                    "warning: unclosed start on {wdy} at {time} ({} days ago); fix: mlm stop HH:MM --date {d} (a time after {time})",
+                    "warning: unclosed start on {wdy} at {time} ({} days ago)\n    fix: mlm stop HH:MM --date {d}  (a time after {time})\n     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)",
                     self.age_days
                 )
             }
@@ -358,7 +362,7 @@ impl LookbackFinding {
     }
 }
 
-/// The exact, unparameterized §3.5 footer line. Task 5 decides
+/// The exact, unparameterized §7.2 footer line. The caller decides
 /// whether to append it (at least one row has `[!]`) and where (after
 /// the table, after one blank line) — this constant is the only thing
 /// this task owns.
@@ -707,7 +711,10 @@ mod tests {
         let f = LookbackFinding {
             date: d(2026, 9, 21),
             age_days: 5,
-            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+            kind: LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 1,
+            },
         };
         assert_eq!(
             f.detail_lines(),
@@ -738,7 +745,7 @@ mod tests {
     #[test]
     fn t_ordering_all_kinds_at_once() {
         // Unrealistic combination (stale + E7 together) is impossible
-        // under Task 1's real predicate, but render.rs enforces no such
+        // under the real stale/E7 predicate, but render.rs enforces no such
         // invariant -- this test only pins detail_lines()'s ordering.
         let a = DateAnomalies {
             date: d(2026, 9, 21),
@@ -765,12 +772,16 @@ mod tests {
     #[test]
     fn t_lookback_ordering_oldest_first() {
         // This only proves rendering preserves caller-supplied order;
-        // the actual "oldest first" scan guarantee is Task 3's job.
+        // the actual "oldest first" scan guarantee is the lookback
+        // scan's own job.
         let findings = [
             LookbackFinding {
                 date: d(2026, 9, 20),
                 age_days: 6,
-                kind: LookbackKind::SingleOpenStart { time: t(8, 0) },
+                kind: LookbackKind::SingleOpenStart {
+                    time: t(8, 0),
+                    punch_id: 1,
+                },
             },
             LookbackFinding {
                 date: d(2026, 9, 21),
@@ -792,15 +803,18 @@ mod tests {
     }
 
     #[test]
-    fn t_lookback_stderr_single_matches_spec_example() {
+    fn t_lookback_stderr_single_is_three_lines_like_status_block() {
         let f = LookbackFinding {
             date: d(2026, 9, 21),
             age_days: 5,
-            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+            kind: LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 1,
+            },
         };
         assert_eq!(
             f.stderr_line(),
-            "warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-21 (a time after 09:00)"
+            "warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)\n    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)\n     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)"
         );
     }
 
@@ -818,17 +832,26 @@ mod tests {
     }
 
     #[test]
-    fn t_lookback_stderr_single_space_differs_from_block_form() {
+    fn t_lookback_stderr_single_matches_block_fix_or_wording_exactly() {
+        // §7.4: the single-open-start warning is laid out
+        // identically to status's own lookback block, "warning: "
+        // swapped in for the leading "[!] " -- same fix/or wording,
+        // same double-space before the parenthetical.
         let f = LookbackFinding {
             date: d(2026, 9, 21),
             age_days: 5,
-            kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+            kind: LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 1,
+            },
         };
         let block = f.detail_lines();
         let stderr = f.stderr_line();
-        assert!(block[1].contains("--date 2026-09-21  (a time after 09:00)"));
-        assert!(stderr.contains("--date 2026-09-21 (a time after 09:00)"));
-        assert!(!stderr.contains("--date 2026-09-21  (a time after 09:00)"));
+        let stderr_lines: Vec<&str> = stderr.split('\n').collect();
+        assert_eq!(stderr_lines.len(), 3);
+        assert_eq!(stderr_lines[0], format!("warning: {}", &block[0][4..]));
+        assert_eq!(stderr_lines[1], block[1]);
+        assert_eq!(stderr_lines[2], block[2]);
     }
 
     #[test]
@@ -916,7 +939,10 @@ mod tests {
             LookbackFinding {
                 date: d(2026, 9, 21),
                 age_days: 5,
-                kind: LookbackKind::SingleOpenStart { time: t(9, 0) },
+                kind: LookbackKind::SingleOpenStart {
+                    time: t(9, 0),
+                    punch_id: 1,
+                },
             },
             LookbackFinding {
                 date: d(2026, 9, 21),
