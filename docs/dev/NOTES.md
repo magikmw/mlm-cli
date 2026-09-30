@@ -1015,6 +1015,22 @@ SPEC.md and PLAN.md:
       page) and F3 (a past week's anomaly skews carry-in unflagged):
       filed as known issues.
 
+83. **`open-punch-visibility` fix pass merged; changeset complete on
+    its branch.** Fix pass (`docs/dev/plans/reports/open-punch-visibility-fixpass.md`)
+    closed review F1, F3-F7 and fresh-eyes F4, and filed the three new
+    known issues in SPEC §1.2a and README. Merge gate green, and the
+    F3 case hand-checked on the merged binary. Review F5's
+    binary-level `start` stderr test was not added. The fix pass
+    judged that the unit tests through `warn_stale_starts` with a real
+    connection cover the same logic; `start()` itself still writes to
+    real stderr untested. Pre-existing plan narration in older comments
+    (`week_view.rs` "Landmine", `cli.rs`/`commands.rs` "Task N" from
+    milestone 14) is outside this changeset and left alone.
+    Stale-doc sweep of README, AGENTS.md and SPEC found no remaining
+    claims this changeset made false. Release not prepared, at the
+    user's request; `open-punch-visibility` is not yet merged to
+    `main`.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
