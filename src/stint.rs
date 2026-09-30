@@ -347,12 +347,12 @@ pub(crate) fn splice_candidate(
 
 /// The stale open start's own instant and age, when `day`'s classification
 /// carries exactly one open start whose age (`today - date`, in whole
-/// calendar days) is >= 2 -- spec §2/§3.1. `None` for zero or >= 2 open
+/// calendar days) is >= 2 (§4.3). `None` for zero or >= 2 open
 /// starts (>= 2 is E7's own anomaly, already covered by
 /// `Anomaly::MultipleOpenStints`) and `None` at age 0 or 1. `age_days`
 /// keeps growing past 14 when `Some` -- the 14-day lookback-window
-/// cutoff is Task 3's concern, not this predicate's (spec §3.1's own
-/// wording: the rule doesn't stop being true past the window).
+/// cutoff belongs to the caller, not this predicate: staleness itself
+/// doesn't stop being true past the window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StaleOpenStart {
     pub at: DateTime<Utc>,
@@ -379,7 +379,7 @@ pub(crate) fn stale_open_start(
 
 /// True when `earlier` (classified for some date `A`) and `later`
 /// (classified for `A`'s very next calendar date, `A+1`) form a
-/// *refused join* (spec §2/§3.2): `earlier` has >= 1 open start,
+/// *refused join* (§4.3.1): `earlier` has >= 1 open start,
 /// `later` has >= 1 orphaned end, and `splice_candidate` rejects the
 /// pair. Both `DayStints` must be raw single-date classifications
 /// (plain `classify()` output), never `classify_at`-resolved.
@@ -1180,8 +1180,7 @@ mod tests {
         assert_eq!(d.orphaned_ends[0].punch.at_utc, at("11:00"));
     }
 
-    // --- Task 1: stale_open_start / is_refused_join (open-punch-visibility
-    // spec §2, §3.1, §3.2) -------------------------------------------------
+    // --- stale_open_start / is_refused_join (§4.3, §4.3.1) ---------------
 
     #[test]
     fn stale_open_start_not_stale_at_age_zero_or_one() {
@@ -1248,8 +1247,8 @@ mod tests {
     #[test]
     fn refused_join_at_yesterday_today_boundary() {
         // Same shapes as above, just confirming the predicate carries no
-        // age gate itself (spec §3.2: "at every age, including
-        // yesterday-today").
+        // age gate itself -- a refused join fires at every age,
+        // including yesterday-today.
         let yesterday = date();
         let today = yesterday.succ_opt().unwrap();
         let earlier = classify(
