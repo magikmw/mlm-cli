@@ -44,16 +44,9 @@ Not implemented yet:
 Shipped behavior that's rough or confusing in a way worth fixing
 later:
 
-- Whether a stint reaching into the next day auto-resolves or gets
-  left flagged depends on an internal rule the output doesn't explain
-- `[!]` anomaly flags describe the problem but not how to fix it
-- Whether a lone unclosed `start` gets flagged depends on whether a
-  *second* one also exists that date — the difference is just how
-  many, but it isn't explained anywhere
-- A forgotten `stop` from several days ago is invisible everywhere
-  except a `status` query against the exact date it started — no
-  warning on today's `status`, on any date in between, or in `week`'s
-  per-day table
+- An unclosed start more than 14 days old only shows up on its own
+  date's `status` and `week` row — today's `status` and a fresh
+  `start` both stop mentioning it once it's older than that
 - `status DATE` silently accepts a future date; the week deadline
   phrase then names today's real weekday, not the date you queried,
   with nothing on the page explaining the mismatch
@@ -170,6 +163,18 @@ after it, including a later `--date` flag — `mlm start 09:00 wrapped
 up --date -1` silently records `--date -1` as part of the note text
 instead of parsing it as the date flag.
 
+After a successful write, `start` also checks the last 14 days for
+stale open starts (an unclosed `start` 2 or more days old) and prints
+one `warning:` line per date found to stderr, oldest first — stdout
+and the exit code are unaffected either way. The date you just wrote
+to is never included unless the new punch left it with two or more
+open starts.
+
+```sh
+$ mlm start 09:00
+warning: unclosed start on Fri 2026-09-25 at 09:00 (5 days ago); fix: mlm stop HH:MM --date 2026-09-25 (a time after 09:00)
+```
+
 ### `mlm stop|e [TIME] [NOTE...] [-d/--date DATE]`
 
 Record an end punch for today, or another day with `--date`. Same
@@ -214,6 +219,31 @@ Notes:
   - reviewed open PRs
   - fixed migration runner bug
 ```
+
+When a date has a pairing problem, `status` prints one or more `[!]`
+lines between the day/week lines and the stint list, each with a
+`fix:` (and sometimes an `or:`) line underneath naming the exact
+command to run — nothing is fixed automatically:
+
+```
+[!] unclosed start at 09:00, 5 days old (no stop recorded)
+    fix: mlm stop HH:MM --date 2026-09-25  (a time after 09:00)
+     or: mlm delete punch --date 2026-09-25  (lists punches; rerun with the start's number)
+```
+
+Today's plain `status` (no `DATE`, or today's own date given
+explicitly) also checks the last 14 days and appends one such line for
+every date it finds with an unclosed start, oldest first — so a
+forgotten `stop` from last week still shows up today, not just when
+you query that exact date.
+
+An overnight session (a `start` before midnight, `stop` after) joins
+into one stint on the earlier date automatically, as long as that date
+has exactly one open start and the next date's very first punch is the
+matching `end`. Anything messier — a second stray start or end that
+day — leaves both punches alone: an ordinary open start on the first
+date, and a flagged, unjoined orphaned end on the second, with a `[!]`
+line on both dates explaining why they didn't join.
 
 The required-by-day pace hint and estimated-EOD line only show up when
 `DATE` is today (they need "now" to mean anything). The pace-hint
@@ -292,6 +322,15 @@ Worked:        44h 35m
 Fulfillment:   44h 35m
 Target:        40h 00m
 ```
+
+When any row in the table above carries `[!]`, one line follows after
+a blank line:
+
+```
+[!] needs a look: run mlm status DATE for details and fixes
+```
+
+No footer line prints when nothing in the week is flagged.
 
 ### `mlm week|w target [WEEK_ID] DURATION`
 
