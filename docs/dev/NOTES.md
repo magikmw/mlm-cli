@@ -974,6 +974,23 @@ SPEC.md and PLAN.md:
     Signatures, ownership, batch order and output strings otherwise
     agree across all six plans.
 
+81. **`open-punch-visibility` Tasks 1-5 merged.** Each merged
+    `--no-ff` into `open-punch-visibility` and re-verified at the merge
+    gate (fmt, build, test, clippy), plus hand-runs of the built binary
+    for `status`, `week` and `start`. Parallel tasks each ratchet
+    `coverage-baseline.json`, so every second merge in a batch
+    conflicts on it; resolved by keeping the lower value and letting
+    the merge commit's hook ratchet it. Task 4's deletion of the
+    superseded `render::Anomalies` removed about 300 fully covered
+    lines, which dropped coverage from 99.114% to 99.104% because
+    pre-existing uncovered test-fixture panic arms in `commands.rs`
+    now weigh more. The user chose to lower the baseline by hand to the
+    measured value, which stays above the changeset's starting 99.031%.
+    The harness blocked the subagent's commit of that change as a CI
+    bypass, so the user committed it (`23d5378`). Four doc comments in
+    `status.rs` still name the deleted type and a removed
+    `to_anomalies`; queued for the fix pass.
+
 ## Open questions (still need answers)
 
 None currently — all resolved.
