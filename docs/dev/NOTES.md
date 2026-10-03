@@ -9,12 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 93
+- **Next entry**: 94
 - **Last release**: `v0.3.6`
 - **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
 - **Active changeset**: `point-in-time-week` (entry 90), spec locked
   (entry 91), plan folded (entry 92),
-  phase 11 implementation
+  tasks merged (entry 93), phase 13/14 review
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1220,6 +1220,21 @@ SPEC.md and PLAN.md:
     skipped, as in entry 86: one task per file set and a detailed plan,
     so each implementer plans inside its own dispatch. Phase 10 skipped
     (two tasks).
+
+93. **`point-in-time-week` Tasks 1 and 2 merged** `--no-ff` into
+    `point-in-time-week` (`adc5592` docs, `de604a1` code). Both shipped
+    to plan with no completion report. Both worktrees started on `main`
+    and rebased onto the plan commit `19d3393` before work. Task 1's
+    unpinned choices: `render::week_headline`/`status_week_line` take the
+    week accounting and today; `StatusView::weekday_name` and
+    `DailyTargetHint::day_reaches_week_cap` removed with the pace clause;
+    `DayStints::live_minutes` added; `DbWeekData` gains `today`. Merge
+    gate green after each merge (fmt, build, 550 lib + integration
+    tests, clippy); coverage ratcheted 99.15% to 99.19%. Hand run on a
+    seeded scratch database (Saturday): `status`, `status 2026-10-01`
+    and `week` print the same `05h 16m over 40h 00m target`, `week`
+    rows sum to `Worked:`, and the closed week 39 still reads
+    `Total behind`. Both worktrees and branches removed after the gate.
 
 ## Open questions (still need answers)
 
