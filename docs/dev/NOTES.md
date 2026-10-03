@@ -9,11 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 92
+- **Next entry**: 93
 - **Last release**: `v0.3.6`
 - **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
 - **Active changeset**: `point-in-time-week` (entry 90), spec locked
-  (entry 91), phase 5 plan
+  (entry 91), plan folded (entry 92),
+  phase 11 implementation
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1203,6 +1204,22 @@ SPEC.md and PLAN.md:
     (code across `src/`, docs in SPEC/README), so phases 5-7 collapse
     into one short plan and phase 10 is skipped unless the plan splits
     the code.
+
+92. **`point-in-time-week` plan reviewed and folded**
+    (`docs/dev/plans/reports/point-in-time-week-plan-review.md`,
+    ship-with-followups, 9 findings + 4 undeclared gaps). Two parallel
+    tasks confirmed: Task 1 owns all of `src/` (code stays unsplit
+    because `status` and `mlm week` share the live-inclusive accounting
+    and headline), Task 2 owns SPEC.md and README.md. F1-F9 folded as a
+    "Review folds" section at the end of the plan: extra SPEC §8.1/§4.2
+    sweep, complexity watch moved to `build_ledger` and
+    `stint::classify`, full doc-comment sweep, inverted tests rewritten
+    rather than deleted, `mlm week` given today's date with rows and
+    `Worked:` from one source, splice-aware classification for `live`.
+    U1-U4 added to spec §6 as possible issues. Phase 8 task plans are
+    skipped, as in entry 86: one task per file set and a detailed plan,
+    so each implementer plans inside its own dispatch. Phase 10 skipped
+    (two tasks).
 
 ## Open questions (still need answers)
 

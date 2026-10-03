@@ -5,7 +5,7 @@ unreleased `open-punch-visibility` and `live-eod` changesets).
 **Status**: adversarially reviewed 2026-10-03
 (`docs/dev/plans/reports/point-in-time-week-spec-review.md`,
 needs-rework, 9 findings + 10 undeclared gaps, folded — NOTES.md
-entry 91). Locked.
+entry 91). Locked. Plan review added four §6 entries (entry 92).
 
 ## 1. Summary
 
@@ -305,6 +305,17 @@ name the week line instead of the pace hint.
   `… over 00h 00m …`.
 - With a target override that is not a multiple of 5 minutes, Fri–Sun
   `est. EOD` lands up to 4 minutes later than before (§2.2).
+- The headline changes form at Thursday-to-Friday midnight, from
+  `left to 32h 00m by end of Thursday` to `left to 40h 00m target`.
+- After `stop`, the Day total line shows no due-today figure, because
+  the pace clause is gone and `est. EOD` shows only while a stint is
+  open. The week line carries that figure instead.
+- A storage read failure in `mlm week` already shows as no data. It
+  now also hides live minutes from `Worked`, `Fulfillment` and the
+  headline.
+- For an earlier date in the current week, `status DATE`'s day total
+  stays fixed while its week line moves. `mlm week` moves only today's
+  row.
 
 ## 7. Testing
 
