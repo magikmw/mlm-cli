@@ -9,13 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 95
+- **Next entry**: 96
 - **Last release**: `v0.3.6`
-- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
-- **Active changeset**: `point-in-time-week` (entry 90), spec locked
-  (entry 91), plan folded (entry 92),
-  tasks merged (entry 93), triaged (entry 94),
-  phase 16 fix pass
+- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
+  `point-in-time-week`)
+- **Active changeset**: none (`point-in-time-week` merged to `main`,
+  entry 95; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1258,6 +1257,18 @@ SPEC.md and PLAN.md:
       (`--help` defines no terms): filed as possible issues.
     - F1, F4-F7, F10, F12, F14: already declared, pre-existing, or
       covered by tests; no action.
+
+95. **`point-in-time-week` fix pass merged; changeset merged to
+    `main`.** Fix pass (`docs/dev/plans/reports/point-in-time-week-fixpass.md`)
+    closed R1-R3 and F3, and filed F8, F9, F11 and F13 as possible
+    issues. R2 added `week::required_and_gap` as the one gap computation
+    and removed `DailyTargetHint`, `StatusView::daily_target` and the
+    `_use_datelike` shim; earlier NOTES entries keep the old names as
+    history. Merge gate green (fmt, build, 552 lib + integration tests,
+    clippy); coverage 99.22%. Fix-pass worktree and branch removed.
+    Stale-doc grep of README, SPEC, AGENTS.md and `src/` (including
+    `--help` text in `src/cli.rs`) found no leftover old-rule claim.
+    Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 
