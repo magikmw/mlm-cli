@@ -6,11 +6,11 @@
 //! module constructs [`DateAnomalies`] field by field. Everything here is
 //! pure: no database, no clock beyond the injected `now_utc`.
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 
 use crate::date::{format_date, format_date_with_weekday};
 use crate::render;
-use crate::stint::{self, DayStints};
+use crate::stint::{self, DayStints, Stint};
 use crate::storage::Punch;
 
 /// Raw punch buckets for one date and its two calendar neighbours. Each
@@ -68,6 +68,91 @@ pub struct DateAnomalies {
     /// form a refused join with THIS date as the earlier
     /// (open-start) side (§4.3.1).
     pub refused_join_with_next: Option<NaiveDate>,
+
+    /// One entry per overlapping pair of stints, ordered by first start
+    /// then second start (§3.2.1).
+    pub overlaps: Vec<OverlapPair>,
+
+    /// The local time of the first punch on the date strictly after the
+    /// latest open start (§3.2.2). `None` when nothing follows or no start
+    /// is open. Feeds the E7 and stale-start stop hints.
+    pub latest_open_next: Option<NaiveTime>,
+}
+
+/// One stint's part on a single date. `start` and `end` bound that part and
+/// drive the overlap test. `full_start` and `full_end` are the stint's real
+/// times and drive the label, matching the status stint list. They equal
+/// `start` and `end` unless the stint is spliced across midnight. `open`
+/// marks today's running stint, whose `end` is `now`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StintSpan {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub full_start: DateTime<Utc>,
+    pub full_end: DateTime<Utc>,
+    pub open: bool,
+}
+
+impl StintSpan {
+    /// A span whose label times equal its bounds.
+    fn whole(start: DateTime<Utc>, end: DateTime<Utc>, open: bool) -> Self {
+        Self {
+            start,
+            end,
+            full_start: start,
+            full_end: end,
+            open,
+        }
+    }
+
+    fn has_length(&self) -> bool {
+        self.start < self.end
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+
+    /// The stint's real range, as the status stint list prints it.
+    fn label(&self) -> String {
+        let start = render::local_time(self.full_start).format("%H:%M");
+        if self.open {
+            format!("{start}-now")
+        } else {
+            format!(
+                "{start}-{}",
+                render::local_time(self.full_end).format("%H:%M")
+            )
+        }
+    }
+}
+
+/// Two stints on one date whose ranges overlap. `first` starts no later
+/// than `second`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverlapPair {
+    pub first: StintSpan,
+    pub second: StintSpan,
+}
+
+/// Every overlapping pair among the spans, ordered by first start then
+/// second start. Zero-length spans are dropped. Spans that share a start
+/// sort longest first, so the outer stint is `first`.
+pub fn overlap_pairs(mut spans: Vec<StintSpan>) -> Vec<OverlapPair> {
+    spans.retain(StintSpan::has_length);
+    spans.sort_by_key(|s| (s.start, std::cmp::Reverse(s.end)));
+    let mut out = Vec::new();
+    for (i, first) in spans.iter().enumerate() {
+        for second in &spans[i + 1..] {
+            if first.overlaps(second) {
+                out.push(OverlapPair {
+                    first: *first,
+                    second: *second,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// The one stale-open-start fact a date can carry (§4.3/§7.3).
@@ -92,14 +177,17 @@ impl DateAnomalies {
             stale_open_start: None,
             refused_join_with_previous: None,
             refused_join_with_next: None,
+            overlaps: Vec::new(),
+            latest_open_next: None,
         }
     }
 
-    /// True iff this date has ANY anomaly: E7, E8, stale, or either
-    /// refused-join direction. The single definition `week`'s per-row
-    /// `[!]` and `status`'s block-or-not decision both key off.
+    /// True iff this date has ANY anomaly: E7, E8, stale, overlap, or
+    /// either refused-join direction. The single definition `week`'s
+    /// per-row `[!]` and `status`'s block-or-not decision both key off.
     pub fn has_any(&self) -> bool {
         self.open_stint_count > 1
+            || !self.overlaps.is_empty()
             || !self.orphaned_end_times.is_empty()
             || self.stale_open_start.is_some()
             || self.refused_join_with_previous.is_some()
@@ -107,24 +195,43 @@ impl DateAnomalies {
     }
 
     /// `status`'s per-date block (§7.3), in the fixed order: E7, then
-    /// stale, then E8 (ascending instant), then refused-join-with-
-    /// previous, then refused-join-with-next. Empty vec when
-    /// `has_any()` is false. Does NOT include lookback lines.
+    /// stale, then E8 (ascending instant), then overlap (per pair), then
+    /// refused-join-with-previous, then refused-join-with-next. Empty vec
+    /// when `has_any()` is false. Does NOT include lookback lines.
     pub fn detail_lines(&self) -> Vec<String> {
         let mut out = Vec::new();
         out.extend(self.e7_lines());
         out.extend(self.stale_lines());
         out.extend(self.e8_lines());
+        out.extend(self.overlap_lines());
         out.extend(self.refused_join_lines());
         out
     }
 
+    fn overlap_lines(&self) -> Vec<String> {
+        let d = format_date(self.date);
+        self.overlaps
+            .iter()
+            .flat_map(|p| {
+                [
+                    format!(
+                        "[!] overlapping stints {} and {} (the overlap counts twice)",
+                        p.first.label(),
+                        p.second.label()
+                    ),
+                    format!(
+                        "    fix: mlm delete punch --date {d}  (lists punches; rerun with the number of the punch to remove)"
+                    ),
+                ]
+            })
+            .collect()
+    }
+
     fn e7_lines(&self) -> Vec<String> {
-        let Some(latest) = self.latest_open_start.filter(|_| self.open_stint_count > 1) else {
+        let Some(latest_time) = self.latest_open_start.filter(|_| self.open_stint_count > 1) else {
             return Vec::new();
         };
         let d = format_date(self.date);
-        let latest = latest.format("%H:%M");
         vec![
             format!(
                 "[!] {} open stints for this date (only one can be open at a time)",
@@ -134,7 +241,8 @@ impl DateAnomalies {
                 "    fix: mlm delete punch --date {d}  (lists punches; rerun with the extra start's number)"
             ),
             format!(
-                "     or: mlm stop HH:MM --date {d}  (a time after {latest} closes the {latest} start)"
+                "     or: mlm stop HH:MM --date {d}  {}",
+                render::stop_time_hint_closes(latest_time, self.latest_open_next)
             ),
         ]
     }
@@ -151,7 +259,10 @@ impl DateAnomalies {
                 "[!] unclosed start at {time}, {} days old (no stop recorded)",
                 stale.age_days
             ),
-            format!("    fix: mlm stop HH:MM --date {d}  (a time after {time})"),
+            format!(
+                "    fix: mlm stop HH:MM --date {d}  {}",
+                render::stop_time_hint(stale.time, self.latest_open_next)
+            ),
             format!(
                 "     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)"
             ),
@@ -212,14 +323,14 @@ pub fn classify_context(b: &DateBuckets<'_>, now_utc: DateTime<Utc>) -> DateCont
     }
 }
 
-/// The one fact builder. `_now_utc` is reserved for facts that read the
-/// clock (an open stint shown as `HH:MM-now`).
+/// The one fact builder. `now_utc` ends today's open stint for the overlap
+/// test (an open stint shown as `HH:MM-now`).
 pub fn build_facts(
     ctx: &DateContext,
     b: &DateBuckets<'_>,
     date: NaiveDate,
     today: NaiveDate,
-    _now_utc: DateTime<Utc>,
+    now_utc: DateTime<Utc>,
 ) -> DateAnomalies {
     DateAnomalies {
         date,
@@ -243,7 +354,82 @@ pub fn build_facts(
             b.next,
             date.succ_opt(),
         ),
+        overlaps: overlap_pairs(date_spans(ctx, date, today, now_utc)),
+        latest_open_next: latest_open_next(ctx, b),
     }
+}
+
+/// N after the latest open start (§3.2.2).
+fn latest_open_next(ctx: &DateContext, b: &DateBuckets<'_>) -> Option<NaiveTime> {
+    let open = ctx.day.open.last()?;
+    render::next_punch_after(b.day, &open.start)
+}
+
+/// Local midnight at the start of `date`, as a UTC instant. A zone whose
+/// midnight falls in a DST gap uses the date's naive midnight read as UTC.
+fn local_midnight(date: NaiveDate) -> DateTime<Utc> {
+    let naive = date.and_time(NaiveTime::MIN);
+    Local
+        .from_local_datetime(&naive)
+        .earliest()
+        .map_or_else(|| naive.and_utc(), |t| t.with_timezone(&Utc))
+}
+
+fn day_end(date: NaiveDate) -> DateTime<Utc> {
+    local_midnight(date.succ_opt().unwrap_or(date))
+}
+
+/// A completed stint's part on `date`. Only a spliced stint ends on a later
+/// date. Its bounds stop at the date's end and its label keeps the real end.
+fn closed_span(stint: &Stint, date: NaiveDate) -> StintSpan {
+    let (start, full_end) = (stint.start.at_utc, stint.end.at_utc);
+    let end = if stint.end.date > date {
+        day_end(date)
+    } else {
+        full_end
+    };
+    StintSpan {
+        start,
+        end,
+        full_start: start,
+        full_end,
+        open: false,
+    }
+}
+
+/// Today's most recent open stint, up to now. Past dates and a start at or
+/// after now give nothing (a zero-minute stint is never flagged).
+fn live_span(
+    ctx: &DateContext,
+    date: NaiveDate,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> Option<StintSpan> {
+    if date != today {
+        return None;
+    }
+    let start = ctx.day.open.last()?.start.at_utc;
+    (start < now_utc).then_some(StintSpan::whole(start, now_utc, true))
+}
+
+/// The spans one date compares. A stint spliced in from the previous date
+/// adds none here. Its orphaned end is the date's first punch, so no other
+/// stint on the date can start before the end and overlap the part from
+/// local midnight.
+fn date_spans(
+    ctx: &DateContext,
+    date: NaiveDate,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> Vec<StintSpan> {
+    let mut spans: Vec<StintSpan> = ctx
+        .day
+        .completed
+        .iter()
+        .map(|s| closed_span(s, date))
+        .collect();
+    spans.extend(live_span(ctx, date, today, now_utc));
+    spans
 }
 
 /// `classify_context` then `build_facts`.
@@ -428,6 +614,8 @@ mod tests {
             }),
             refused_join_with_previous: Some(d(2026, 9, 20)),
             refused_join_with_next: Some(d(2026, 9, 22)),
+            overlaps: Vec::new(),
+            latest_open_next: None,
         };
         let lines = a.detail_lines();
         assert_eq!(lines.len(), 3 + 3 + 3 + 3 + 1 + 1);
@@ -634,5 +822,491 @@ mod tests {
             build_facts(&ctx, &b, today(), today(), now()),
             date_facts(&b, today(), today(), now())
         );
+    }
+}
+
+#[cfg(test)]
+mod overlap_tests {
+    use super::*;
+    use crate::storage::{PunchKind, punch_from_local};
+
+    fn past() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 2, 1).unwrap()
+    }
+
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 2, 12).unwrap()
+    }
+
+    fn t(h: u32, m: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, 0).unwrap()
+    }
+
+    fn pk(id: i64, kind: PunchKind, date: NaiveDate, h: u32, m: u32) -> Punch {
+        punch_from_local(id, kind, date, t(h, m), &Local).unwrap()
+    }
+
+    fn st(id: i64, date: NaiveDate, h: u32, m: u32) -> Punch {
+        pk(id, PunchKind::Start, date, h, m)
+    }
+
+    fn en(id: i64, date: NaiveDate, h: u32, m: u32) -> Punch {
+        pk(id, PunchKind::End, date, h, m)
+    }
+
+    fn at(date: NaiveDate, h: u32, m: u32) -> DateTime<Utc> {
+        st(0, date, h, m).at_utc
+    }
+
+    fn now_at(date: NaiveDate, h: u32, m: u32) -> DateTime<Utc> {
+        at(date, h, m)
+    }
+
+    fn span(sh: u32, sm: u32, eh: u32, em: u32) -> StintSpan {
+        StintSpan {
+            start: at(past(), sh, sm),
+            end: at(past(), eh, em),
+            full_start: at(past(), sh, sm),
+            full_end: at(past(), eh, em),
+            open: false,
+        }
+    }
+
+    fn starts(pairs: &[OverlapPair]) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
+        pairs
+            .iter()
+            .map(|p| (p.first.start, p.second.start))
+            .collect()
+    }
+
+    fn facts_on(
+        prev: &[Punch],
+        day: &[Punch],
+        next: &[Punch],
+        date: NaiveDate,
+        now: DateTime<Utc>,
+    ) -> DateAnomalies {
+        let b = DateBuckets { prev, day, next };
+        date_facts(&b, date, today(), now)
+    }
+
+    fn past_facts(day: &[Punch]) -> DateAnomalies {
+        facts_on(&[], day, &[], past(), now_at(today(), 18, 0))
+    }
+
+    // ---- overlap_pairs ----
+
+    #[test]
+    fn nested_pair_has_outer_first() {
+        let pairs = overlap_pairs(vec![span(10, 0, 11, 0), span(9, 0, 12, 0)]);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].first, span(9, 0, 12, 0));
+        assert_eq!(pairs[0].second, span(10, 0, 11, 0));
+    }
+
+    #[test]
+    fn identical_ranges_are_one_pair() {
+        let pairs = overlap_pairs(vec![span(9, 0, 10, 0), span(9, 0, 10, 0)]);
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn shared_start_puts_the_longer_stint_first() {
+        let pairs = overlap_pairs(vec![span(9, 0, 11, 0), span(9, 0, 12, 0)]);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].first, span(9, 0, 12, 0));
+    }
+
+    #[test]
+    fn shared_end_is_one_pair() {
+        let pairs = overlap_pairs(vec![span(9, 0, 12, 0), span(10, 0, 12, 0)]);
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn touching_stints_do_not_overlap() {
+        assert!(overlap_pairs(vec![span(9, 0, 10, 0), span(10, 0, 11, 0)]).is_empty());
+    }
+
+    #[test]
+    fn disjoint_stints_do_not_overlap() {
+        assert!(overlap_pairs(vec![span(9, 0, 10, 0), span(11, 0, 12, 0)]).is_empty());
+    }
+
+    #[test]
+    fn zero_length_span_is_dropped() {
+        assert!(overlap_pairs(vec![span(9, 0, 12, 0), span(10, 0, 10, 0)]).is_empty());
+    }
+
+    #[test]
+    fn three_nested_spans_give_three_pairs_in_order() {
+        let pairs = overlap_pairs(vec![
+            span(10, 0, 11, 0),
+            span(9, 0, 12, 0),
+            span(9, 30, 11, 30),
+        ]);
+        let a = at(past(), 9, 0);
+        let b = at(past(), 9, 30);
+        let c = at(past(), 10, 0);
+        assert_eq!(starts(&pairs), vec![(a, b), (a, c), (b, c)]);
+    }
+
+    #[test]
+    fn four_nested_spans_give_six_pairs() {
+        let pairs = overlap_pairs(vec![
+            span(9, 0, 12, 0),
+            span(9, 10, 11, 50),
+            span(9, 20, 11, 40),
+            span(9, 30, 11, 30),
+        ]);
+        assert_eq!(pairs.len(), 6);
+    }
+
+    // ---- facts over punches ----
+
+    #[test]
+    fn closed_nest_on_a_past_date_is_one_overlap() {
+        let d = past();
+        let a = past_facts(&[
+            st(1, d, 9, 0),
+            st(2, d, 10, 0),
+            en(3, d, 11, 0),
+            en(4, d, 12, 0),
+        ]);
+        assert_eq!(a.overlaps.len(), 1);
+        assert!(a.has_any());
+    }
+
+    #[test]
+    fn todays_open_stint_containing_a_closed_one_overlaps() {
+        let d = today();
+        let day = [st(1, d, 9, 0), st(2, d, 10, 0), en(3, d, 11, 0)];
+        let a = facts_on(&[], &day, &[], d, now_at(d, 12, 0));
+        assert_eq!(a.overlaps.len(), 1);
+        assert!(a.overlaps[0].first.open);
+        assert_eq!(a.overlaps[0].first.label(), "09:00-now");
+        assert_eq!(a.overlaps[0].second.label(), "10:00-11:00");
+    }
+
+    #[test]
+    fn open_stint_on_a_past_date_is_excluded() {
+        let d = past();
+        let a = past_facts(&[st(1, d, 9, 0), st(2, d, 10, 0), en(3, d, 11, 0)]);
+        assert!(a.overlaps.is_empty());
+    }
+
+    #[test]
+    fn live_span_needs_now_after_the_start() {
+        let d = today();
+        let day = [st(1, d, 9, 0), en(2, d, 12, 0), st(3, d, 14, 0)];
+        assert!(
+            facts_on(&[], &day, &[], d, now_at(d, 13, 0))
+                .overlaps
+                .is_empty()
+        );
+        assert!(
+            facts_on(&[], &day, &[], d, now_at(d, 14, 0))
+                .overlaps
+                .is_empty()
+        );
+        let nested = [st(1, d, 9, 0), en(2, d, 15, 0), st(3, d, 14, 0)];
+        assert_eq!(
+            facts_on(&[], &nested, &[], d, now_at(d, 16, 0))
+                .overlaps
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn only_the_latest_open_start_enters_the_spans() {
+        let d = today();
+        let two_open = [st(1, d, 9, 0), st(2, d, 10, 0)];
+        let a = facts_on(&[], &two_open, &[], d, now_at(d, 12, 0));
+        assert_eq!(a.open_stint_count, 2);
+        assert!(a.overlaps.is_empty());
+    }
+
+    #[test]
+    fn spliced_stint_start_side_uses_the_part_on_the_date() {
+        let d = past();
+        let next_day = d.succ_opt().unwrap();
+        let day = [st(1, d, 22, 30), st(2, d, 23, 0), en(3, d, 23, 30)];
+        let next = [en(4, next_day, 1, 0)];
+        let a = facts_on(&[], &day, &next, d, now_at(today(), 18, 0));
+        assert_eq!(a.overlaps.len(), 1);
+        let first = a.overlaps[0].first;
+        assert_eq!(first.end, local_midnight(next_day));
+        assert_eq!(first.label(), "22:30-01:00");
+    }
+
+    #[test]
+    fn spliced_stint_adds_nothing_on_the_receiving_date() {
+        let d = past();
+        let next_day = d.succ_opt().unwrap();
+        let prev = [st(1, d, 23, 0)];
+        let day = [
+            en(2, next_day, 1, 0),
+            st(3, next_day, 2, 0),
+            en(4, next_day, 3, 0),
+        ];
+        let a = facts_on(&prev, &day, &[], next_day, now_at(today(), 18, 0));
+        assert!(a.overlaps.is_empty());
+        assert!(a.orphaned_end_times.is_empty());
+    }
+
+    #[test]
+    fn spliced_label_keeps_real_times_in_the_line() {
+        let d = past();
+        let next_day = d.succ_opt().unwrap();
+        let day = [st(1, d, 23, 30), st(2, d, 23, 40), en(3, d, 23, 50)];
+        let next = [en(4, next_day, 0, 45)];
+        let a = facts_on(&[], &day, &next, d, now_at(today(), 18, 0));
+        assert_eq!(
+            a.detail_lines()[0],
+            "[!] overlapping stints 23:30-00:45 and 23:40-23:50 (the overlap counts twice)"
+        );
+    }
+
+    // ---- rendering ----
+
+    fn nested_fixture() -> DateAnomalies {
+        let d = past();
+        past_facts(&[
+            st(1, d, 9, 0),
+            st(2, d, 10, 0),
+            en(3, d, 11, 0),
+            en(4, d, 12, 0),
+        ])
+    }
+
+    #[test]
+    fn overlap_lines_text() {
+        assert_eq!(
+            nested_fixture().detail_lines(),
+            vec![
+                "[!] overlapping stints 09:00-12:00 and 10:00-11:00 (the overlap counts twice)"
+                    .to_string(),
+                "    fix: mlm delete punch --date 2026-02-01  (lists punches; rerun with the number of the punch to remove)"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn three_nested_stints_give_three_line_groups() {
+        let d = past();
+        let a = past_facts(&[
+            st(1, d, 9, 0),
+            st(2, d, 9, 30),
+            st(3, d, 10, 0),
+            en(4, d, 11, 0),
+            en(5, d, 11, 30),
+            en(6, d, 12, 0),
+        ]);
+        let lines = a.detail_lines();
+        assert_eq!(lines.len(), 6);
+        for chunk in lines.chunks(2) {
+            assert!(chunk[0].starts_with("[!] overlapping stints"));
+            assert!(chunk[1].starts_with("    fix: mlm delete punch"));
+        }
+    }
+
+    #[test]
+    fn block_order_puts_overlap_between_e8_and_refused_joins() {
+        let pair = nested_fixture().overlaps[0];
+        let a = DateAnomalies {
+            date: past(),
+            open_stint_count: 2,
+            latest_open_start: Some(t(14, 0)),
+            orphaned_end_times: vec![t(10, 0)],
+            stale_open_start: Some(StaleOpenStart {
+                time: t(9, 0),
+                age_days: 5,
+            }),
+            refused_join_with_previous: Some(past().pred_opt().unwrap()),
+            refused_join_with_next: Some(past().succ_opt().unwrap()),
+            overlaps: vec![pair],
+            latest_open_next: None,
+        };
+        let lines = a.detail_lines();
+        let heads: Vec<&str> = lines
+            .iter()
+            .filter(|l| l.starts_with("[!]"))
+            .map(|l| &l[..l.len().min(14)])
+            .collect();
+        assert_eq!(
+            heads,
+            vec![
+                "[!] 2 open sti",
+                "[!] unclosed s",
+                "[!] orphaned e",
+                "[!] overlappin",
+                "[!] not joined",
+                "[!] not joined",
+            ]
+        );
+        assert!(lines.iter().all(|l| l.is_ascii()));
+    }
+
+    #[test]
+    fn overlap_only_fact_marks_the_row() {
+        let a = DateAnomalies {
+            overlaps: nested_fixture().overlaps,
+            ..DateAnomalies::none(past())
+        };
+        assert!(a.has_any());
+        assert_eq!(a.row_marker(), "  [!]");
+    }
+
+    #[test]
+    fn has_any_matches_block_for_overlap_fixtures() {
+        let d = past();
+        let cases = [
+            nested_fixture(),
+            past_facts(&[
+                st(1, d, 9, 0),
+                en(2, d, 10, 0),
+                st(3, d, 10, 0),
+                en(4, d, 11, 0),
+            ]),
+            past_facts(&[st(1, d, 9, 0), st(2, d, 10, 0), en(3, d, 11, 0)]),
+        ];
+        for a in cases {
+            assert_eq!(a.has_any(), !a.detail_lines().is_empty(), "{a:?}");
+        }
+    }
+
+    // ---- clean-pair stop hints ----
+
+    fn fix_line(a: &DateAnomalies) -> String {
+        a.detail_lines()
+            .into_iter()
+            .find(|l| l.contains("mlm stop HH:MM"))
+            .expect("a stop hint line")
+    }
+
+    fn stale_fixture() -> Vec<Punch> {
+        let d = past();
+        vec![st(1, d, 9, 0), st(2, d, 10, 0), en(3, d, 10, 30)]
+    }
+
+    fn e7_fixture() -> Vec<Punch> {
+        let d = past();
+        vec![
+            st(1, d, 9, 0),
+            st(2, d, 14, 0),
+            st(3, d, 15, 0),
+            en(4, d, 15, 30),
+        ]
+    }
+
+    #[test]
+    fn stale_without_later_punch_is_unchanged() {
+        let a = past_facts(&[st(1, past(), 9, 0)]);
+        assert_eq!(
+            fix_line(&a),
+            "    fix: mlm stop HH:MM --date 2026-02-01  (a time after 09:00)"
+        );
+        assert_eq!(a.latest_open_next, None);
+    }
+
+    #[test]
+    fn stale_with_later_punches_names_the_window() {
+        let a = past_facts(&stale_fixture());
+        assert_eq!(
+            fix_line(&a),
+            "    fix: mlm stop HH:MM --date 2026-02-01  (a time between 09:00 and 10:00)"
+        );
+    }
+
+    #[test]
+    fn window_ends_at_the_first_later_punch_of_any_kind() {
+        let d = past();
+        let a = past_facts(&[
+            st(1, d, 9, 0),
+            st(2, d, 11, 0),
+            en(3, d, 11, 30),
+            st(4, d, 10, 0),
+            en(5, d, 10, 15),
+        ]);
+        assert_eq!(a.latest_open_next, Some(t(10, 0)));
+        assert!(fix_line(&a).ends_with("(a time between 09:00 and 10:00)"));
+    }
+
+    #[test]
+    fn punch_at_the_starts_own_minute_does_not_count() {
+        let d = past();
+        let a = past_facts(&[st(1, d, 9, 0), st(2, d, 9, 0)]);
+        assert_eq!(a.latest_open_next, None);
+        assert_eq!(
+            fix_line(&a),
+            "     or: mlm stop HH:MM --date 2026-02-01  (a time after 09:00 closes the 09:00 start)"
+        );
+    }
+
+    #[test]
+    fn clean_day_has_no_latest_open_next() {
+        let d = past();
+        let a = past_facts(&[st(1, d, 9, 0), en(2, d, 17, 0)]);
+        assert_eq!(a.latest_open_next, None);
+    }
+
+    #[test]
+    fn e7_without_later_punch_is_unchanged() {
+        let d = past();
+        let a = past_facts(&[st(1, d, 9, 0), st(2, d, 14, 0)]);
+        assert_eq!(
+            fix_line(&a),
+            "     or: mlm stop HH:MM --date 2026-02-01  (a time after 14:00 closes the 14:00 start)"
+        );
+    }
+
+    #[test]
+    fn e7_with_later_punch_names_the_window() {
+        let a = past_facts(&e7_fixture());
+        assert_eq!(
+            fix_line(&a),
+            "     or: mlm stop HH:MM --date 2026-02-01  (a time between 14:00 and 15:00 closes the 14:00 start)"
+        );
+    }
+
+    // ---- follow-the-hint round trips ----
+
+    fn with_end(base: Vec<Punch>, h: u32, m: u32) -> DateAnomalies {
+        let mut day = base;
+        day.push(en(99, past(), h, m));
+        past_facts(&day)
+    }
+
+    #[test]
+    fn stale_hint_window_never_creates_an_overlap() {
+        for (h, m) in [(9, 1), (9, 30), (10, 0)] {
+            let a = with_end(stale_fixture(), h, m);
+            assert!(a.overlaps.is_empty(), "end {h}:{m} gave {a:?}");
+        }
+    }
+
+    #[test]
+    fn e7_hint_window_never_creates_an_overlap() {
+        for (h, m) in [(14, 1), (14, 30), (15, 0)] {
+            let a = with_end(e7_fixture(), h, m);
+            assert!(a.overlaps.is_empty(), "end {h}:{m} gave {a:?}");
+        }
+    }
+
+    #[test]
+    fn adjacent_minute_window_holds() {
+        let d = past();
+        let base = vec![st(1, d, 18, 2), st(2, d, 18, 3), en(3, d, 18, 30)];
+        let a = past_facts(&base);
+        assert!(fix_line(&a).contains("between 18:02 and 18:03"));
+        assert!(with_end(base, 18, 3).overlaps.is_empty());
+    }
+
+    #[test]
+    fn a_stop_after_the_window_creates_the_overlap() {
+        let a = with_end(e7_fixture(), 16, 0);
+        assert_eq!(a.overlaps.len(), 1);
     }
 }
