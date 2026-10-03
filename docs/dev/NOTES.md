@@ -3,6 +3,36 @@
 Running log of background/story before formal spec exists. Not a spec —
 decisions here can (will) change. Formal spec comes later as its own doc.
 
+## Current state
+
+Read this block at changeset start, not the log below. Update it at
+each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
+read only the one you need.
+
+- **Next entry**: 85
+- **Last release**: `v0.3.6`
+- **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
+- **Active changeset**: `live-eod`, phase 2 (spec in user review),
+  branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
+- **Known issues**: SPEC.md §1.2a (the only list; not duplicated here)
+
+Phase 0 profile (`coordinating-development`), set in entry 65:
+
+| Slot | Value |
+|---|---|
+| Verification | `cargo fmt`, `cargo build`, `cargo test`, `cargo clippy --all-targets -- -D warnings`; pre-commit hook adds cognitive complexity ≤ 15 and a coverage ratchet (`coverage-baseline.json`) |
+| Doc root | `docs/dev/` — `SPEC.md`, `NOTES.md`, `specs/`, `plans/`, `plans/reports/` |
+| Decision log | this file, numbered entries |
+| Model tier | Sonnet everywhere; escalation needs in-the-moment approval |
+| Release | `scripts/prep_release.sh` (reversible bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running |
+| Branches | one per changeset, one per task merged `--no-ff` into it, changeset to `main` at release |
+| Changeset id | topic slug, not a number |
+| Spec location | `docs/dev/specs/<date>-<slug>.md` |
+| Plans | `docs/dev/plans/<slug>-plan.md`, `<slug>-task-N-<topic>.md`; reports in `plans/reports/` |
+| Artifact | `cargo build --release` → `target/release/mlm` |
+| User-visible surface | `README.md`, `mlm --help` and subcommand `--help`, `status`/`week`/write-command output |
+| Context-starvation hook | absent |
+
 ## Workflow note (process, not product)
 
 When we get to implementation: use subagents for TDD (write tests first,
@@ -1030,6 +1060,21 @@ SPEC.md and PLAN.md:
     claims this changeset made false. Release not prepared, at the
     user's request; `open-punch-visibility` is not yet merged to
     `main`.
+
+84. **`live-eod` changeset started.** User report from real use
+    2026-10-03: `est. EOD` drifts later while a stint is open, so it
+    can never be reached without `stop`. Root cause is §7.1's
+    `now + (required − fulfillment)` leaving out the open stint's
+    live minutes, which §2.4 already says feed `est. EOD`. User chose
+    to subtract live minutes from the pace hint's `gap` too, so both
+    figures count down together. User also chose to omit EOD for a
+    stale open stint, but today's page only ever pairs today-dated
+    punches, so that case cannot arise and the spec states it as a
+    guarantee. Multiple open starts today use the most recent one's
+    live minutes, which avoids double counting. Phase 0 profile reused
+    from entry 65 unchanged. Baseline `main` at `c9e980b`; branch
+    `live-eod`. Spec `docs/dev/specs/2026-10-03-live-eod.md`. Phase 14
+    runs, because `status` output changes.
 
 ## Open questions (still need answers)
 
