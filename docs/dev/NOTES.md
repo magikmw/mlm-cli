@@ -11,9 +11,9 @@ read only the one you need.
 
 - **Next entry**: 90
 - **Last release**: `v0.3.6`
-- **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, complete on its branch, awaiting release decision (entry 89),
-  branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
+- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
+- **Active changeset**: none (`live-eod` merged to `main`, entry 89;
+  release held for further changes)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
