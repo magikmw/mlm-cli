@@ -12,6 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chrono::{Datelike, NaiveDate};
+
 use crate::date::WeekId;
 
 /// SPEC §2.3 / §6.2: 40h, used when a week has no `week_targets` row.
@@ -241,6 +243,16 @@ pub fn required_minutes(target_minutes: i64, weekday_number: i64) -> i64 {
     } else {
         daily_target_minutes(target_minutes) * weekday_number
     }
+}
+
+/// `(required, gap)` for `today`: `required` is the slice of the target due
+/// by the end of today's weekday, and `gap` is `required - fulfillment`
+/// (positive means still to do). `acct.fulfillment` carries the live minutes
+/// for the current week, so the gap is a point-in-time figure.
+pub fn required_and_gap(acct: &WeekAccounting, today: NaiveDate) -> (i64, i64) {
+    let weekday_number = i64::from(today.weekday().number_from_monday());
+    let required = required_minutes(acct.target, weekday_number);
+    (required, required - acct.fulfillment)
 }
 
 #[cfg(test)]
@@ -705,5 +717,35 @@ mod tests {
                 "carry must keep decreasing, never bottom out at zero"
             );
         }
+    }
+
+    fn acct_with(target: i64, fulfillment: i64) -> WeekAccounting {
+        WeekAccounting {
+            week: wk(2026, 7),
+            target,
+            carry_in: 0,
+            worked: fulfillment,
+            fulfillment,
+            owed: target - fulfillment,
+            carry_out: fulfillment - target,
+        }
+    }
+
+    #[test]
+    fn required_and_gap_midweek_uses_the_weekday_slice() {
+        let thursday = NaiveDate::from_ymd_opt(2026, 2, 12).unwrap();
+        assert_eq!(
+            required_and_gap(&acct_with(2400, 1755), thursday),
+            (1920, 165)
+        );
+    }
+
+    #[test]
+    fn required_and_gap_friday_to_sunday_uses_the_whole_target() {
+        let sunday = NaiveDate::from_ymd_opt(2026, 2, 15).unwrap();
+        assert_eq!(
+            required_and_gap(&acct_with(2011, 2111), sunday),
+            (2011, -100)
+        );
     }
 }

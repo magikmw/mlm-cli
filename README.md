@@ -140,6 +140,21 @@ later:
   live minutes from `Worked`, `Fulfillment` and the headline
 - `status DATE` for a future week reads `Total behind` for the whole
   week's target, though that week has not started
+- A week that started in debt reads more left than the target. With a
+  carry-in of `-28h 00m` and 17h 27m worked, the headline reads `50h 33m
+  left to 40h 00m target`. The left figure is the required figure minus
+  fulfillment, and fulfillment includes the debt. The parenthetical
+  shows the carry-in
+- `mlm week target` prints nothing on success, so a typo such as `0h`
+  for `40h` goes unnoticed. Only the next `status` or `week` shows the
+  new target
+- `mlm week 2026-41 target 20h` (the week id before `target`) fails with
+  the usage of plain `week`, which does not show the right order, `week
+  target [WEEK_ID] DURATION`. `mlm week target --help` lists only
+  `<ARGS>...`, so the shape sits in the description text
+- The `--help` pages define none of fulfillment, `est. EOD`, `incl.
+  ongoing` or the by-end-of-weekday rule. Only this README and the spec
+  explain them
 - The first run against a new database logs a line to stderr (`INFO
   rusqlite_migration ... Database migrated to version 1`) with a UTC
   timestamp. It appears once
@@ -341,9 +356,10 @@ plus any carry-in), worked time and today's day total all count the
 running stint's minutes so far, so they change minute by minute while a
 stint runs. `(incl. ongoing)` flags that the day total includes the
 running stint. On an earlier date's page an open stint is not counted
-and the flag reads `(+ ongoing)`. `est. EOD` is the open start plus the
-time left to reach the required figure, so it holds still until you add
-or remove a punch. When that lands after today, `est. EOD` names the
+and the flag reads `(+ ongoing)`. `est. EOD` is the open start plus (required
+figure minus fulfillment without the running stint's minutes), which
+equals now plus the `left to` figure. It holds still until you add or
+remove a punch. It assumes you keep working without a break. When that lands after today, `est. EOD` names the
 day it falls on. It reads `(tomorrow)` one day out, `(Mon)` two to six
 days out, and `(Mon 2026-10-12)` a week or more out, so a large
 remaining figure can put it days away. `mlm week` for the current week
