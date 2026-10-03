@@ -16,6 +16,8 @@ use std::fmt;
 use chrono::{DateTime, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use rusqlite::Connection;
 
+use crate::date::WeekId;
+
 /// Canonical UTC-instant text format (§2.3/§4.3): always
 /// `2026-09-12T13:05:00Z` — fixed-width, zero-padded, `Z`-suffixed.
 /// `punches_for_date`'s `ORDER BY at_utc` (a lexical comparison on a
@@ -512,6 +514,33 @@ pub fn earliest_data_date(conn: &Connection) -> Result<Option<NaiveDate>, Storag
         Some(s) => Ok(Some(parse_date(&s, "date")?)),
         None => Ok(None),
     }
+}
+
+/// Target overrides for weeks in `[from, to]` inclusive, ascending. Keys
+/// are `YYYY-WW`, so text order is chronological. A stored key that is
+/// not a valid week id is a `CorruptRow`; a legal `0` override is kept.
+pub fn week_targets_in_range(
+    conn: &Connection,
+    from: WeekId,
+    to: WeekId,
+) -> Result<Vec<(WeekId, i64)>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT week_id, target_minutes FROM week_targets \
+         WHERE week_id BETWEEN ?1 AND ?2 ORDER BY week_id ASC",
+    )?;
+    let rows = stmt.query_map((from.to_key(), to.to_key()), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (key, minutes) = row?;
+        let week = WeekId::from_key(&key).map_err(|_| StorageError::CorruptRow {
+            column: "week_id",
+            value: key,
+        })?;
+        out.push((week, minutes));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1338,6 +1367,81 @@ mod tests {
         assert!(matches!(insert_err, Err(StorageError::Db(_))));
         let read_err = notes_for_date(&conn, d(2026, 1, 1));
         assert!(matches!(read_err, Err(StorageError::Db(_))));
+    }
+
+    fn wk(y: i32, w: u32) -> WeekId {
+        WeekId::new(y, w, "test").expect("test fixture is a real ISO week")
+    }
+
+    fn put_target(conn: &Connection, key: &str, minutes: i64) {
+        conn.execute(
+            "INSERT INTO week_targets (week_id, target_minutes) VALUES (?1, ?2)",
+            (key, minutes),
+        )
+        .expect("insert target");
+    }
+
+    #[test]
+    fn week_targets_in_range_returns_only_rows_in_range_ascending() {
+        let conn = test_db();
+        put_target(&conn, "2026-09", 1200);
+        put_target(&conn, "2026-05", 600);
+        put_target(&conn, "2026-07", 1800);
+        put_target(&conn, "2025-52", 100);
+        put_target(&conn, "2026-12", 200);
+
+        let rows = week_targets_in_range(&conn, wk(2026, 5), wk(2026, 9)).expect("read");
+        assert_eq!(
+            rows,
+            vec![(wk(2026, 5), 600), (wk(2026, 7), 1800), (wk(2026, 9), 1200)]
+        );
+    }
+
+    #[test]
+    fn week_targets_in_range_keeps_a_legal_zero_override() {
+        let conn = test_db();
+        put_target(&conn, "2026-07", 0);
+        let rows = week_targets_in_range(&conn, wk(2026, 7), wk(2026, 7)).expect("read");
+        assert_eq!(rows, vec![(wk(2026, 7), 0)]);
+    }
+
+    #[test]
+    fn week_targets_in_range_is_empty_for_an_empty_range_or_table() {
+        let conn = test_db();
+        assert!(
+            week_targets_in_range(&conn, wk(2026, 1), wk(2026, 9))
+                .expect("read")
+                .is_empty()
+        );
+        put_target(&conn, "2026-07", 1800);
+        assert!(
+            week_targets_in_range(&conn, wk(2026, 9), wk(2026, 5))
+                .expect("read")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn week_targets_in_range_reports_a_corrupt_key() {
+        let conn = test_db();
+        put_target(&conn, "2026-1x", 1800);
+        let err = week_targets_in_range(&conn, wk(2026, 1), wk(2026, 52));
+        assert!(matches!(
+            err,
+            Err(StorageError::CorruptRow {
+                column: "week_id",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn week_targets_in_range_propagates_a_db_error() {
+        let conn = test_db();
+        conn.execute("DROP TABLE week_targets", [])
+            .expect("drop table");
+        let err = week_targets_in_range(&conn, wk(2026, 1), wk(2026, 9));
+        assert!(matches!(err, Err(StorageError::Db(_))));
     }
 
     // X2
