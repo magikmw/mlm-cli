@@ -55,11 +55,11 @@ Stints spanning midnight, and a same-instant `end`/`start` boundary
 between two real stints, were both non-goals through this point in the
 project's history — both are now fixed; see §4.3.
 
-### 1.2a Known issues to revisit
+### 1.2a Possible issues to revisit
 
 Shipped, working-as-designed behavior that's rough or confusing, not
 committed to a fix. Kept separate from §1.2: a non-goal isn't built
-yet, a known issue works but has a rough edge.
+yet, a possible issue works but has a rough edge.
 
 - An unclosed start more than 14 days old shows only on its own date's
   `status` and its own `week` row. Today's `status` and `mlm start`
@@ -122,19 +122,36 @@ yet, a known issue works but has a rough edge.
 - `est. EOD` means "when this open stint closes the gap". Once a stint
   runs past it, `status` prints `target already met` and no clock time.
   A break (`stop`, then `start`) moves it later by the break's length.
-- `est. EOD` is fixed per stint, so its `(tomorrow)` suffix shows from
+- `est. EOD` is fixed per stint, so its day suffix (§7.1) shows from
   the first `status` after the `start` and never flips while working.
+  A large remaining figure puts it days out, e.g. `est. EOD 06:20
+  (Mon)`, from the first `status` on.
 - A `start` typed for a time later than now makes `est. EOD` project
   from that start (§7.1). It sits more than the hint's `left to` figure
   ahead of the clock, while the hint does not count down.
 - Two or more open starts today show every open stint with its own
   duration, but the hint and `est. EOD` credit only the most recent
   one (§7.1). Fixing the E7 anomaly makes both jump.
+- With two open starts today, the `fix:` and `or:` lines suggest only a
+  `stop` after the later start. A `stop` between the two starts also
+  works: it pairs with the earlier start and leaves the later one open.
 - A stint started yesterday and still open after midnight is not on
   today's page, so it gets no live credit and no `est. EOD`. At 00:00
   the hint jumps, because `required` steps up a weekday while `live`
   drops to 0. This shares a root with the invisible yesterday's open
   session above.
+- From Friday on, `required` equals the week's full target, so the pace
+  hint and `est. EOD` treat the whole week as due today. With little
+  worked, `est. EOD` can land days away, e.g. `est. EOD 06:00 (Mon)`.
+- A `start` typed for a time later than now is accepted without a
+  warning and counts as an open stint before it begins, so the stint
+  list shows `HH:MM-now (00h 00m, ongoing)`. A mistyped time is not
+  flagged.
+- `status DATE` for a future week reads `Total behind` for the whole
+  week's target, though that week has not started.
+- The first run against a new database logs a line to stderr, e.g.
+  `[2026-10-03T15:32:57Z INFO  rusqlite_migration] Database migrated to
+  version 1`, with a UTC timestamp. It appears once.
 - On Monday through Thursday, the pace hint's `required by end of
   <weekday>` always names *today's* own weekday, since `required` is
   only ever prorated up to and including today. `required today` would
@@ -277,12 +294,12 @@ the default target (40h = 2400 minutes).
   to the floor, same as any other day's `daily target`, so a Sat/Sun
   `required` can sit a few minutes under the full target in that case.
   Compared against the week's **fulfillment**
-  (`carry_in + worked`, §2.4 above) less the running stint's live
-  minutes (§7.1) — i.e. carry-in *does*
-  count here, same fulfillment figure the week-level `owed` uses, just
-  measured against a smaller, day-scoped slice of the target instead
-  of the whole week. Used for the "X left to/over `<required>`
-  required by end of `<weekday>`" and estimated-EOD figures (§7.1).
+  (`carry_in + worked`, §2.4 above), the same figure the week-level
+  `owed` uses, less the running stint's live minutes (§7.1) — i.e.
+  carry-in *does* count here, just measured against a smaller,
+  day-scoped slice of the target instead of the whole week. Used for
+  the "X left to/over `<required>` required by end of `<weekday>`" and
+  estimated-EOD figures (§7.1).
 
 ## 3. CLI surface
 
@@ -696,59 +713,62 @@ zero.
   differently from a live one.
 - "X left to `<required>` required by end of `<weekday>`" (fulfillment
   less live minutes under `required`) or "X over `<required>` required
-  by end of `<weekday>`" (fulfillment less live minutes at/above it) is a **display-only pace
-  hint** (§2.4), not a stored/independent target: `required = daily
-  target × min(today's ISO weekday number, 5)`, always derived, never
-  overridden on its own. `gap = required − fulfillment − live`
-  (`carry_in + worked`, the same fulfillment the week line's `owed`
-  uses, §2.4/§5) — carry-in counts here, unlike the day-total figure
-  it's compared next to. `live` is the whole minutes from the most
-  recent open start dated today to now, clamped at 0, and 0 when no
+  by end of `<weekday>`" (fulfillment less live minutes at/above it) is
+  a **display-only pace hint** (§2.4), not a stored/independent target:
+  `required = daily target × min(today's ISO weekday number, 5)`, always
+  derived, never overridden on its own. `gap = required − fulfillment −
+  live` (`carry_in + worked`, the same fulfillment the week line's
+  `owed` uses, §2.4/§5) — carry-in counts here, unlike the day-total
+  figure it's compared next to. `live` is the whole minutes from the
+  most recent open start dated today to now, clamped at 0, and 0 when no
   stint is open. An open start from an earlier date never counts, and
   with two or more open starts today only the most recent one counts
-  (summing them would count the same minutes twice). `live` never
-  enters the week line's `owed` or any stored or carried figure. `X` is always `gap`'s absolute value; which of the
-  two words prints is what carries the sign — a word switch, not an
-  inline `-` (matching decision 18's closed-week "Total behind" /
-  "Total ahead" split, §7.2, rather than §4.2's bare-signed-number
-  convention used elsewhere). `gap == 0` counts as "left to" (X =
-  `00h 00m`), matching every other "reached exactly" case in this
-  spec. This gap is driven by *fulfillment*, not by the "Day total"
-  figure printed right before it on the same line —
+  (summing them would count the same minutes twice). `live` never enters
+  the week line's `owed` or any stored or carried figure. `X` is always
+  `gap`'s absolute value; which of the two words prints is what carries
+  the sign — a word switch, not an inline `-` (matching decision 18's
+  closed-week "Total behind" / "Total ahead" split, §7.2, rather than
+  §4.2's bare-signed-number convention used elsewhere). `gap == 0`
+  counts as "left to" (X = `00h 00m`), matching every other "reached
+  exactly" case in this spec. This gap is driven by *fulfillment*, not
+  by the "Day total" figure printed right before it on the same line —
   the two can point opposite directions mid-day (e.g. day total still
   climbing while the pace hint is already deep negative because of a
   large carry-in), and that's expected: day total is "today, in
-  isolation," the pace hint is "today's slice of the whole week's
-  math." On Friday, Saturday, and Sunday — the three days on which
-  `required` has already plateaued at the week's full target
+  isolation," the pace hint is "today's slice of the whole week's math."
+  On Friday, Saturday, and Sunday — the three days on which `required`
+  has already plateaued at the week's full target
   (`weekday_number.min(5) == 5`) — this trailing phrase drops the
-  weekday name entirely and reads `required today` in place of
-  `required by end of <weekday>`. On those three days the week line
-  directly above names that same weekday and the same figure while
-  the week is still owed, though once the week has gone ahead of
-  target the week line names no weekday at all (below) — the pace
-  hint's own `required today` wording doesn't depend on which of
-  those two forms the week line takes. Monday through Thursday render
-  `required by end of <weekday>` unchanged.
+  weekday name entirely and reads `required today` in place of `required
+  by end of <weekday>`. On those three days the week line directly above
+  names that same weekday and the same figure while the week is still
+  owed, though once the week has gone ahead of target the week line
+  names no weekday at all (below) — the pace hint's own `required today`
+  wording doesn't depend on which of those two forms the week line
+  takes. Monday through Thursday render `required by end of <weekday>`
+  unchanged.
 - **Estimated EOD** (`est. EOD HH:MM`) appears only when today has an
   open stint: it's `open start + (required − fulfillment)`, i.e. the
   clock time at which this open stint closes the gap, so it stays the
-  same on every read while the stint runs and moves only when a punch
-  is added or removed. For a start at or before now this equals
-  `now + gap`, with `gap` the post-live figure above. The open start is
-  the most recent open start dated today. A start typed for a time
-  later than now has `live` 0, so the hint equals the no-stint figure,
-  and `est. EOD` projects from that start's own time. Omitted entirely
-  when there's no open stint (nothing to project from) or replaced with
+  same on every read while the stint runs and moves only when a punch is
+  added or removed. For a start at or before now this equals `now +
+  gap`, with `gap` the post-live figure above. The open start is the
+  most recent open start dated today. A start typed for a time later
+  than now has `live` 0, so the hint equals the no-stint figure, and
+  `est. EOD` projects from that start's own time. Omitted entirely when
+  there's no open stint (nothing to project from) or replaced with
   `target already met` when the gap is already zero or negative. When
-  the projected time lands on a later calendar date than today — a
-  large enough `required − fulfillment` to cross midnight — the line
-  gains a literal ` (tomorrow)` suffix after the clock time, e.g.
-  `est. EOD 01:15 (tomorrow)`, so the time can't be misread as landing
-  before midnight tonight. The marker is always the bare word
-  `(tomorrow)`, never a weekday name or calendar date, even when the
-  projection crosses more than one midnight — an accepted imprecision
-  past one day out, not a bug.
+  the projected time lands on a later calendar date than today, the line
+  gains a day suffix after the clock time, so the time can't be misread
+  as landing before midnight tonight. The suffix depends on how many
+  days later it lands, and the weekday abbreviation matches the
+  header's:
+  - today: no suffix, e.g. `est. EOD 17:30`
+  - 1 day later: ` (tomorrow)`, e.g. `est. EOD 01:15 (tomorrow)`
+  - 2–6 days later: ` (<weekday abbrev>)`, e.g. `est. EOD 06:20
+    (Mon)`
+  - 7 or more days later: ` (<weekday abbrev> <YYYY-MM-DD>)`, e.g.
+    `est. EOD 06:20 (Mon 2026-10-12)`
 - Week line reports the week containing `DATE` (§3.5), and its
   framing follows the same ongoing-vs-not split as `mlm week` (§7.2):
   for the actual currently-ongoing week, `"<owed>" left by end of
@@ -1082,9 +1102,10 @@ or less directly.
   a skip straight from N to N+2.
 - **F9** — Estimated EOD, all three states: open stint with quota
   remaining (shows a clock time), open stint with quota already met
-  (shows `target already met`), no open stint (line omitted). Stability: with the same punches, two
-  `status` runs at different `now`s (e.g. 30 minutes apart) print the
-  same `est. EOD` while the pace hint drops by the minutes elapsed.
+  (shows `target already met`), no open stint (line omitted). Stability:
+  with the same punches, two `status` runs at different `now`s (e.g. 30
+  minutes apart) print the same `est. EOD` while the pace hint drops by
+  the minutes elapsed.
 - **F9b** — Pace hint with a large carry-in: seed a week with a
   carry-in big enough that `required − fulfillment` is already
   negative on day 1 despite day total being small/zero; confirm the
