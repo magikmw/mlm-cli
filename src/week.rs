@@ -17,23 +17,25 @@ use crate::date::WeekId;
 /// SPEC §2.3 / §6.2: 40h, used when a week has no `week_targets` row.
 pub const DEFAULT_WEEK_TARGET_MINUTES: i64 = 2400;
 
-/// A source of per-week completed-stint totals.
+/// A source of per-week worked-minute totals.
 ///
-/// Implementations MUST report **completed stints only** (SPEC §2.4,
-/// NOTES decisions 37/38): an open stint's live minutes and an orphaned
-/// `end` contribute nothing here. This module consumes whatever number it
-/// is handed and never inspects punches itself, so a source that helpfully
-/// folded in live minutes would make every carry figure silently wrong and
-/// no test in this module would catch it. Assert that rule at the
-/// integration seam (PLAN.md contract 10's wave-3 adapter).
+/// Stored data and every past week report **completed stints only**
+/// (SPEC §2.4): an orphaned `end` contributes nothing, and nothing live is
+/// ever written to the database. Live minutes enter only for the current
+/// week, added by the integration seam that implements this trait, so that
+/// the current week's fulfillment and every later week's carry-in reflect
+/// the running stint. This module consumes whatever number it is handed and
+/// never inspects punches itself, so a source that folded live minutes into
+/// a past week would make every carry figure silently wrong and no test in
+/// this module would catch it.
 pub trait WeekData {
     /// The earliest ISO week with any punch or note data, or `None` when
     /// there is no data at all.
     fn earliest_data_week(&self) -> Option<WeekId>;
 
-    /// Total completed-stint minutes recorded in `week`. `0` for a week
-    /// with no data — never an error, never an `Option` (SPEC §6.2: an
-    /// empty week is valid).
+    /// Total worked minutes in `week`: completed stints, plus live minutes
+    /// when `week` is the current week. `0` for a week with no data, never
+    /// an error, never an `Option` (SPEC §6.2: an empty week is valid).
     fn worked_minutes(&self, week: WeekId) -> i64;
 }
 
@@ -64,7 +66,8 @@ pub struct WeekAccounting {
     pub target: i64,
     /// The previous week's `carry_out`; `0` for the first week of the walk.
     pub carry_in: i64,
-    /// Completed-stint minutes for this week (NOTES 37/38).
+    /// Worked minutes for this week: completed stints, plus live minutes
+    /// for the current week.
     pub worked: i64,
     /// `worked + carry_in`.
     pub fulfillment: i64,
@@ -212,8 +215,8 @@ pub fn week_accounting(
         .expect("week_series is never empty")
 }
 
-/// The `status`-only daily pace hint: the week's target divided by 5,
-/// floored to the minute (SPEC §2.4 / §7.1, NOTES decision 17).
+/// The week's target divided by 5, floored to the minute (SPEC §2.4,
+/// NOTES decision 17). One weekday's slice of the target.
 ///
 /// Purely derived from the target — no override, no storage, no
 /// interaction with carry.
@@ -224,6 +227,20 @@ pub fn week_accounting(
 /// "floor", so this writes floor. Do not "simplify" it back to `/`.
 pub fn daily_target_minutes(week_target_minutes: i64) -> i64 {
     week_target_minutes.div_euclid(5)
+}
+
+/// The slice of `target_minutes` due by the end of the weekday numbered
+/// `weekday_number` (Monday = 1 through Sunday = 7).
+///
+/// Monday to Thursday it is `daily_target_minutes(target) * weekday_number`.
+/// Friday to Sunday it is the whole target, so the figure never sits under
+/// a target that is not a multiple of 5 minutes (SPEC §2.4).
+pub fn required_minutes(target_minutes: i64, weekday_number: i64) -> i64 {
+    if weekday_number >= 5 {
+        target_minutes
+    } else {
+        daily_target_minutes(target_minutes) * weekday_number
+    }
 }
 
 #[cfg(test)]
@@ -267,6 +284,33 @@ mod tests {
     #[test]
     fn daily_target_of_a_zero_target_week_is_zero() {
         assert_eq!(daily_target_minutes(0), 0);
+    }
+
+    // ---- required-by-end-of-today (SPEC §2.4) ----
+
+    #[test]
+    fn required_is_floor_fifth_times_weekday_monday_to_thursday() {
+        assert_eq!(required_minutes(2400, 1), 480);
+        assert_eq!(required_minutes(2400, 2), 960);
+        assert_eq!(required_minutes(2400, 3), 1440);
+        assert_eq!(required_minutes(2400, 4), 1920);
+        assert_eq!(required_minutes(2011, 4), 402 * 4);
+    }
+
+    #[test]
+    fn required_is_the_whole_target_friday_to_sunday() {
+        for weekday in 5..=7 {
+            assert_eq!(required_minutes(2400, weekday), 2400);
+            assert_eq!(required_minutes(2011, weekday), 2011);
+            assert_eq!(required_minutes(0, weekday), 0);
+        }
+    }
+
+    #[test]
+    fn required_of_a_zero_target_week_is_zero_every_day() {
+        for weekday in 1..=7 {
+            assert_eq!(required_minutes(0, weekday), 0);
+        }
     }
 
     // ---- §7.9 WeekId::next() across year boundaries ----

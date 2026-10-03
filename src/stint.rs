@@ -28,8 +28,8 @@ pub struct Stint {
 pub struct OpenStint {
     pub start: Punch,
     /// Whole minutes from `start.at_utc` to the supplied `now`, clamped at 0.
-    /// Live figure — SPEC.md §2.4 forbids it from entering any day/week/carry
-    /// total.
+    /// Live figure. It counts toward the current week's displayed totals
+    /// (see `DayStints::live_minutes`) and is never stored.
     pub minutes_so_far: i64,
 }
 
@@ -56,7 +56,7 @@ pub enum Anomaly {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DayStints {
     /// Completed stints, ascending by `end` instant (emission order). The
-    /// only source of worked minutes (§2.4).
+    /// only source of stored worked minutes (§2.4).
     pub completed: Vec<Stint>,
     /// Trailing unmatched starts, ascending by start instant. len 0 = nothing
     /// open; len 1 = the ordinary open stint (not an anomaly); len >= 2 = E7.
@@ -103,10 +103,18 @@ impl DayStints {
         out
     }
 
-    /// Sum of completed stint minutes: the day total. Excludes open-stint live
-    /// time and orphaned ends by construction (§2.4).
+    /// Sum of completed stint minutes. Excludes open-stint live time and
+    /// orphaned ends by construction. This is the stored, carry-safe figure.
+    /// Today's displayed day total adds `live_minutes()` on top of it.
     pub fn completed_minutes(&self) -> i64 {
         self.completed.iter().map(|s| s.minutes).sum()
+    }
+
+    /// Whole minutes of the most recent open start so far, clamped at 0.
+    /// Zero when no stint is open. Only the latest open start counts when
+    /// several are open.
+    pub fn live_minutes(&self) -> i64 {
+        self.open.last().map_or(0, |o| o.minutes_so_far)
     }
 
     /// True when at least one stint is open — distinct from `has_anomaly()`.
@@ -452,6 +460,32 @@ mod tests {
             .iter()
             .map(|s| (s.start.at_utc, s.end.at_utc, s.minutes))
             .collect()
+    }
+
+    // --- live_minutes: the most recent open start's minutes so far ------
+
+    #[test]
+    fn live_minutes_is_zero_with_no_open_stint() {
+        let d = classify(&[p(1, "09:00", Start), p(2, "10:00", End)], at("12:00"));
+        assert_eq!(d.live_minutes(), 0);
+    }
+
+    #[test]
+    fn live_minutes_is_the_open_start_minutes_so_far() {
+        let d = classify(&[p(1, "09:00", Start)], at("09:30"));
+        assert_eq!(d.live_minutes(), 30);
+    }
+
+    #[test]
+    fn live_minutes_uses_only_the_most_recent_of_two_open_starts() {
+        let d = classify(&[p(1, "09:00", Start), p(2, "09:20", Start)], at("09:30"));
+        assert_eq!(d.live_minutes(), 10);
+    }
+
+    #[test]
+    fn live_minutes_clamps_a_future_start_at_zero() {
+        let d = classify(&[p(1, "10:00", Start)], at("09:30"));
+        assert_eq!(d.live_minutes(), 0);
     }
 
     // --- T1..T3b: the happy path (F1, F2, F3) ---------------------------

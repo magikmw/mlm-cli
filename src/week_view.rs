@@ -8,9 +8,8 @@
 //! Milestone 5/6/9, and prints it.
 //!
 //! Landmine notes (plans/reports/milestone-9-review.md):
-//! - `render::week_headline`/`status_week_line` take same-typed adjacent
-//!   `i64` minute parameters; every call site here is written and
-//!   commented to make the argument identity obvious at the call.
+//! - `render::week_headline` takes the whole `WeekAccounting`, so the
+//!   current week's headline here and in `status` come from one function.
 //! - Per-row anomaly detection goes through `render::DateAnomalies`
 //!   exclusively (`has_any()`), never `DayStints::has_anomaly()` /
 //!   `DayStints::anomalies()` directly, even though the latter are public
@@ -44,9 +43,10 @@ const WEEKDAY_ABBREVS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "S
 pub struct WeekRow {
     pub weekday_abbrev: &'static str,
     pub date_display: String,
-    /// Completed-stint minutes only (§2.4, NOTES 37/38). Always >= 0.
+    /// Completed-stint minutes (§2.4), plus the running stint's live
+    /// minutes on today's row only. Always >= 0.
     pub minutes: i64,
-    /// `(ongoing)` marker: an open stint AND this date is today.
+    /// `(incl. ongoing)` marker: an open stint AND this date is today.
     pub is_ongoing: bool,
     /// `[!]` marker, via `render::DateAnomalies::has_any()` exclusively.
     pub has_anomaly: bool,
@@ -54,7 +54,8 @@ pub struct WeekRow {
 
 /// Everything `render_week` needs, and nothing it can compute itself
 /// (plan §2.1). `owed` is deliberately absent: the headline already
-/// states it, so the renderer cannot accidentally re-render it.
+/// states the week's standing, so the renderer cannot accidentally
+/// re-render it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WeekView {
     pub week_id_display: String,
@@ -89,7 +90,7 @@ pub fn render_week(view: &WeekView) -> String {
         out.push_str("   ");
         out.push_str(&format_minutes(row.minutes));
         if row.is_ongoing {
-            out.push_str(" (ongoing)");
+            out.push_str(" (incl. ongoing)");
         }
         if row.has_anomaly {
             out.push_str("  [!]");
@@ -168,7 +169,7 @@ fn build_rows(
         WeekRow {
             weekday_abbrev: WEEKDAY_ABBREVS[i],
             date_display: format_date(date),
-            minutes: day.completed_minutes(),
+            minutes: day.completed_minutes() + if date == today { day.live_minutes() } else { 0 },
             is_ongoing: day.is_ongoing() && date == today,
             has_anomaly: anomalies.has_any(),
         }
@@ -250,8 +251,10 @@ fn refused_join_neighbor(
 
 /// `WeekData`/`WeekTargets` adapter over live storage (contract 4/10's
 /// wave-3 integration seam, done here since Milestone 6 declares the
-/// traits but not this binding). `now_utc` is injected, never read from a
-/// system clock inside this module.
+/// traits but not this binding). `now_utc` and `today` are injected, never
+/// read from a system clock inside this module. `today` is the local date
+/// whose running stint counts as live. Only the week containing it gets
+/// live minutes, matching the rows `build_rows` builds.
 ///
 /// Both trait methods collapse a storage/DB error to "no data" rather
 /// than propagating `Result` (the traits are infallible by design) —
@@ -261,6 +264,7 @@ fn refused_join_neighbor(
 struct DbWeekData<'a> {
     conn: &'a Connection,
     now_utc: DateTime<Utc>,
+    today: NaiveDate,
 }
 
 impl WeekData for DbWeekData<'_> {
@@ -294,8 +298,13 @@ impl WeekData for DbWeekData<'_> {
                     .succ_opt()
                     .and_then(|d| by_date.get(&d).cloned())
                     .unwrap_or_default();
-                stint::classify_at(&prev_bucket, &bucket, &next_bucket, self.now_utc)
-                    .completed_minutes()
+                let day = stint::classify_at(&prev_bucket, &bucket, &next_bucket, self.now_utc);
+                day.completed_minutes()
+                    + if date == self.today {
+                        day.live_minutes()
+                    } else {
+                        0
+                    }
             })
             .sum()
     }
@@ -324,12 +333,14 @@ pub fn build_week_view(
         storage::punches_in_range(conn, start.pred_opt().unwrap(), end.succ_opt().unwrap())?;
     let rows = build_rows(dates, &punches, today, now_utc);
 
-    let data = DbWeekData { conn, now_utc };
+    let data = DbWeekData {
+        conn,
+        now_utc,
+        today,
+    };
     let acct = week::week_accounting(week, &data, &data);
 
-    // `week_headline(week, owed_minutes, today)` — argument order matters
-    // (landmine 1): `owed` here, never `fulfillment`/`target`.
-    let headline = render::week_headline(week, acct.owed, today);
+    let headline = render::week_headline(&acct, today);
 
     Ok(WeekView {
         week_id_display: week.to_string(),
@@ -407,7 +418,7 @@ mod tests {
             week_id_display: "2026-07".to_string(),
             span_start_display: "2026-02-09".to_string(),
             span_end_display: "2026-02-15".to_string(),
-            headline: "10h 45m left by end of Thursday".to_string(),
+            headline: "02h 45m left to 32h 00m by end of Thursday".to_string(),
             rows,
             carry_in_minutes: -130,
             worked_minutes: 1885,
@@ -444,12 +455,12 @@ mod tests {
     const EXAMPLE_A_GOLDEN: &str = "\
 Week 2026-07 (2026-02-09 - 2026-02-15)
 
-10h 45m left by end of Thursday
+02h 45m left to 32h 00m by end of Thursday
 
   Mon 2026-02-09   08h 10m
   Tue 2026-02-10   07h 50m
   Wed 2026-02-11   08h 00m
-  Thu 2026-02-12   07h 25m (ongoing)
+  Thu 2026-02-12   07h 25m (incl. ongoing)
   Fri 2026-02-13   00h 00m
   Sat 2026-02-14   00h 00m
   Sun 2026-02-15   00h 00m
@@ -490,7 +501,10 @@ Target:        40h 00m
     fn a2_ongoing_marker_only_on_thursday_row() {
         let out = render_week(&example_a());
         let lines: Vec<&str> = out.lines().collect();
-        let ongoing_lines: Vec<&&str> = lines.iter().filter(|l| l.contains("(ongoing)")).collect();
+        let ongoing_lines: Vec<&&str> = lines
+            .iter()
+            .filter(|l| l.contains("(incl. ongoing)"))
+            .collect();
         assert_eq!(ongoing_lines.len(), 1);
         assert!(ongoing_lines[0].contains("Thu 2026-02-12"));
     }
@@ -540,7 +554,7 @@ Target:        40h 00m
             target_minutes: 2400,
         };
         let out = render_week(&view);
-        assert!(!out.contains("(ongoing)"));
+        assert!(!out.contains("ongoing"));
         assert!(out.contains("Target:        40h 00m"));
         assert_eq!(out.lines().count(), 16);
     }
@@ -590,7 +604,7 @@ Target:        40h 00m
         let mut view = example_a();
         view.rows[3].has_anomaly = true; // Thu, already ongoing
         let out = render_week(&view);
-        assert!(out.contains("07h 25m (ongoing)  [!]"));
+        assert!(out.contains("07h 25m (incl. ongoing)  [!]"));
     }
 
     // A8
@@ -803,9 +817,9 @@ Target:        40h 00m
         assert!(!sun_row.has_anomaly);
     }
 
-    // B3
+    // B3: today's row adds the running stint's live minutes.
     #[test]
-    fn b3_completed_stints_only_totals() {
+    fn b3_today_row_includes_live_minutes() {
         use PunchKind::{End, Start};
         let today = d(2026, 2, 12);
         let punches = vec![
@@ -817,8 +831,24 @@ Target:        40h 00m
         ];
         let rows = build_rows(week_dates(), &punches, today, now_utc(2026, 2, 12, 18, 0));
         let thu = &rows[3];
-        assert_eq!(thu.minutes, 180 + 240);
+        assert_eq!(thu.minutes, 180 + 240 + 15, "17:45 to 18:00 is live");
         assert!(thu.is_ongoing);
+    }
+
+    // B3b: a past date's dangling start gets no live credit.
+    #[test]
+    fn b3b_past_date_open_start_row_gets_no_live() {
+        use PunchKind::Start;
+        let wed = d(2026, 2, 11);
+        let punches = vec![punch(1, wed, (9, 0), Start)];
+        let rows = build_rows(
+            week_dates(),
+            &punches,
+            d(2026, 2, 12),
+            now_utc(2026, 2, 12, 18, 0),
+        );
+        assert_eq!(rows[2].minutes, 0);
+        assert!(!rows[2].is_ongoing);
     }
 
     // B4
@@ -873,7 +903,7 @@ Target:        40h 00m
         let thu = &rows[3];
         assert!(thu.has_anomaly);
         assert!(thu.is_ongoing);
-        assert_eq!(thu.minutes, 0);
+        assert_eq!(thu.minutes, 60, "only the most recent open start is live");
     }
 
     // B7 (E14)
@@ -989,6 +1019,9 @@ Target:        40h 00m
         storage::insert_punch(&conn, Start, dates[2], t(8, 0), &TZ_UTC).unwrap();
         storage::insert_punch(&conn, End, dates[2], t(16, 30), &TZ_UTC).unwrap();
 
+        // A running stint on Sunday, the current day: 18:00 to 20:00 live.
+        storage::insert_punch(&conn, Start, dates[6], t(18, 0), &TZ_UTC).unwrap();
+
         let punches = storage::punches_in_range(&conn, dates[0], dates[6]).unwrap();
         let now = now_utc(2026, 2, 15, 20, 0);
         let rows = build_rows(dates, &punches, d(2026, 2, 15), now);
@@ -997,10 +1030,28 @@ Target:        40h 00m
         let data = DbWeekData {
             conn: &conn,
             now_utc: now,
+            today: d(2026, 2, 15),
         };
         let acct = week::week_accounting(week, &data, &data);
         assert_eq!(row_sum, acct.worked);
-        assert_eq!(row_sum, 480 + 510);
+        assert_eq!(row_sum, 480 + 510 + 120);
+    }
+
+    // B8b: a week that does not contain today gets no live, even through
+    // the same data source.
+    #[test]
+    fn b8b_other_week_worked_gets_no_live() {
+        use PunchKind::Start;
+        let conn = new_test_db();
+        storage::insert_punch(&conn, Start, d(2026, 2, 15), t(18, 0), &TZ_UTC).unwrap();
+        let data = DbWeekData {
+            conn: &conn,
+            now_utc: now_utc(2026, 2, 15, 20, 0),
+            today: d(2026, 2, 15),
+        };
+        assert_eq!(data.worked_minutes(wk(2026, 7)), 120);
+        assert_eq!(data.worked_minutes(wk(2026, 6)), 0);
+        assert_eq!(data.worked_minutes(wk(2026, 8)), 0);
     }
 
     // ---- Group C: resolver / end-to-end ----
@@ -1239,6 +1290,7 @@ Target:        40h 00m
         let data = DbWeekData {
             conn: &conn,
             now_utc: now,
+            today: d(2026, 2, 15),
         };
         let this_week = data.worked_minutes(week);
         assert_eq!(this_week, 480, "padding-day stints must not leak in");
@@ -1264,31 +1316,30 @@ Target:        40h 00m
     fn c10_current_vs_closed_headline_end_to_end() {
         let conn = new_test_db();
         let current = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
-        assert!(current.headline.contains("left by end of Thursday"));
+        assert_eq!(
+            current.headline,
+            "32h 00m left to 32h 00m by end of Thursday"
+        );
 
         let closed = build_week_view(&conn, wk(2026, 6), fixed_now()).unwrap();
         assert!(!closed.headline.contains("Thursday"));
-        assert!(!closed.headline.contains("left by end of"));
+        assert!(!closed.headline.contains("by end of"));
     }
 
-    // Current week whose fulfillment already exceeds target: the bare
-    // headline drops the weekday and reads "ahead of target".
+    // Current week whose fulfillment already exceeds today's required
+    // slice: the headline reads the `over` form, never "ahead of target".
     #[test]
-    fn c10b_current_week_ahead_of_target_end_to_end() {
+    fn c10b_current_week_over_required_end_to_end() {
         let conn = new_test_db();
         week_target::set_week_target(&conn, &wk(2026, 7), 5).unwrap();
         seed_week(&conn, wk(2026, 7), &[((9, 0), (17, 0))], 0);
 
         let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
-        assert!(
-            view.headline.contains("ahead of target"),
-            "{}",
-            view.headline
-        );
-        assert!(!view.headline.contains("Thursday"));
+        // required = floor(5 / 5) * 4 = 4 minutes; fulfillment 480.
+        assert_eq!(view.headline, "07h 56m over 00h 04m by end of Thursday");
 
         let out = render_week(&view);
-        assert!(out.contains("ahead of target"), "{out}");
+        assert!(!out.contains("ahead of target"), "{out}");
     }
 
     // C12
@@ -1301,5 +1352,159 @@ Target:        40h 00m
         for b in out.bytes() {
             assert!(b == b'\n' || (0x20..=0x7E).contains(&b));
         }
+    }
+
+    // ---- point-in-time-week: live-inclusive current week ----
+
+    fn local_punch(conn: &Connection, kind: PunchKind, date: NaiveDate, time: NaiveTime) {
+        storage::insert_punch(conn, kind, date, time, &Local).unwrap();
+    }
+
+    /// Mon-Wed of 2026-07 plus Thursday's two closed stints (1755 minutes
+    /// in all), then a running stint from 17:45.
+    fn seed_running_thursday(conn: &Connection) {
+        use PunchKind::{End, Start};
+        local_punch(conn, Start, d(2026, 2, 9), t(9, 0));
+        local_punch(conn, End, d(2026, 2, 9), t(19, 0));
+        local_punch(conn, Start, d(2026, 2, 10), t(9, 0));
+        local_punch(conn, End, d(2026, 2, 10), t(18, 50));
+        local_punch(conn, Start, d(2026, 2, 11), t(9, 0));
+        local_punch(conn, End, d(2026, 2, 11), t(11, 0));
+        local_punch(conn, Start, d(2026, 2, 12), t(9, 0));
+        local_punch(conn, End, d(2026, 2, 12), t(12, 0));
+        local_punch(conn, Start, d(2026, 2, 12), t(13, 0));
+        local_punch(conn, End, d(2026, 2, 12), t(17, 25));
+        local_punch(conn, Start, d(2026, 2, 12), t(17, 45));
+    }
+
+    #[test]
+    fn pit_current_week_counts_live_in_row_worked_and_fulfillment() {
+        let conn = new_test_db();
+        seed_running_thursday(&conn);
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        // 600 + 590 + 120 + (445 + 15 live).
+        assert_eq!(view.worked_minutes, 1770);
+        assert_eq!(view.fulfillment_minutes, 1770);
+        assert_eq!(view.rows[3].minutes, 460);
+        assert!(view.rows[3].is_ongoing);
+        let row_sum: i64 = view.rows.iter().map(|r| r.minutes).sum();
+        assert_eq!(row_sum, view.worked_minutes);
+        assert_eq!(
+            view.fulfillment_minutes,
+            view.carry_in_minutes + view.worked_minutes
+        );
+        assert_eq!(view.headline, "02h 30m left to 32h 00m by end of Thursday");
+        let out = render_week(&view);
+        assert!(
+            out.contains("  Thu 2026-02-12   07h 40m (incl. ongoing)\n"),
+            "{out}"
+        );
+        assert!(out.contains("Worked:        29h 30m\n"), "{out}");
+        assert!(out.contains("Fulfillment:   29h 30m\n"), "{out}");
+    }
+
+    #[test]
+    fn pit_week_headline_matches_the_status_week_line_headline() {
+        let conn = new_test_db();
+        seed_running_thursday(&conn);
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        let status = crate::status::resolve(None, fixed_now(), &conn).unwrap();
+        assert!(
+            status.week_line.contains(&view.headline),
+            "{} vs {}",
+            status.week_line,
+            view.headline
+        );
+    }
+
+    #[test]
+    fn pit_future_week_carry_in_includes_current_week_live() {
+        let conn = new_test_db();
+        seed_running_thursday(&conn);
+        let view = build_week_view(&conn, wk(2026, 8), fixed_now()).unwrap();
+        // fulfillment 1770 against a 2400 target carries -630.
+        assert_eq!(view.carry_in_minutes, -630);
+        assert_eq!(view.worked_minutes, 0);
+    }
+
+    #[test]
+    fn pit_past_week_output_is_unchanged_by_a_running_stint_today() {
+        use PunchKind::{End, Start};
+        let with_live = new_test_db();
+        let without = new_test_db();
+        for conn in [&with_live, &without] {
+            local_punch(conn, Start, d(2026, 2, 3), t(9, 0));
+            local_punch(conn, End, d(2026, 2, 3), t(17, 0));
+        }
+        local_punch(&with_live, Start, d(2026, 2, 12), t(17, 45));
+        let a = render_week(&build_week_view(&with_live, wk(2026, 6), fixed_now()).unwrap());
+        let b = render_week(&build_week_view(&without, wk(2026, 6), fixed_now()).unwrap());
+        assert_eq!(a, b);
+        assert!(a.contains("Total behind: "), "{a}");
+        assert!(!a.contains("incl. ongoing"), "{a}");
+    }
+
+    #[test]
+    fn pit_yesterday_open_start_earns_no_live() {
+        let conn = new_test_db();
+        local_punch(&conn, PunchKind::Start, d(2026, 2, 11), t(20, 0));
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        assert_eq!(view.worked_minutes, 0);
+        assert!(view.rows.iter().all(|r| !r.is_ongoing));
+    }
+
+    #[test]
+    fn pit_spliced_open_start_earns_no_live() {
+        let conn = new_test_db();
+        local_punch(&conn, PunchKind::Start, d(2026, 2, 12), t(17, 45));
+        local_punch(&conn, PunchKind::End, d(2026, 2, 13), t(0, 30));
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        // The spliced stint (17:45 to 00:30) is completed time on Thursday.
+        assert_eq!(view.rows[3].minutes, 405);
+        assert!(!view.rows[3].is_ongoing);
+        assert_eq!(view.worked_minutes, 405);
+    }
+
+    // The worked example's `mlm week` block, Thursday 18:05.
+    #[test]
+    fn pit_worked_example_week_block() {
+        use PunchKind::{End, Start};
+        let conn = new_test_db();
+        for day in 21..=25 {
+            local_punch(&conn, Start, d(2026, 9, day), t(6, 0));
+            local_punch(&conn, End, d(2026, 9, day), t(15, 23));
+        }
+        for (day, end) in [(28, t(10, 30)), (29, t(10, 40)), (30, t(10, 30))] {
+            local_punch(&conn, Start, d(2026, 9, day), t(6, 0));
+            local_punch(&conn, End, d(2026, 9, day), end);
+        }
+        let thu = d(2026, 10, 1);
+        local_punch(&conn, Start, thu, t(9, 0));
+        local_punch(&conn, End, thu, t(13, 0));
+        local_punch(&conn, Start, thu, t(13, 30));
+        local_punch(&conn, End, thu, t(16, 55));
+        local_punch(&conn, Start, thu, t(17, 25));
+        let now = Local.with_ymd_and_hms(2026, 10, 1, 18, 5, 0).unwrap();
+
+        let view = build_week_view(&conn, wk(2026, 40), now).unwrap();
+        let want = "\
+Week 2026-40 (2026-09-28 - 2026-10-04)
+
+03h 20m left to 32h 00m by end of Thursday
+
+  Mon 2026-09-28   04h 30m
+  Tue 2026-09-29   04h 40m
+  Wed 2026-09-30   04h 30m
+  Thu 2026-10-01   08h 05m (incl. ongoing)
+  Fri 2026-10-02   00h 00m
+  Sat 2026-10-03   00h 00m
+  Sun 2026-10-04   00h 00m
+
+Carry-in:      06h 55m
+Worked:        21h 45m
+Fulfillment:   28h 40m
+Target:        40h 00m
+";
+        assert_eq!(render_week(&view), want);
     }
 }
