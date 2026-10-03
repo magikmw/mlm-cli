@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 86
+- **Next entry**: 87
 - **Last release**: `v0.3.6`
 - **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, phase 5 (spec locked, entry 85),
+- **Active changeset**: `live-eod`, phase 8/11 (plan folded, entry 86),
   branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
 - **Known issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
@@ -1094,6 +1094,20 @@ SPEC.md and PLAN.md:
     output changes for a daily user. Provisional size two tasks
     (code in `status.rs`, docs in SPEC/README), so phases 5-7
     collapse into one short plan and phase 10 is skipped.
+
+86. **`live-eod` plan reviewed and folded**
+    (`docs/dev/plans/reports/live-eod-plan-review.md`,
+    ship-with-followups, 12 findings). Two parallel tasks confirmed:
+    Task 1 owns `src/status.rs`, Task 2 owns SPEC.md and README.md;
+    the reviewer found every `DailyTargetHint`/`gap_minutes`/`EodState`
+    consumer in `status.rs`. F1-F7 folded as a "Review folds" section
+    at the end of the plan. U1-U5 are visible consequences of locked
+    behavior, so they went into spec §1.2 as known issues without
+    changing behavior. The real-clock binary cannot reproduce the
+    pinned sample lines, so Task 1 pins the §7.1 sample in a
+    resolve-level test instead. With one task per file set and a
+    detailed plan, phase 8 task plans are skipped; each implementer
+    plans inside its own dispatch.
 
 ## Open questions (still need answers)
 
