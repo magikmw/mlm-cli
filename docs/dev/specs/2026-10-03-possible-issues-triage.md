@@ -140,6 +140,10 @@ around later stints (§4.3).
 
 - No punch after `S`: the hint reads `(a time after S)`, as today.
 - A punch after `S`: the hint reads `(a time between S and N)`.
+- The window includes `N`'s minute. `N` is always a start, and a stop
+  at the same instant pairs with `S` (§4.3 step 2), so the window holds
+  a legal minute even when `N` is one minute after `S`.
+- Punches at the same minute as `S` do not count as after `S`.
 
 E7 already targets the latest open start, and its hint keeps its
 `closes the S start` tail:
@@ -339,6 +343,22 @@ with the list.
   see one line.
 - `mlm week` exits `1` on a storage read failure where it used to exit
   `0` with default figures.
+- The `[i]` hint shows on today's page only. `status -1` shows
+  yesterday's open start as a stint line with no hint.
+- `mlm start` repeats the yesterday warning on every `start` while
+  that start stays open.
+- At age 1 an open start gets a quiet `[i]` hint. At age 2 it becomes
+  a `[!]` stale anomaly that marks its `mlm week` row and the footer.
+- The carry marker counts every anomaly kind, including an orphaned
+  end that adds no minutes. It can name a week whose figures are
+  right.
+- The marker looks only at weeks before the shown week. Viewing an
+  older week does not mention anomalies in later weeks, and viewing
+  the anomalous week itself shows `[!]` rows but no marker.
+- The argument-order message always spells `mlm week target`, even
+  when the user typed the `w` alias, and prints no `Usage:` block.
+- The `week target` echo uses the standard formatter, so `90m` echoes
+  as `01h 30m`.
 
 ## 7. Testing
 

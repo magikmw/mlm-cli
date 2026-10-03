@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 98
+- **Next entry**: 99
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
@@ -1321,6 +1321,31 @@ SPEC.md and PLAN.md:
     `mlm start` and `23:59` as non-goals. U1-U10 recorded in spec §6.
     Phase 14 runs, tier `first-run` (default log level and `--help`
     change first-run output). Provisional task count 4-5: full ladder.
+
+98. **`possible-issues-triage` plan reviewed and folded**
+    (`docs/dev/plans/possible-issues-triage-plan.md`, six tasks: T1
+    foundation seams + §3.4/§4.4/§4.5; T2 overlap; T3 yesterday hint;
+    T4 carry scan; T5 CLI surface; T6 docs). Plan decisions: prefetched
+    ledger via one shared loader (traits stay infallible); token-shape
+    interception after a fallible clap parse; one per-date anomaly
+    module feeds rows, block and carry marker. Plan review
+    (`plans/reports/possible-issues-triage-plan-review.md`, 11 findings
+    + U1-U15) folded: F1 clap's usage override leaves `<ARGS>` in the
+    Arguments section and E10, so T5 hides the positional, writes the
+    Arguments section by hand and intercepts E10; F2 two future-`status`
+    tests named; F3 T1 gains `src/storage.rs` for one ranged override
+    read; F4 discriminator is token shape, help/version pass through;
+    F5 coordinator ruling: the clean-pair window includes N's minute
+    (a same-instant stop pops S first, SPEC §4.3 step 2), so it always
+    holds a legal minute; recorded in spec §3.2.2 as clarification, not
+    a behavior change; F6 phrases live in `src/render.rs`, frozen at T1
+    merge; F7 T1 may fix `src/commands.rs` import paths; F8 ranged-read
+    failure covered by a loader unit test; F9 T1 owns `src/date.rs`
+    comments, T6 owns AGENTS.md Layout; F10 loader keeps earliest-week
+    anchoring and live data-week marking; F11 T2 splits the grown
+    builder. U1-U3, U6, U7, U9, U10 added to spec §6; U4/U5 closed by
+    F5; U14 T6 wording clarified; the rest already declared or
+    timing-only.
 
 ## Open questions (still need answers)
 
