@@ -12,12 +12,11 @@
 //!
 //! Two landmines from Milestone 9's independent review are handled
 //! deliberately here, not incidentally:
-//! - `render::status_week_line`/`week_headline` take several adjacent
-//!   `i64` minute parameters. Every call in this module goes through
-//!   the single [`week_line`] helper below, which takes a
+//! - `render::status_week_line`/`week_headline` take a
 //!   `&week::WeekAccounting` (named fields) instead of positional
-//!   minutes, so there is exactly one place a transposition could hide
-//!   and it is directly tested (see `week_line_matches_status_week_line`).
+//!   minutes. Every call in this module goes through the single
+//!   [`week_line`] helper below, which is directly tested (see
+//!   `week_line_matches_status_week_line`).
 //! - `stint::DayStints` exposes its own `has_anomaly()`/`anomalies()`,
 //!   computed by a formula that duplicates `render::DateAnomalies` but
 //!   is not bound to it by any test. This module never calls those two
@@ -26,7 +25,7 @@
 //!   instead, so anomaly rendering goes through `render::DateAnomalies`
 //!   exclusively.
 
-use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, Utc};
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -87,33 +86,13 @@ impl EodDay {
 /// `StatusView` level is the third — "no open stint", line omitted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EodState {
-    /// `est. EOD HH:MM` — quota not yet met, the open stint's start plus
-    /// `required - fulfillment`. The `EodDay` says which day it lands on
-    /// and drives the suffix (SPEC §7.1).
+    /// `est. EOD HH:MM` — quota not yet met. The time is the open stint's
+    /// start plus `required - (fulfillment without the running stint's live
+    /// minutes)`, which equals now plus the gap. The `EodDay` says which day
+    /// it lands on and drives the suffix (SPEC §7.1).
     At(NaiveTime, EodDay),
     /// `target already met` — quota already met or exceeded (gap <= 0).
     TargetAlreadyMet,
-}
-
-/// The §7.1 "X left to `<required>` required by end of `<weekday>`"
-/// hint. `None` at the `StatusView` level whenever `DATE` is not today
-/// (§3.5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DailyTargetHint {
-    /// `daily target × min(today's ISO weekday number, 5)` (§2.4).
-    pub required_minutes: i64,
-    /// Signed: `required_minutes - fulfillment - live` (`carry_in +
-    /// worked`, §2.4/§5). `live` is the most recent open start's minutes
-    /// so far, 0 with no open stint today. NOT `day_total_minutes`.
-    pub gap_minutes: i64,
-    /// True when `weekday_number.min(5) == 5` — i.e. `required_minutes`
-    /// has plateaued at the week's full target (Friday, Saturday, and
-    /// Sunday alike under the default 5-day work week). Drives
-    /// `day_total_line`'s "required today" vs "required by end of
-    /// {weekday}" choice; computed once in `resolve()`, where `today`
-    /// and `weekday_number` are in scope — `day_total_line` itself
-    /// never sees either.
-    pub day_reaches_week_cap: bool,
 }
 
 /// A stint line's end (§7.1: `HH:MM-HH:MM` or `HH:MM-now`).
@@ -166,20 +145,16 @@ pub struct StatusView {
     /// previous day's stint)"`. `None` when no splice consumed
     /// `target_date`'s first punch.
     pub receiving_date_suffix: Option<String>,
-    /// Completed-stints-only total for `DATE` (§2.4).
+    /// Total for `DATE` (§2.4): its completed stints, plus live minutes
+    /// when `DATE` is today.
     pub day_total_minutes: i64,
     pub has_open_stint: bool,
-    /// `Some` only when `DATE == today` (§3.5).
-    pub daily_target: Option<DailyTargetHint>,
-    /// Today's full weekday name (`date::format_weekday_full`), e.g.
-    /// `"Thursday"` — used only by the day-total pace-hint line. `Some`
-    /// under exactly the same condition as `daily_target` (`is_today`).
-    pub weekday_name: Option<String>,
     /// `Some` only when `DATE == today && has_open_stint` (§7.1).
     pub eod: Option<EodState>,
     /// The complete, pre-rendered §7.1 week line (label, headline, and
     /// the fulfillment/target parenthetical when applicable) — verbatim
-    /// from `render::status_week_line` via the [`week_line`] wrapper.
+    /// from `render::status_week_line` via the [`week_line`] wrapper. It
+    /// always describes now, whichever `DATE` the page shows.
     pub week_line: String,
     /// §7.3 anomaly detail lines, already `[!] `-prefixed, verbatim from
     /// `render::DateAnomalies::detail_lines()`, plus any lookback lines
@@ -208,6 +183,8 @@ pub struct StatusView {
 const LABEL_WIDTH: usize = render::LABEL_WIDTH;
 
 /// L3: the day-total line (plans/milestone-10-status-command.md §3.4).
+/// Today's total includes live minutes and reads `(incl. ongoing)`. An
+/// earlier date keeps `(+ ongoing)` or `(+ unclosed)` with no live credit.
 fn day_total_line(view: &StatusView) -> String {
     let mut s = format!(
         "{:<w$}{}",
@@ -217,31 +194,9 @@ fn day_total_line(view: &StatusView) -> String {
     );
     if view.has_open_stint {
         match view.open_stint_age {
-            OpenStintAge::Today | OpenStintAge::Yesterday => s.push_str(" (+ ongoing)"),
+            OpenStintAge::Today => s.push_str(" (incl. ongoing)"),
+            OpenStintAge::Yesterday => s.push_str(" (+ ongoing)"),
             OpenStintAge::TwoOrMoreDaysBack => s.push_str(" (+ unclosed)"),
-        }
-    }
-    if let Some(hint) = &view.daily_target {
-        let (word, magnitude) = if hint.gap_minutes >= 0 {
-            ("left to", hint.gap_minutes)
-        } else {
-            ("over", -hint.gap_minutes)
-        };
-        if hint.day_reaches_week_cap {
-            s.push_str(&format!(
-                ", {} {} {} required today",
-                format_minutes(magnitude),
-                word,
-                format_minutes(hint.required_minutes),
-            ));
-        } else {
-            s.push_str(&format!(
-                ", {} {} {} required by end of {}",
-                format_minutes(magnitude),
-                word,
-                format_minutes(hint.required_minutes),
-                view.weekday_name.as_deref().unwrap_or_default()
-            ));
         }
     }
     match &view.eod {
@@ -334,21 +289,11 @@ pub fn render(view: &StatusView) -> String {
 // resolve: I/O + arithmetic -> StatusView
 // ---------------------------------------------------------------------------
 
-/// The single call site for `render::status_week_line`, guarded against
-/// Milestone 9 review finding 1 (adjacent same-typed `i64` minute
-/// params): takes the whole `WeekAccounting` by reference so the
-/// owed/fulfillment/target fields can never be transposed by a typo at
-/// a call site, since there is only one call site and its argument
-/// order is named here, not positional at every use.
+/// The single call site for `render::status_week_line`. It takes the
+/// whole `WeekAccounting` by reference so the fulfillment/target/owed
+/// fields can never be transposed by a typo at a call site.
 fn week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
-    render::status_week_line(
-        acct.week,
-        acct.owed,
-        acct.fulfillment,
-        acct.target,
-        acct.carry_in,
-        today,
-    )
+    render::status_week_line(acct, today)
 }
 
 /// `at_utc`'s local wall-clock time, factoring out the
@@ -532,15 +477,48 @@ fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<Stint
     rows
 }
 
+/// Adds `live` to the current week's worked minutes, but only when the
+/// walk reaches the current week (`through` is that week or later). Live
+/// enters before carry is walked, so a later week's carry-in reflects it.
+/// A walk that ends before the current week gets no live.
+fn credit_live(
+    worked_by_week: &mut BTreeMap<WeekId, i64>,
+    today: NaiveDate,
+    through: WeekId,
+    live: i64,
+) {
+    let current = WeekId::from_date(today);
+    if live > 0 && current <= through {
+        *worked_by_week.entry(current).or_insert(0) += live;
+    }
+}
+
+/// Today's live minutes: the most recent open start dated today, classified
+/// with its neighbours so a splice with tomorrow's orphaned end applies,
+/// whichever `DATE` the page shows. Zero when nothing is open today.
+fn live_minutes_today(
+    conn: &Connection,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> anyhow::Result<i64> {
+    let punches = storage::punches_for_date(conn, today)?;
+    let prev = storage::punches_for_date(conn, today.pred_opt().unwrap())?;
+    let next = storage::punches_for_date(conn, today.succ_opt().unwrap())?;
+    Ok(stint::classify_at(&prev, &punches, &next, now_utc).live_minutes())
+}
+
 /// Loads a `WeekLedger` covering exactly the weeks Milestone 6's walk
 /// would visit to account `through` (SPEC.md §2.4): from the earliest
 /// data week (or `through` itself, if there is no data at all) through
-/// `through`, inclusive. `now_utc` is injected (contract 6) and used
-/// only as `stint::classify`'s "now" parameter for completed-minutes
-/// arithmetic, which never depends on it — no clock is read here.
+/// `through`, inclusive. Stored minutes are completed stints only. `live`
+/// (today's running-stint minutes) is added to the current week via
+/// `credit_live`. `now_utc` is injected (contract 6); no clock is read
+/// here.
 fn build_ledger(
     conn: &Connection,
     through: WeekId,
+    today: NaiveDate,
+    live: i64,
     now_utc: DateTime<Utc>,
 ) -> anyhow::Result<WeekLedger> {
     let earliest_date = storage::earliest_data_date(conn)?;
@@ -584,6 +562,8 @@ fn build_ledger(
         date += ChronoDuration::days(1);
     }
 
+    credit_live(&mut worked_by_week, today, through, live);
+
     for week in data_weeks {
         ledger = ledger.with_data_week(week);
     }
@@ -594,10 +574,10 @@ fn build_ledger(
     Ok(ledger)
 }
 
-/// The est. EOD state for an open stint. `gap_minutes` is the post-live
-/// gap and decides the branch. `base_gap` is `required - fulfillment`
-/// and is added to the open start, so the instant does not move while
-/// the stint runs.
+/// The est. EOD state for an open stint. `gap_minutes` is the live-inclusive
+/// gap and decides the branch. `base_gap` is the same gap without live
+/// (`required - fulfillment` before the running stint) and is added to the
+/// open start, so the instant does not move while the stint runs.
 fn est_eod(open: &stint::OpenStint, base_gap: i64, gap_minutes: i64, today: NaiveDate) -> EodState {
     if gap_minutes <= 0 {
         return EodState::TargetAlreadyMet;
@@ -609,12 +589,26 @@ fn est_eod(open: &stint::OpenStint, base_gap: i64, gap_minutes: i64, today: Naiv
     )
 }
 
+/// The `est. EOD` state for today's open stint, if any. `acct` already
+/// counts `live`.
+fn today_eod(
+    acct: &WeekAccounting,
+    day: &DayStints,
+    live: i64,
+    today: NaiveDate,
+) -> Option<EodState> {
+    let (_, gap_minutes) = week::required_and_gap(acct, today);
+    day.open
+        .last()
+        .map(|o| est_eod(o, gap_minutes + live, gap_minutes, today))
+}
+
 /// Resolution flow (plans/milestone-10-status-command.md §2.2, exact
 /// order): parses `date_arg` against `now`'s local date, reads
 /// `target_date`'s punches/notes, classifies them, accounts
-/// `target_date`'s own week (not today's, §3.5/NOTES decision 26), and
-/// computes the daily-target/EOD hints only when `target_date` is
-/// today.
+/// `target_date`'s own week (not today's, §3.5/NOTES decision 26) with
+/// today's live minutes in the current week, and computes the
+/// daily-target/EOD hints only when `target_date` is today.
 pub fn resolve(
     date_arg: Option<&str>,
     now: DateTime<Local>,
@@ -648,11 +642,12 @@ pub fn resolve(
     let receiving_date_suffix = receiving_end_time
         .map(|t| format!("  ({} continues previous day's stint)", t.format("%H:%M")));
 
-    let day_total_minutes = ctx.day.completed_minutes();
+    let live = live_minutes_today(conn, today, now_utc)?;
+    let day_total_minutes = ctx.day.completed_minutes() + if is_today { live } else { 0 };
     let has_open_stint = ctx.day.is_ongoing();
 
     let target_week = WeekId::from_date(target_date);
-    let ledger = build_ledger(conn, target_week, now_utc)?;
+    let ledger = build_ledger(conn, target_week, today, live, now_utc)?;
     let acct = week::week_accounting(target_week, &ledger, &ledger);
     let week_line_str = week_line(&acct, today);
 
@@ -664,24 +659,10 @@ pub fn resolve(
         }
     }
 
-    let (daily_target, eod, weekday_name) = if is_today {
-        let daily_target_minutes = week::daily_target_minutes(acct.target);
-        let weekday_number = i64::from(today.weekday().number_from_monday());
-        let required_minutes = daily_target_minutes * weekday_number.min(5);
-        let base_gap = required_minutes - acct.fulfillment;
-        let open = ctx.day.open.last();
-        let live = open.map_or(0, |o| o.minutes_so_far);
-        let gap_minutes = base_gap - live;
-        let day_reaches_week_cap = weekday_number.min(5) == 5;
-        let hint = DailyTargetHint {
-            required_minutes,
-            gap_minutes,
-            day_reaches_week_cap,
-        };
-        let eod = open.map(|o| est_eod(o, base_gap, gap_minutes, today));
-        (Some(hint), eod, Some(date::format_weekday_full(today)))
+    let eod = if is_today {
+        today_eod(&acct, &ctx.day, live, today)
     } else {
-        (None, None, None)
+        None
     };
 
     let stints = build_stint_lines(&ctx.day, open_stint_age);
@@ -692,8 +673,6 @@ pub fn resolve(
         receiving_date_suffix,
         day_total_minutes,
         has_open_stint,
-        daily_target,
-        weekday_name,
         eod,
         week_line: week_line_str,
         anomaly_lines,
@@ -715,13 +694,6 @@ pub fn run(conn: &Connection, now: DateTime<Local>, date_arg: Option<&str>) -> a
     let view = resolve(date_arg, now, conn)?;
     print!("{}", render(&view));
     Ok(())
-}
-
-/// Suppress an unused-import warning for `Datelike` pulled in only for
-/// doc-comment cross-referencing clarity in a couple of call sites.
-#[allow(dead_code)]
-fn _use_datelike(d: NaiveDate) -> i32 {
-    d.year()
 }
 
 #[cfg(test)]
@@ -788,8 +760,6 @@ mod tests {
             receiving_date_suffix: None,
             day_total_minutes: 0,
             has_open_stint: false,
-            daily_target: None,
-            weekday_name: None,
             eod: None,
             week_line: week_line(&current_week_acct(645, 1755, 2400), today()),
             anomaly_lines: vec![],
@@ -852,12 +822,6 @@ mod tests {
     fn t1_f1_single_open_stint_no_completed() {
         let mut view = base_view();
         view.has_open_stint = true;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: 480,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         view.eod = Some(EodState::At(
             t(18, 0) + ChronoDuration::minutes(480),
             EodDay::Today,
@@ -870,13 +834,13 @@ mod tests {
             open_stint_age: None,
         }];
         let out = render(&view);
-        assert!(out.contains("Day total:     00h 00m (+ ongoing)"));
+        assert!(out.contains("Day total:     00h 00m (incl. ongoing), est. EOD 02:00"));
         assert!(out.contains("  09:00-now    (00h 00m, ongoing)"));
         assert!(!out.contains("[!]"));
         assert!(!out.contains("Notes:"));
     }
 
-    // T2 -- F2: one closed stint, daily-target hint present, no EOD line.
+    // T2 -- F2: one closed stint, no pace clause, no EOD line.
     #[test]
     fn t2_f2_ordinary_day_no_eod_line_without_open_stint() {
         let mut view = base_view();
@@ -888,19 +852,10 @@ mod tests {
             spans_to_next_day: false,
             open_stint_age: None,
         }];
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: -30,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         let out = render(&view);
-        assert!(
-            out.contains(
-                "Day total:     08h 30m, 00h 30m over 08h 00m required by end of Thursday"
-            )
-        );
-        assert!(!out.contains("(+ ongoing)"));
+        assert!(out.contains("Day total:     08h 30m\n"), "{out}");
+        assert!(!out.contains("required"), "{out}");
+        assert!(!out.contains("ongoing"));
         assert!(!out.contains("est. EOD"));
         assert!(!out.contains("target already met"));
         assert!(out.contains("  09:00-17:30  (08h 30m)"));
@@ -1016,10 +971,10 @@ mod tests {
         assert!(!rows[0].spans_to_next_day);
     }
 
-    // §4 -- today's open stint is byte-identical to today's current
-    // output: no new literal in either the stint line or Day total.
+    // §4 -- today's open stint shows `(incl. ongoing)` on the Day total
+    // and keeps its plain stint line.
     #[test]
-    fn open_stint_today_is_byte_identical_to_current_output() {
+    fn open_stint_today_shows_incl_ongoing_and_plain_stint_line() {
         let mut view = base_view();
         view.has_open_stint = true;
         view.stints = vec![StintLine {
@@ -1030,7 +985,7 @@ mod tests {
             open_stint_age: Some(OpenStintAge::Today),
         }];
         let out = render(&view);
-        assert!(out.contains("Day total:     00h 00m (+ ongoing)"));
+        assert!(out.contains("Day total:     00h 00m (incl. ongoing)"));
         assert!(out.contains("  09:00-now    (00h 00m, ongoing)"));
         assert!(!out.contains("unclosed"));
         assert!(!out.contains("duration as of right now"));
@@ -1149,17 +1104,10 @@ mod tests {
         let mut view = base_view();
         view.day_total_minutes = 445; // 07h 25m
         view.has_open_stint = true;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 1920,
-            gap_minutes: 150,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         view.eod = Some(EodState::At(t(20, 30), EodDay::Today));
         let out = render(&view);
-        assert!(out.contains(
-            "Day total:     07h 25m (+ ongoing), 02h 30m left to 32h 00m required by end of Thursday, est. EOD 20:30"
-        ));
+        assert!(out.contains("Day total:     07h 25m (incl. ongoing), est. EOD 20:30\n"));
+        assert!(!out.contains("required"), "{out}");
     }
 
     // T6b -- F9 state 2: gap == 0 and gap < 0 both take the "met" branch.
@@ -1169,35 +1117,14 @@ mod tests {
             let mut view = base_view();
             view.day_total_minutes = 480 - gap;
             view.has_open_stint = true;
-            view.daily_target = Some(DailyTargetHint {
-                required_minutes: 480,
-                gap_minutes: gap,
-                day_reaches_week_cap: false,
-            });
-            view.weekday_name = Some("Thursday".to_string());
             view.eod = Some(EodState::TargetAlreadyMet);
             let out = render(&view);
-            assert!(out.contains(", target already met"), "gap {gap}: {out}");
+            assert!(
+                out.contains("(incl. ongoing), target already met\n"),
+                "gap {gap}: {out}"
+            );
             assert!(!out.contains("est. EOD"), "gap {gap}: {out}");
-            if gap >= 0 {
-                assert!(
-                    out.contains("00h 00m left to 08h 00m required by end of Thursday"),
-                    "gap {gap}: {out}"
-                );
-                assert!(!out.contains("over 08h 00m required"), "gap {gap}: {out}");
-            } else {
-                assert!(
-                    out.contains(&format!(
-                        "{} over 08h 00m required by end of Thursday",
-                        format_minutes(-gap)
-                    )),
-                    "gap {gap}: {out}"
-                );
-                assert!(
-                    !out.contains("left to 08h 00m required"),
-                    "gap {gap}: {out}"
-                );
-            }
+            assert!(!out.contains("required"), "gap {gap}: {out}");
         }
     }
 
@@ -1207,18 +1134,13 @@ mod tests {
         let mut view = base_view();
         view.day_total_minutes = 480;
         view.has_open_stint = false;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: 0,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         view.eod = None;
         let out = render(&view);
         assert!(!out.contains("est. EOD"));
         assert!(!out.contains("target already met"));
-        assert!(!out.contains("(+ ongoing)"));
-        assert!(out.contains("left to 08h 00m required by end of Thursday"));
+        assert!(!out.contains("ongoing"));
+        assert!(!out.contains("required"), "{out}");
+        assert!(out.contains("Day total:     08h 00m\n"), "{out}");
     }
 
     // New -- Fix B: est. EOD carries a (tomorrow) suffix when the estimate
@@ -1228,12 +1150,6 @@ mod tests {
         let mut view = base_view();
         view.day_total_minutes = 60;
         view.has_open_stint = true;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: 420,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         view.eod = Some(EodState::At(t(1, 30), EodDay::Tomorrow));
         let out = render(&view);
         assert!(out.contains(", est. EOD 01:30 (tomorrow)"), "{out}");
@@ -1247,57 +1163,31 @@ mod tests {
         let mut view = base_view();
         view.day_total_minutes = 60;
         view.has_open_stint = true;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: 420,
-            day_reaches_week_cap: false,
-        });
-        view.weekday_name = Some("Thursday".to_string());
         view.eod = Some(EodState::At(t(1, 30), EodDay::Today));
         let out = render(&view);
         assert!(out.contains(", est. EOD 01:30"), "{out}");
         assert!(!out.contains("(tomorrow)"), "{out}");
     }
 
-    // New -- Fix C: Friday reaches the week cap, day-total clause says
-    // "required today", not "required by end of Friday".
+    // Friday reaches the week cap, and the Day total line carries no
+    // pace clause in either wording.
     #[test]
-    fn fix_c_friday_reaches_week_cap_says_required_today() {
+    fn fix_c_friday_has_no_pace_clause() {
         let mut view = base_view();
         view.day_total_minutes = 445;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 2400,
-            gap_minutes: 100,
-            day_reaches_week_cap: true,
-        });
-        view.weekday_name = Some("Friday".to_string());
         let out = render(&view);
-        assert!(out.contains("required today"), "{out}");
-        assert!(!out.contains("required by end of Friday"), "{out}");
-        assert!(
-            out.contains("01h 40m left to 40h 00m required today"),
-            "{out}"
-        );
+        assert!(!out.contains("required"), "{out}");
+        assert!(out.contains("Day total:     07h 25m\n"), "{out}");
     }
 
-    // New -- Fix C: Saturday also reaches the week cap (not "the one day" --
-    // spec §3's correction).
+    // Saturday also reaches the week cap and also has no pace clause.
     #[test]
-    fn fix_c_saturday_reaches_week_cap_says_required_today() {
+    fn fix_c_saturday_has_no_pace_clause() {
         let mut view = base_view();
         view.day_total_minutes = 0;
-        view.daily_target = Some(DailyTargetHint {
-            required_minutes: 2400,
-            gap_minutes: 2400,
-            day_reaches_week_cap: true,
-        });
-        view.weekday_name = Some("Saturday".to_string());
         let out = render(&view);
-        assert!(out.contains("required today"), "{out}");
-        assert!(!out.contains("required by end of Saturday"), "{out}");
-        // Same required_minutes figure as the adjacent Friday case above --
-        // both plateau at the full week target.
-        assert!(out.contains("40h 00m required today"), "{out}");
+        assert!(!out.contains("required"), "{out}");
+        assert!(out.contains("Day total:     00h 00m\n"), "{out}");
     }
 
     // T7 -- F10: past date, closed week, no daily-target/EOD lines.
@@ -1308,8 +1198,6 @@ mod tests {
             header: "Mon 2026-01-05".to_string(),
             day_total_minutes: 375,
             has_open_stint: false,
-            daily_target: None,
-            weekday_name: None,
             eod: None,
             week_line: week_line(&closed_week_acct(wk(2026, 2), 100), today()),
             anomaly_lines: vec![],
@@ -1343,13 +1231,13 @@ mod tests {
     // T8 -- F11: different day within the current week keeps deadline
     // framing keyed to today's weekday.
     #[test]
-    fn t8_f11_different_day_in_current_week_has_no_daily_target_but_deadline_week_line() {
+    fn t8_f11_different_day_in_current_week_has_no_eod_but_deadline_week_line() {
         let mut view = base_view();
         view.header = "Mon 2026-02-09".to_string();
-        // daily_target/eod stay None: DATE isn't today.
+        // eod stays None: DATE isn't today.
         let out = render(&view);
         assert!(!out.contains("Monday"));
-        assert!(out.contains("left by end of Thursday"));
+        assert!(out.contains("left to 32h 00m by end of Thursday"));
         assert!(!out.contains("daily target"));
         assert!(!out.contains("required by end of"));
         assert!(!out.contains("est. EOD"));
@@ -1435,17 +1323,11 @@ mod tests {
     // T11 -- the full golden test: SPEC.md §7.1's FIRST worked example.
     #[test]
     fn t11_golden_full_first_spec_example() {
-        let acct = current_week_acct(645, 1755, 2400);
+        let acct = current_week_acct(630, 1770, 2400);
         let view = StatusView {
             header: "Thu 2026-02-12".to_string(),
-            day_total_minutes: 445,
+            day_total_minutes: 460,
             has_open_stint: true,
-            daily_target: Some(DailyTargetHint {
-                required_minutes: 1920,
-                gap_minutes: 150,
-                day_reaches_week_cap: false,
-            }),
-            weekday_name: Some("Thursday".to_string()),
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec![],
@@ -1482,8 +1364,8 @@ mod tests {
         let out = render(&view);
         let expected = "Thu 2026-02-12\n\
             \n\
-            Day total:     07h 25m (+ ongoing), 02h 30m left to 32h 00m required by end of Thursday, est. EOD 20:30\n\
-            Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)\n\
+            Day total:     07h 40m (incl. ongoing), est. EOD 20:30\n\
+            Week 2026-07:  02h 30m left to 32h 00m by end of Thursday (fulfillment 29h 30m / target 40h 00m)\n\
             \n\
             \x20\x2009:00-13:00  (04h 00m)\n\
             \x20\x2014:05-17:30  (03h 25m)\n\
@@ -1539,12 +1421,6 @@ mod tests {
             header: "Thu 2026-02-12".to_string(),
             day_total_minutes: 445,
             has_open_stint: true,
-            daily_target: Some(DailyTargetHint {
-                required_minutes: 1920,
-                gap_minutes: 150,
-                day_reaches_week_cap: false,
-            }),
-            weekday_name: Some("Thursday".to_string()),
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec![],
@@ -1563,8 +1439,6 @@ mod tests {
             header: "Mon 2026-01-05".to_string(),
             day_total_minutes: 375,
             has_open_stint: false,
-            daily_target: None,
-            weekday_name: None,
             eod: None,
             week_line: week_line(&closed_week_acct(wk(2026, 2), 100), today()),
             anomaly_lines: vec![],
@@ -1582,12 +1456,6 @@ mod tests {
         let mut t6b_view = base_view();
         t6b_view.day_total_minutes = 500;
         t6b_view.has_open_stint = true;
-        t6b_view.daily_target = Some(DailyTargetHint {
-            required_minutes: 480,
-            gap_minutes: -20,
-            day_reaches_week_cap: false,
-        });
-        t6b_view.weekday_name = Some("Thursday".to_string());
         t6b_view.eod = Some(EodState::TargetAlreadyMet);
         let t6b = render(&t6b_view);
 
@@ -1605,12 +1473,6 @@ mod tests {
             header: "Thu 2026-02-12".to_string(),
             day_total_minutes: 445,
             has_open_stint: true,
-            daily_target: Some(DailyTargetHint {
-                required_minutes: 1920,
-                gap_minutes: 150,
-                day_reaches_week_cap: false,
-            }),
-            weekday_name: Some("Thursday".to_string()),
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec!["[!] orphaned end at 18:00 (no matching start)".to_string()],
@@ -1740,7 +1602,6 @@ mod tests {
         let view = resolve(Some("2026-01-05"), now_thu_1800(), &conn).expect("resolve");
         assert_eq!(view.header, "Mon 2026-01-05");
         assert_eq!(view.day_total_minutes, 375);
-        assert!(view.daily_target.is_none());
         assert!(view.eod.is_none());
         assert!(view.week_line.starts_with("Week 2026-02:"));
         assert!(view.week_line.contains("Total"));
@@ -1760,10 +1621,10 @@ mod tests {
 
         let view = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
         assert_eq!(view.header, "Mon 2026-02-09");
-        assert!(view.daily_target.is_none(), "DATE is not today");
         assert!(view.eod.is_none());
         assert!(
-            view.week_line.contains("left by end of Thursday"),
+            view.week_line
+                .contains("24h 00m left to 32h 00m by end of Thursday"),
             "week_line: {}",
             view.week_line
         );
@@ -1777,10 +1638,11 @@ mod tests {
         );
     }
 
-    // Current week whose fulfillment already exceeds target: the week
-    // line drops the weekday deadline and reads "ahead of target".
+    // Current week whose fulfillment already exceeds `required`: the week
+    // line reads the `over` form against today's slice, never "ahead of
+    // target".
     #[test]
-    fn resolve_current_week_ahead_of_target_renders_ahead_of_target() {
+    fn resolve_current_week_over_required_renders_over_form() {
         let conn = test_db();
         week_target::set_week_target(&conn, &wk(2026, 7), 5).expect("set target"); // tiny target
         storage::insert_punch(&conn, PunchKind::Start, d(2026, 2, 9), t(8, 0), &Local)
@@ -1789,13 +1651,15 @@ mod tests {
             .expect("insert");
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        // required = floor(5 / 5) * 4 = 4 minutes; fulfillment 540.
         assert!(
-            view.week_line.contains("ahead of target (fulfillment "),
+            view.week_line
+                .contains("08h 56m over 00h 04m by end of Thursday (fulfillment "),
             "week_line: {}",
             view.week_line
         );
         let out = render(&view);
-        assert!(out.contains("ahead of target (fulfillment "), "{out}");
+        assert!(!out.contains("ahead of target"), "{out}");
     }
 
     #[test]
@@ -1810,8 +1674,6 @@ mod tests {
         assert!(view.anomaly_lines[0].contains("2 open stints"));
         assert!(view.anomaly_lines[3].contains("orphaned end at 08:00"));
         assert_eq!(view.stints.len(), 2, "the orphan produces no stint line");
-        assert_eq!(view.weekday_name, Some("Thursday".to_string()));
-        assert!(view.daily_target.is_some());
     }
 
     #[test]
@@ -2048,8 +1910,7 @@ mod tests {
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
         assert!(view.has_open_stint);
-        let hint = view.daily_target.expect("is_today");
-        assert!(hint.gap_minutes <= 0, "gap must be <= 0: {hint:?}");
+        assert!(view.week_line.contains(" over "), "{}", view.week_line);
         assert_eq!(view.eod, Some(EodState::TargetAlreadyMet));
         let out = render(&view);
         assert!(out.contains(", target already met"), "{out}");
@@ -2078,16 +1939,16 @@ mod tests {
             view.day_total_minutes, 0,
             "day total unaffected by carry-in"
         );
-        let hint = view.daily_target.expect("is_today");
-        assert_eq!(hint.required_minutes, 480, "daily_target(2400) * min(1,5)");
-        assert_eq!(hint.gap_minutes, -1520, "480 - fulfillment(2000)");
-        assert_eq!(view.weekday_name, Some("Monday".to_string()));
         let out = render(&view);
         assert!(
-            out.contains("Day total:     00h 00m,"),
+            out.contains("Day total:     00h 00m\n"),
             "day total line: {out}"
         );
-        assert!(out.contains("25h 20m over 08h 00m required by end of Monday"));
+        assert!(
+            out.contains("25h 20m over 08h 00m by end of Monday"),
+            "{out}"
+        );
+        assert!(!out.contains("required"), "{out}");
     }
 
     #[test]
@@ -2102,17 +1963,15 @@ mod tests {
             .unwrap();
         let view = resolve(None, saturday_1200, &conn).expect("resolve");
         assert_eq!(view.header, "Sat 2026-02-14");
-        let hint = view.daily_target.expect("is_today");
-        assert_eq!(
-            hint.required_minutes, 2400,
-            "5 * daily_target_minutes(2400) == target itself here"
+        assert!(
+            view.week_line.contains("left to 40h 00m target"),
+            "{}",
+            view.week_line
         );
-        assert_eq!(view.weekday_name, Some("Saturday".to_string()));
-        assert!(hint.day_reaches_week_cap, "Saturday reaches the week cap");
     }
 
     #[test]
-    fn resolve_f9b_sunday_pin_non_multiple_of_five_target_override() {
+    fn resolve_f9b_sunday_required_is_full_non_multiple_of_five_target() {
         let conn = test_db();
         week_target::set_week_target(&conn, &wk(2026, 7), 2011).expect("set target"); // 33h 31m
         let sunday_1200 = Local
@@ -2120,20 +1979,14 @@ mod tests {
             .unwrap();
         let view = resolve(None, sunday_1200, &conn).expect("resolve");
         assert_eq!(view.header, "Sun 2026-02-15");
-        let hint = view.daily_target.expect("is_today");
-        assert_eq!(
-            hint.required_minutes, 2010,
-            "5 * floor(2011/5) = 2010, NOT 2011"
-        );
-        assert_ne!(
-            hint.required_minutes, 2011,
-            "must not silently round up to the raw override"
-        );
-        assert_eq!(view.weekday_name, Some("Sunday".to_string()));
         let out = render(&view);
-        assert!(out.contains("33h 30m required today"));
-        assert!(!out.contains("required by end of Sunday"));
-        assert!(hint.day_reaches_week_cap, "Sunday reaches the week cap");
+        assert!(!out.contains("required"), "{out}");
+        assert!(
+            view.week_line
+                .contains("33h 31m left to 33h 31m target (fulfillment"),
+            "{}",
+            view.week_line
+        );
     }
 
     // New -- Fix B, resolve()-level: an open start plus
@@ -2148,11 +2001,6 @@ mod tests {
         // satisfy the `has_open_stint` precondition for `eod` to be `Some`.
         storage::insert_punch(&conn, PunchKind::Start, today(), t(9, 0), &Local).expect("insert");
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        let hint = view.daily_target.expect("is_today");
-        assert!(
-            hint.gap_minutes > 360,
-            "gap must push well past midnight: {hint:?}"
-        );
         assert!(
             matches!(view.eod, Some(EodState::At(_, EodDay::Tomorrow))),
             "expected a tomorrow marker: {:?}",
@@ -2196,14 +2044,7 @@ mod tests {
     #[test]
     fn week_line_matches_status_week_line_field_for_field() {
         let acct = current_week_acct(645, 1755, 2400);
-        let want = render::status_week_line(
-            acct.week,
-            acct.owed,
-            acct.fulfillment,
-            acct.target,
-            acct.carry_in,
-            today(),
-        );
+        let want = render::status_week_line(&acct, today());
         assert_eq!(week_line(&acct, today()), want);
     }
 
@@ -2907,7 +2748,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // live-eod: the open stint's live minutes count in the pace hint
+    // live-eod: the open stint's live minutes count in the week line
     // and est. EOD projects from the open start.
     // -----------------------------------------------------------------
 
@@ -2937,7 +2778,7 @@ mod tests {
         punch(conn, PunchKind::End, today(), t(17, 25));
     }
 
-    // T1 + F6 -- pace hint and est. EOD use the post-live gap, and the
+    // T1 + F6 -- week line and est. EOD use the post-live gap, and the
     // pinned SPEC §7.1 sample line is rebuilt from punches.
     #[test]
     fn live_eod_t1_open_stint_reduces_gap_and_pins_sample_line() {
@@ -2946,26 +2787,31 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(17, 45));
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        let hint = view.daily_target.expect("is_today");
-        assert_eq!(hint.gap_minutes, 150, "165 - live(15)");
         assert_eq!(view.eod, Some(EodState::At(t(20, 30), EodDay::Today)));
         let out = render(&view);
         assert!(
-            out.contains(
-                "Day total:     07h 25m (+ ongoing), 02h 30m left to 32h 00m required by end of Thursday, est. EOD 20:30"
-            ),
+            out.contains("Day total:     07h 40m (incl. ongoing), est. EOD 20:30\n"),
             "{out}"
+        );
+        assert!(
+            view.week_line
+                .contains("02h 30m left to 32h 00m by end of Thursday"),
+            "{}",
+            view.week_line
         );
 
         let later = resolve(None, now_at(today(), 18, 30, 0), &conn).expect("resolve");
-        assert_eq!(later.daily_target.expect("is_today").gap_minutes, 120);
-        assert!(render(&later).contains("02h 00m left to 32h 00m"));
+        assert!(
+            later
+                .week_line
+                .contains("02h 00m left to 32h 00m by end of Thursday")
+        );
         assert_eq!(later.eod, Some(EodState::At(t(20, 30), EodDay::Today)));
     }
 
-    // T2 -- est. EOD is stable across reads, the hint counts down.
+    // T2 -- est. EOD is stable across reads, the week line counts down.
     #[test]
-    fn live_eod_t2_est_eod_stable_across_reads_hint_counts_down() {
+    fn live_eod_t2_est_eod_stable_across_reads_week_line_counts_down() {
         let conn = test_db();
         seed_thursday_completed(&conn);
         punch(&conn, PunchKind::Start, today(), t(17, 45));
@@ -2974,9 +2820,15 @@ mod tests {
         let b = resolve(None, now_at(today(), 18, 30, 45), &conn).expect("resolve");
         assert_eq!(a.eod, b.eod);
         assert_eq!(a.eod, Some(EodState::At(t(20, 30), EodDay::Today)));
-        assert_eq!(
-            a.daily_target.unwrap().gap_minutes - b.daily_target.unwrap().gap_minutes,
-            30
+        assert!(
+            a.week_line.contains("02h 30m left to 32h 00m"),
+            "{}",
+            a.week_line
+        );
+        assert!(
+            b.week_line.contains("02h 00m left to 32h 00m"),
+            "{}",
+            b.week_line
         );
     }
 
@@ -2988,10 +2840,14 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(17, 45));
 
         let view = resolve(None, now_at(today(), 21, 0, 0), &conn).expect("resolve");
-        assert_eq!(view.daily_target.unwrap().gap_minutes, -30);
         assert_eq!(view.eod, Some(EodState::TargetAlreadyMet));
         let out = render(&view);
-        assert!(out.contains("00h 30m over 32h 00m required"), "{out}");
+        assert!(
+            view.week_line
+                .contains("00h 30m over 32h 00m by end of Thursday"),
+            "{}",
+            view.week_line
+        );
         assert!(out.contains(", target already met"), "{out}");
         assert!(!out.contains("est. EOD"), "{out}");
     }
@@ -3004,10 +2860,14 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(17, 45));
 
         let view = resolve(None, now_at(today(), 20, 30, 0), &conn).expect("resolve");
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 0);
         assert_eq!(view.eod, Some(EodState::TargetAlreadyMet));
         let out = render(&view);
-        assert!(out.contains("00h 00m left to 32h 00m required"), "{out}");
+        assert!(
+            view.week_line
+                .contains("00h 00m left to 32h 00m by end of Thursday"),
+            "{}",
+            view.week_line
+        );
         assert!(out.contains(", target already met"), "{out}");
     }
 
@@ -3019,9 +2879,11 @@ mod tests {
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
         assert!(!view.has_open_stint);
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 165);
         assert_eq!(view.eod, None);
-        assert!(render(&view).contains("02h 45m left to 32h 00m required by end of Thursday"));
+        assert!(
+            view.week_line
+                .contains("02h 45m left to 32h 00m by end of Thursday")
+        );
     }
 
     // T6 -- two open starts today, the later one supplies live and the
@@ -3034,7 +2896,11 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(17, 45));
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 150, "live = 15");
+        assert!(
+            view.week_line.contains("02h 30m left to 32h 00m"),
+            "{}",
+            view.week_line
+        );
         assert_eq!(view.eod, Some(EodState::At(t(20, 30), EodDay::Today)));
     }
 
@@ -3046,7 +2912,11 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(22, 0));
 
         let view = resolve(None, now_at(today(), 22, 10, 0), &conn).expect("resolve");
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 155);
+        assert!(
+            view.week_line.contains("02h 35m left to 32h 00m"),
+            "{}",
+            view.week_line
+        );
         assert_eq!(view.eod, Some(EodState::At(t(0, 45), EodDay::Tomorrow)));
         assert!(render(&view).contains("est. EOD 00:45 (tomorrow)"));
     }
@@ -3100,10 +2970,7 @@ mod tests {
         assert!(!view.has_open_stint);
         assert_eq!(view.eod, None);
         let baseline = resolve(None, now_thu_1800(), &test_db()).expect("resolve");
-        assert_eq!(
-            view.daily_target.unwrap().gap_minutes,
-            baseline.daily_target.unwrap().gap_minutes
-        );
+        assert_eq!(view.week_line, baseline.week_line);
     }
 
     // T9 -- an open start later than now projects from its own time.
@@ -3114,7 +2981,11 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(19, 0));
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 165, "live = 0");
+        assert!(
+            view.week_line.contains("02h 45m left to 32h 00m"),
+            "{}",
+            view.week_line
+        );
         assert_eq!(view.eod, Some(EodState::At(t(21, 45), EodDay::Today)));
     }
 
@@ -3127,13 +2998,13 @@ mod tests {
         punch(&conn, PunchKind::Start, today(), t(19, 0));
 
         let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
-        assert!(view.daily_target.unwrap().gap_minutes <= 0);
+        assert!(view.week_line.contains(" over "), "{}", view.week_line);
         assert_eq!(view.eod, Some(EodState::TargetAlreadyMet));
     }
 
-    // T10 -- Friday keeps the "required today" wording and counts live.
+    // T10 -- Friday counts live and names the whole target on the week line.
     #[test]
-    fn live_eod_t10_friday_counts_live_with_required_today_wording() {
+    fn live_eod_t10_friday_counts_live_against_the_whole_target() {
         let conn = test_db();
         for day in 9..=12 {
             punch(&conn, PunchKind::Start, d(2026, 2, day), t(9, 0));
@@ -3143,11 +3014,12 @@ mod tests {
         punch(&conn, PunchKind::Start, friday, t(9, 0));
 
         let view = resolve(None, now_at(friday, 18, 0, 0), &conn).expect("resolve");
-        let hint = view.daily_target.expect("is_today");
-        assert!(hint.day_reaches_week_cap);
-        assert_eq!(hint.gap_minutes, 480 - 540, "baseline 480, live 540");
         let out = render(&view);
-        assert!(out.contains("01h 00m over 40h 00m required today"), "{out}");
+        assert!(
+            view.week_line.contains("01h 00m over 40h 00m target"),
+            "{}",
+            view.week_line
+        );
         assert!(out.contains(", target already met"), "{out}");
     }
 
@@ -3164,6 +3036,335 @@ mod tests {
         assert_eq!(view.eod, None);
         // The spliced stint (17:45 to 00:30, 405 min) is completed time,
         // so the gap is 1920 - 405 with no live term.
-        assert_eq!(view.daily_target.unwrap().gap_minutes, 1920 - 405);
+        assert!(
+            view.week_line
+                .contains("25h 15m left to 32h 00m by end of Thursday"),
+            "{}",
+            view.week_line
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // point-in-time-week: the week line is `required - fulfillment`, and
+    // fulfillment, worked and today's day total all include live.
+    // -----------------------------------------------------------------
+
+    /// One completed stint per listed minute count, on consecutive days
+    /// starting Monday 2026-02-09 (week 2026-07).
+    fn seed_days(conn: &Connection, minutes: &[u32]) {
+        for (i, m) in minutes.iter().enumerate() {
+            let day = d(2026, 2, 9 + i as u32);
+            punch(conn, PunchKind::Start, day, t(6, 0));
+            punch(conn, PunchKind::End, day, t(6 + m / 60, m % 60));
+        }
+    }
+
+    fn week_line_for(conn: &Connection, now: DateTime<Local>) -> String {
+        resolve(None, now, conn).expect("resolve").week_line
+    }
+
+    // Mon-Thu: `left to` at gap 0 and +1, `over` at gap -1.
+    #[test]
+    fn pit_thursday_week_line_gap_zero_plus_one_minus_one() {
+        for (thu, want) in [
+            (
+                480,
+                "Week 2026-07:  00h 00m left to 32h 00m by end of Thursday (fulfillment 32h 00m / target 40h 00m)",
+            ),
+            (
+                479,
+                "Week 2026-07:  00h 01m left to 32h 00m by end of Thursday (fulfillment 31h 59m / target 40h 00m)",
+            ),
+            (
+                481,
+                "Week 2026-07:  00h 01m over 32h 00m by end of Thursday (fulfillment 32h 01m / target 40h 00m)",
+            ),
+        ] {
+            let conn = test_db();
+            seed_days(&conn, &[480, 480, 480, thu]);
+            assert_eq!(week_line_for(&conn, now_thu_1800()), want, "thu={thu}");
+        }
+    }
+
+    // Fri-Sun: `left to` / `over` the whole target, no weekday.
+    #[test]
+    fn pit_friday_week_line_gap_zero_plus_one_minus_one() {
+        for (fri, want) in [
+            (
+                480,
+                "Week 2026-07:  00h 00m left to 40h 00m target (fulfillment 40h 00m / target 40h 00m)",
+            ),
+            (
+                479,
+                "Week 2026-07:  00h 01m left to 40h 00m target (fulfillment 39h 59m / target 40h 00m)",
+            ),
+            (
+                481,
+                "Week 2026-07:  00h 01m over 40h 00m target (fulfillment 40h 01m / target 40h 00m)",
+            ),
+        ] {
+            let conn = test_db();
+            seed_days(&conn, &[480, 480, 480, 480, fri]);
+            assert_eq!(
+                week_line_for(&conn, now_at(d(2026, 2, 13), 18, 0, 0)),
+                want,
+                "fri={fri}"
+            );
+        }
+    }
+
+    // Fri-Sun required is the target itself, even when it is not a
+    // multiple of 5 minutes.
+    #[test]
+    fn pit_sunday_required_is_the_target_not_a_multiple_of_five() {
+        let conn = test_db();
+        week_target::set_week_target(&conn, &wk(2026, 7), 2011).expect("set target");
+        punch(&conn, PunchKind::Start, d(2026, 2, 15), t(12, 0));
+        let view = resolve(None, now_at(d(2026, 2, 15), 12, 0, 0), &conn).expect("resolve");
+        assert_eq!(
+            view.week_line,
+            "Week 2026-07:  33h 31m left to 33h 31m target (fulfillment 00h 00m / target 33h 31m)"
+        );
+        // 12:00 + 33h 31m lands Monday 21:31.
+        assert_eq!(view.eod, Some(EodState::At(t(21, 31), EodDay::Tomorrow)));
+        let out = render(&view);
+        assert!(!out.contains("required"), "{out}");
+    }
+
+    // The target-already-met threshold moves with the new Sunday required.
+    // Fulfillment 2010 is met under the old 2010 slice and short of 2011.
+    #[test]
+    fn pit_sunday_target_already_met_uses_full_target() {
+        let conn = test_db();
+        week_target::set_week_target(&conn, &wk(2026, 7), 2011).expect("set target");
+        seed_days(&conn, &[480, 480, 480, 480]);
+        punch(&conn, PunchKind::Start, d(2026, 2, 15), t(0, 0));
+
+        let short = resolve(None, now_at(d(2026, 2, 15), 1, 30, 0), &conn).expect("resolve");
+        assert!(
+            short.week_line.contains("00h 01m left to 33h 31m target"),
+            "{}",
+            short.week_line
+        );
+        assert_eq!(short.eod, Some(EodState::At(t(1, 31), EodDay::Today)));
+
+        let met = resolve(None, now_at(d(2026, 2, 15), 1, 31, 0), &conn).expect("resolve");
+        assert!(
+            met.week_line.contains("00h 00m left to 33h 31m target"),
+            "{}",
+            met.week_line
+        );
+        assert_eq!(met.eod, Some(EodState::TargetAlreadyMet));
+    }
+
+    // Zero-target week.
+    #[test]
+    fn pit_zero_target_week_line() {
+        let conn = test_db();
+        week_target::set_week_target(&conn, &wk(2026, 7), 0).expect("set target");
+        let monday = d(2026, 2, 9);
+        assert_eq!(
+            week_line_for(&conn, now_at(monday, 9, 0, 0)),
+            "Week 2026-07:  00h 00m left to 00h 00m by end of Monday (fulfillment 00h 00m / target 00h 00m)"
+        );
+        punch(&conn, PunchKind::Start, monday, t(9, 0));
+        punch(&conn, PunchKind::End, monday, t(11, 0));
+        assert_eq!(
+            week_line_for(&conn, now_at(monday, 12, 0, 0)),
+            "Week 2026-07:  02h 00m over 00h 00m by end of Monday (fulfillment 02h 00m / target 00h 00m)"
+        );
+    }
+
+    // No pace clause on any weekday, with or without an open stint.
+    #[test]
+    fn pit_no_pace_clause_anywhere() {
+        for day in 9..=15 {
+            let now = now_at(d(2026, 2, day), 10, 0, 0);
+            let conn = test_db();
+            punch(&conn, PunchKind::Start, d(2026, 2, day), t(9, 0));
+            let out = render(&resolve(None, now, &conn).unwrap());
+            assert!(!out.contains("required"), "day {day}: {out}");
+            let out = render(&resolve(None, now, &test_db()).unwrap());
+            assert!(!out.contains("required"), "day {day}: {out}");
+        }
+    }
+
+    // Day total counts live and carries `(incl. ongoing)`.
+    #[test]
+    fn pit_day_total_includes_live_with_incl_ongoing_flag() {
+        let conn = test_db();
+        seed_thursday_completed(&conn);
+        punch(&conn, PunchKind::Start, today(), t(17, 45));
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.day_total_minutes, 445 + 15);
+        let out = render(&view);
+        assert!(
+            out.contains("Day total:     07h 40m (incl. ongoing), est. EOD 20:30"),
+            "{out}"
+        );
+        assert!(!out.contains("(+ ongoing)"), "{out}");
+    }
+
+    // A start typed later than now: flag shows, nothing added.
+    #[test]
+    fn pit_future_dated_start_is_incl_ongoing_with_live_zero() {
+        let conn = test_db();
+        seed_thursday_completed(&conn);
+        punch(&conn, PunchKind::Start, today(), t(19, 0));
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.day_total_minutes, 445);
+        let out = render(&view);
+        assert!(
+            out.contains("Day total:     07h 25m (incl. ongoing), est. EOD 21:45"),
+            "{out}"
+        );
+    }
+
+    // Earlier pages keep `(+ ongoing)` / `(+ unclosed)` and get no live.
+    #[test]
+    fn pit_earlier_page_flags_unchanged_and_get_no_live() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, d(2026, 2, 11), t(20, 0));
+        let out = render(&resolve(Some("2026-02-11"), now_thu_1800(), &conn).unwrap());
+        assert!(
+            out.contains("Day total:     00h 00m (+ ongoing)\n"),
+            "{out}"
+        );
+
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, d(2026, 2, 7), t(20, 0));
+        let out = render(&resolve(Some("2026-02-07"), now_thu_1800(), &conn).unwrap());
+        assert!(
+            out.contains("Day total:     00h 00m (+ unclosed)\n"),
+            "{out}"
+        );
+    }
+
+    // status DATE for an earlier date in the current week: the week line
+    // counts today's live and uses today's weekday and required, while the
+    // Day total for DATE has no live and no ongoing flag.
+    #[test]
+    fn pit_earlier_date_week_line_counts_live_day_total_does_not() {
+        let conn = test_db();
+        seed_thursday_completed(&conn);
+        punch(&conn, PunchKind::Start, today(), t(17, 45));
+
+        let today_view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        let monday = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(monday.week_line, today_view.week_line);
+        assert!(
+            monday
+                .week_line
+                .starts_with("Week 2026-07:  02h 30m left to 32h 00m by end of Thursday"),
+            "{}",
+            monday.week_line
+        );
+        assert_eq!(monday.day_total_minutes, 600);
+        let out = render(&monday);
+        assert!(out.contains("Day total:     10h 00m\n"), "{out}");
+        assert!(!out.contains("ongoing"), "{out}");
+    }
+
+    // A today-open start consumed by tomorrow's orphan end earns no live,
+    // on `status` and on `status DATE` alike.
+    #[test]
+    fn pit_spliced_open_start_earns_no_live_for_earlier_date_either() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, today(), t(17, 45));
+        punch(&conn, PunchKind::End, d(2026, 2, 13), t(0, 30));
+        let today_view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        let monday = resolve(Some("2026-02-09"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(monday.week_line, today_view.week_line);
+        assert!(
+            monday.week_line.contains("(fulfillment 06h 45m / target"),
+            "{}",
+            monday.week_line
+        );
+    }
+
+    // A future week's carry-in (seen here as its owed total) takes the
+    // current week's live-inclusive fulfillment.
+    #[test]
+    fn pit_future_week_carry_in_includes_live() {
+        let conn = test_db();
+        seed_thursday_completed(&conn);
+        punch(&conn, PunchKind::Start, today(), t(17, 45));
+        let view = resolve(Some("2026-02-16"), now_thu_1800(), &conn).expect("resolve");
+        // fulfillment 1755 + 15 live; owed = 2400 - (1770 - 2400) = 3030.
+        assert_eq!(view.week_line, "Week 2026-08:  Total behind: 50h 30m");
+    }
+
+    // Open starts dated before today earn no live credit.
+    #[test]
+    fn pit_old_open_starts_earn_no_live() {
+        let baseline = week_line_for(&test_db(), now_thu_1800());
+        for day in [d(2026, 2, 11), d(2026, 2, 10)] {
+            let conn = test_db();
+            punch(&conn, PunchKind::Start, day, t(9, 0));
+            assert_eq!(week_line_for(&conn, now_thu_1800()), baseline, "{day}");
+        }
+    }
+
+    /// Week 2026-39 worked 2815 minutes (5 x 563), so week 2026-40 opens
+    /// with carry-in +06h 55m.
+    fn seed_carry_in_06h55(conn: &Connection) {
+        for day in 21..=25 {
+            punch(conn, PunchKind::Start, d(2026, 9, day), t(6, 0));
+            punch(conn, PunchKind::End, d(2026, 9, day), t(15, 23));
+        }
+    }
+
+    // The worked example: Thursday 18:05, carry-in +06h 55m.
+    #[test]
+    fn pit_worked_example_status_block() {
+        let conn = test_db();
+        seed_carry_in_06h55(&conn);
+        for (day, end) in [(28, t(10, 30)), (29, t(10, 40)), (30, t(10, 30))] {
+            punch(&conn, PunchKind::Start, d(2026, 9, day), t(6, 0));
+            punch(&conn, PunchKind::End, d(2026, 9, day), end);
+        }
+        let thu = d(2026, 10, 1);
+        punch(&conn, PunchKind::Start, thu, t(9, 0));
+        punch(&conn, PunchKind::End, thu, t(13, 0));
+        punch(&conn, PunchKind::Start, thu, t(13, 30));
+        punch(&conn, PunchKind::End, thu, t(16, 55));
+        punch(&conn, PunchKind::Start, thu, t(17, 25));
+
+        let out = render(&resolve(None, now_at(thu, 18, 5, 0), &conn).expect("resolve"));
+        let want = "Thu 2026-10-01\n\
+\n\
+Day total:     08h 05m (incl. ongoing), est. EOD 21:25\n\
+Week 2026-40:  03h 20m left to 32h 00m by end of Thursday (fulfillment 28h 40m = worked 21h 45m + carry-in 06h 55m / target 40h 00m)\n\
+\n\
+\x20\x2009:00-13:00  (04h 00m)\n\
+\x20\x2013:30-16:55  (03h 25m)\n\
+\x20\x2017:25-now    (00h 40m, ongoing)\n";
+        assert_eq!(out, want);
+    }
+
+    // The Friday line of the worked example.
+    #[test]
+    fn pit_worked_example_friday_line() {
+        let conn = test_db();
+        seed_carry_in_06h55(&conn);
+        for day in [28, 29, 30, 1] {
+            let date = if day == 1 {
+                d(2026, 10, 1)
+            } else {
+                d(2026, 9, day)
+            };
+            punch(&conn, PunchKind::Start, date, t(6, 0));
+            punch(&conn, PunchKind::End, date, t(14, 0));
+        }
+        // Closed 1935 (4 x 480 + 15), live 120: worked 34h 15m.
+        let fri = d(2026, 10, 2);
+        punch(&conn, PunchKind::Start, fri, t(6, 0));
+        punch(&conn, PunchKind::End, fri, t(6, 15));
+        punch(&conn, PunchKind::Start, fri, t(16, 0));
+        let view = resolve(None, now_at(fri, 18, 0, 0), &conn).expect("resolve");
+        assert_eq!(
+            view.week_line,
+            "Week 2026-40:  01h 10m over 40h 00m target (fulfillment 41h 10m = worked 34h 15m + carry-in 06h 55m / target 40h 00m)"
+        );
     }
 }

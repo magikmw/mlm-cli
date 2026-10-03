@@ -9,11 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 90
+- **Next entry**: 96
 - **Last release**: `v0.3.6`
-- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
-- **Active changeset**: none (`live-eod` merged to `main`, entry 89;
-  release held for further changes)
+- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
+  `point-in-time-week`)
+- **Active changeset**: none (`point-in-time-week` merged to `main`,
+  entry 95; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1159,6 +1160,115 @@ SPEC.md and PLAN.md:
     and branch removed after the gate. Stale-doc grep of README, SPEC
     and source found no leftover "Known issues" or bare-`(tomorrow)`
     rule.
+
+90. **`point-in-time-week` changeset started.** User report from real
+    use (Thursday 2026-10-01): the week line read `left by end of
+    Thursday` against the full 40h target while the pace hint said 32h
+    was due by end of Thursday. Code matched SPEC; the design paired the
+    whole-week `owed` with today's deadline wording. User chose to make
+    the current week's headline point-in-time (`required − fulfillment`)
+    in both `status` and `mlm week`, with "left to / over" wording
+    ("by end of <Weekday>" Mon-Thu, "<target> target" Fri-Sun). User
+    also chose that the running stint's live minutes count everywhere
+    for the current week (day total, worked, fulfillment, week line,
+    `mlm week` rows and block), with `(incl. ongoing)` replacing
+    `(+ ongoing)`/`(ongoing)`, and that `est. EOD` stays on the Day
+    total line while the pace clause is removed. Coordinator call:
+    Fri-Sun `required` becomes the exact target instead of
+    `5 x floor(target / 5)`, so Friday's figure matches the target the
+    line names. Phase 0 profile reused from entry 65. Baseline `main`
+    at `efd97e4`; branch `point-in-time-week`. Spec
+    `docs/dev/specs/2026-10-03-point-in-time-week.md`.
+
+91. **`point-in-time-week` spec reviewed and locked**
+    (`docs/dev/plans/reports/point-in-time-week-spec-review.md`,
+    needs-rework, 9 findings + 10 undeclared gaps, all folded without
+    changing user-chosen behavior). Coordinator calls:
+    - F1: live enters the current week's worked minutes before carry is
+      walked, so a future week's `Carry-in` matches the current week's
+      live-inclusive `fulfillment - target` (follows the user's "live
+      counts everywhere").
+    - F2: `live` always comes from today's punches and `required` from
+      today's weekday, for every `status` of the current week, so
+      `status DATE` classifies today separately.
+    - F3/F9: Fri-Sun `required = target` kept; its up-to-4-minute
+      `est. EOD` effect for non-multiple-of-5 targets is declared.
+    - F4-F8: section reference fixed to SPEC §1.2a, doc and code-comment
+      sweep listed, testing section added, zero-target rendering
+      specified, motivation wording fixed.
+    - U1-U10 all declared in spec §6.
+    This decision supersedes entry 37's "live minutes never enter that
+    math" for displayed fulfillment and worked; entry 37 stays as
+    history. Phase 14 runs at tier `returning`, because `status` and
+    `week` output change for a daily user. Provisional size two tasks
+    (code across `src/`, docs in SPEC/README), so phases 5-7 collapse
+    into one short plan and phase 10 is skipped unless the plan splits
+    the code.
+
+92. **`point-in-time-week` plan reviewed and folded**
+    (`docs/dev/plans/reports/point-in-time-week-plan-review.md`,
+    ship-with-followups, 9 findings + 4 undeclared gaps). Two parallel
+    tasks confirmed: Task 1 owns all of `src/` (code stays unsplit
+    because `status` and `mlm week` share the live-inclusive accounting
+    and headline), Task 2 owns SPEC.md and README.md. F1-F9 folded as a
+    "Review folds" section at the end of the plan: extra SPEC §8.1/§4.2
+    sweep, complexity watch moved to `build_ledger` and
+    `stint::classify`, full doc-comment sweep, inverted tests rewritten
+    rather than deleted, `mlm week` given today's date with rows and
+    `Worked:` from one source, splice-aware classification for `live`.
+    U1-U4 added to spec §6 as possible issues. Phase 8 task plans are
+    skipped, as in entry 86: one task per file set and a detailed plan,
+    so each implementer plans inside its own dispatch. Phase 10 skipped
+    (two tasks).
+
+93. **`point-in-time-week` Tasks 1 and 2 merged** `--no-ff` into
+    `point-in-time-week` (`adc5592` docs, `de604a1` code). Both shipped
+    to plan with no completion report. Both worktrees started on `main`
+    and rebased onto the plan commit `19d3393` before work. Task 1's
+    unpinned choices: `render::week_headline`/`status_week_line` take the
+    week accounting and today; `StatusView::weekday_name` and
+    `DailyTargetHint::day_reaches_week_cap` removed with the pace clause;
+    `DayStints::live_minutes` added; `DbWeekData` gains `today`. Merge
+    gate green after each merge (fmt, build, 550 lib + integration
+    tests, clippy); coverage ratcheted 99.15% to 99.19%. Hand run on a
+    seeded scratch database (Saturday): `status`, `status 2026-10-01`
+    and `week` print the same `05h 16m over 40h 00m target`, `week`
+    rows sum to `Worked:`, and the closed week 39 still reads
+    `Total behind`. Both worktrees and branches removed after the gate.
+
+94. **`point-in-time-week` phase 13/14 back and triaged.** Final review
+    ran on Opus at the user's choice
+    (`docs/dev/plans/reports/point-in-time-week-final-review.md`,
+    ship-with-followups, 3 findings; 10 mutations all caught except one
+    with no visible effect). Fresh-eyes at tier `returning`
+    (`docs/dev/plans/reports/point-in-time-week-fresh-eyes.md`,
+    14 findings; the weekend clock hid the Mon-Thu form, which the
+    fixed-clock tests cover). User accepted the coordinator's triage in
+    chat 2026-10-03:
+    - R1 (`est. EOD` formula docs read live-inclusive fulfillment),
+      R2 (duplicate gap computation, unrendered `daily_target`, dead
+      shim), R3 (SPEC §4.2 minus-sign sentence): fix.
+    - F3: one README line saying `est. EOD` assumes no breaks.
+    - F2 (`target already met` reads as a today-only target): kept as
+      is; spec §6 already records it. The user gave no option, so the
+      coordinator took the no-change one.
+    - F13 (debt week reads more left than the target), F8 (`week target`
+      silent), F9 (`week target` usage on wrong argument order), F11
+      (`--help` defines no terms): filed as possible issues.
+    - F1, F4-F7, F10, F12, F14: already declared, pre-existing, or
+      covered by tests; no action.
+
+95. **`point-in-time-week` fix pass merged; changeset merged to
+    `main`.** Fix pass (`docs/dev/plans/reports/point-in-time-week-fixpass.md`)
+    closed R1-R3 and F3, and filed F8, F9, F11 and F13 as possible
+    issues. R2 added `week::required_and_gap` as the one gap computation
+    and removed `DailyTargetHint`, `StatusView::daily_target` and the
+    `_use_datelike` shim; earlier NOTES entries keep the old names as
+    history. Merge gate green (fmt, build, 552 lib + integration tests,
+    clippy); coverage 99.22%. Fix-pass worktree and branch removed.
+    Stale-doc grep of README, SPEC, AGENTS.md and `src/` (including
+    `--help` text in `src/cli.rs`) found no leftover old-rule claim.
+    Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 
