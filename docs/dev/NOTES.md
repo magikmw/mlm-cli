@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 85
+- **Next entry**: 86
 - **Last release**: `v0.3.6`
 - **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, phase 2 (spec in user review),
+- **Active changeset**: `live-eod`, phase 5 (spec locked, entry 85),
   branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
 - **Known issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
@@ -1075,6 +1075,25 @@ SPEC.md and PLAN.md:
     from entry 65 unchanged. Baseline `main` at `c9e980b`; branch
     `live-eod`. Spec `docs/dev/specs/2026-10-03-live-eod.md`. Phase 14
     runs, because `status` output changes.
+
+85. **`live-eod` spec reviewed and locked**
+    (`docs/dev/plans/reports/live-eod-spec-review.md`,
+    ship-with-followups, 12 findings, all folded). User chose to file
+    the overnight-session gap (F3) as a known issue next to the
+    existing yesterday's-open-session one. Coordinator calls:
+    `live` reads `ctx.day.open.last()`; `est. EOD` is defined as
+    `open start + (required − fulfillment)`, which drops the false
+    one-minute-drift claim and makes a start typed for later today
+    project from its own time; `DailyTargetHint.gap_minutes` holds the
+    post-live value; the hint/week-line divergence, minute-by-minute
+    output, backdated-punch jumps and two-open-start crediting go in
+    the spec's known issues. This changeset reverses SPEC §7.1's
+    explicit "fulfillment here still excludes the open stint's live
+    minutes" for the pace hint and `est. EOD`; entries 19 and 37 stay
+    as history. Phase 14 runs at tier `returning`, because `status`
+    output changes for a daily user. Provisional size two tasks
+    (code in `status.rs`, docs in SPEC/README), so phases 5-7
+    collapse into one short plan and phase 10 is skipped.
 
 ## Open questions (still need answers)
 
