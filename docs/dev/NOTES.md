@@ -9,11 +9,11 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 91
+- **Next entry**: 92
 - **Last release**: `v0.3.6`
 - **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
-- **Active changeset**: `point-in-time-week` (entry 90), phase 2 spec
-  draft
+- **Active changeset**: `point-in-time-week` (entry 90), spec locked
+  (entry 91), phase 5 plan
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1178,6 +1178,31 @@ SPEC.md and PLAN.md:
     line names. Phase 0 profile reused from entry 65. Baseline `main`
     at `efd97e4`; branch `point-in-time-week`. Spec
     `docs/dev/specs/2026-10-03-point-in-time-week.md`.
+
+91. **`point-in-time-week` spec reviewed and locked**
+    (`docs/dev/plans/reports/point-in-time-week-spec-review.md`,
+    needs-rework, 9 findings + 10 undeclared gaps, all folded without
+    changing user-chosen behavior). Coordinator calls:
+    - F1: live enters the current week's worked minutes before carry is
+      walked, so a future week's `Carry-in` matches the current week's
+      live-inclusive `fulfillment - target` (follows the user's "live
+      counts everywhere").
+    - F2: `live` always comes from today's punches and `required` from
+      today's weekday, for every `status` of the current week, so
+      `status DATE` classifies today separately.
+    - F3/F9: Fri-Sun `required = target` kept; its up-to-4-minute
+      `est. EOD` effect for non-multiple-of-5 targets is declared.
+    - F4-F8: section reference fixed to SPEC §1.2a, doc and code-comment
+      sweep listed, testing section added, zero-target rendering
+      specified, motivation wording fixed.
+    - U1-U10 all declared in spec §6.
+    This decision supersedes entry 37's "live minutes never enter that
+    math" for displayed fulfillment and worked; entry 37 stays as
+    history. Phase 14 runs at tier `returning`, because `status` and
+    `week` output change for a daily user. Provisional size two tasks
+    (code across `src/`, docs in SPEC/README), so phases 5-7 collapse
+    into one short plan and phase 10 is skipped unless the plan splits
+    the code.
 
 ## Open questions (still need answers)
 
