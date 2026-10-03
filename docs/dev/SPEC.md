@@ -169,6 +169,21 @@ yet, a possible issue works but has a rough edge.
   live minutes from `Worked`, `Fulfillment` and the headline.
 - `status DATE` for a future week reads `Total behind` for the whole
   week's target, though that week has not started.
+- A week that started in debt reads more left than the target. With a
+  carry-in of `-28h 00m` and 17h 27m worked, the headline reads `50h 33m
+  left to 40h 00m target`. The left figure is `required − fulfillment`,
+  and fulfillment includes the debt. The parenthetical shows the
+  carry-in.
+- `mlm week target` prints nothing on success, so a typo such as `0h`
+  for `40h` goes unnoticed. Only the next `status` or `week` shows the
+  new target.
+- `mlm week 2026-41 target 20h` (the `WEEK_ID` before `target`) fails
+  with the usage of plain `week`, which does not show the right order,
+  `week target [WEEK_ID] DURATION`. `mlm week target --help` lists only
+  `<ARGS>...`, so the shape sits in the description text.
+- The `--help` pages define none of fulfillment, `est. EOD`, `incl.
+  ongoing` or the by-end-of-weekday rule. Only this spec and the README
+  explain them.
 - The first run against a new database logs a line to stderr, e.g.
   `[2026-10-03T15:32:57Z INFO  rusqlite_migration] Database migrated to
   version 1`, with a UTC timestamp. It appears once.
@@ -436,8 +451,9 @@ One display rule everywhere, tabular or standalone alike: `HHh MMm`,
 both sides zero-padded, hour part never dropped even at zero (`07h
 45m`, `00h 20m`) — this is what keeps a column of these lined up, and
 there's no reason for status output to look different from the week
-table right next to it. A negative value (a closed week's ahead-of-target `owed`, a
-surplus `carry_out`) keeps the same padding with the sign in front:
+table right next to it. A negative value (a surplus `carry_out`, a
+negative `Carry-in:` or `fulfillment`) keeps the same padding with the
+sign in front:
 `-00h 50m`, `-03h 20m`.
 
 `DURATION` arguments (§3.7) accept a looser *input* grammar than the
@@ -764,7 +780,8 @@ carry-in is exactly zero.
   carry-in), and that is expected: day total is "today, in isolation,"
   the week line is "today's slice of the whole week's math."
 - **Estimated EOD** (`est. EOD HH:MM`) appears only when today has an
-  open stint: it's `open start + (required − fulfillment)`, i.e. the
+  open stint: it's `open start + (required − fulfillment without the
+  running stint's live minutes)`, equivalently `now + gap`. It is the
   clock time at which this open stint closes the gap, so it stays the
   same on every read while the stint runs and moves only when a punch is
   added or removed. For a start at or before now this equals `now +

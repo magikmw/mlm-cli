@@ -57,16 +57,14 @@ pub fn week_framing(week: WeekId, today: NaiveDate) -> WeekFraming {
 /// today's weekday. Friday to Sunday the slice is the whole target, so the
 /// line names the target alone.
 fn current_week_headline(acct: &WeekAccounting, today: NaiveDate) -> String {
-    let weekday_number = i64::from(today.weekday().number_from_monday());
-    let required = week::required_minutes(acct.target, weekday_number);
-    let gap = required - acct.fulfillment;
+    let (required, gap) = week::required_and_gap(acct, today);
     let (word, magnitude) = if gap >= 0 {
         ("left to", gap)
     } else {
         ("over", -gap)
     };
     let amount = format_minutes(magnitude);
-    if weekday_number >= 5 {
+    if today.weekday().number_from_monday() >= 5 {
         format!("{amount} {word} {} target", format_minutes(required))
     } else {
         format!(
