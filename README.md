@@ -10,8 +10,9 @@ date plus a short note of what you did, stored in SQLite.
 - `start`/`stop` — log a punch for today, with an optional note
   attached in the same call
 - `note` — log a work-log entry independent of any punch
-- `status` — a day's stints, notes, and day/week totals, with a live
-  "how much is left today" estimate while a stint is open
+- `status` — a day's stints, notes, and day/week totals, with a
+  "how much is left today" estimate that counts the running stint while
+  a stint is open
 - `week` — a week's per-day totals plus carry-in/fulfillment against
   target
 - `week target` — override a week's target hours; any shortfall or
@@ -39,7 +40,7 @@ Not implemented yet:
 - `+N`/`-N` relative week notation for `week`'s week-id argument
   (`status`'s `DATE` argument already accepts `-N`)
 
-### Known issues
+### Possible issues
 
 Shipped behavior that's rough or confusing in a way worth fixing
 later:
@@ -75,7 +76,37 @@ later:
   `<weekday>`") built from the week's running fulfillment, not from
   the day total just printed on the same line — nothing marks the
   switch, so the two figures can look like bad arithmetic even though
-  each is correct on its own terms
+  each is correct on its own terms. The pace hint also counts the
+  running stint's live minutes, which the day total beside it does not
+- The pace hint counts down while the week line's `owed` stays frozen
+  until `stop`, so on Friday through Sunday the two can disagree in
+  direction (e.g. `00h 10m over 40h 00m required today` beside `Week
+  ...: 00h 20m left by end of Friday`) or in magnitude (the Saturday
+  sample below). `mlm week` for the current week stays frozen while
+  `status` counts live
+- `est. EOD` means "when this open stint closes the gap". It stays the
+  same on every read while the stint runs, and once the stint runs past
+  it, `status` prints `target already met`. When a large remaining
+  figure puts it past midnight, it carries a day suffix (see `status`
+  below), so it can read days away, e.g. `est. EOD 06:00 (Mon)`
+- With two or more open starts today, the pace hint and `est. EOD` count
+  only the most recent one, while the stint list shows every open stint
+  with its own duration. Fixing the anomaly makes both jump
+- With two open starts, the `fix:` and `or:` lines suggest only a `stop`
+  after the later start. A `stop` between the two starts also works: it
+  pairs with the earlier start and leaves the later one open
+- From Friday on, the required figure equals the week's full target, so
+  the pace hint and `est. EOD` treat the whole week as due today. With
+  little worked, `est. EOD` can land days away
+- A `start` typed for a time later than now is accepted without a
+  warning and counts as an open stint before it begins, so the stint
+  list shows `HH:MM-now (00h 00m, ongoing)`. A mistyped time is not
+  flagged
+- `status DATE` for a future week reads `Total behind` for the whole
+  week's target, though that week has not started
+- The first run against a new database logs a line to stderr (`INFO
+  rusqlite_migration ... Database migrated to version 1`) with a UTC
+  timestamp. It appears once
 - Monday through Thursday, that pace hint always names *today's* own
   weekday ("required by end of Thursday" on a Thursday); `required
   today` would read correctly every day, but the wording only switches
@@ -227,7 +258,7 @@ before today (e.g. `-1` = yesterday), and defaults to today.
 $ mlm status
 Sat 2026-09-12
 
-Day total:     07h 25m (+ ongoing), 04h 35m over 40h 00m required today, target already met
+Day total:     07h 25m (+ ongoing), 09h 54m over 40h 00m required today, target already met
 Week 2026-37:  04h 35m ahead of target (fulfillment 44h 35m / target 40h 00m)
 
   09:00-13:00  (04h 00m)
@@ -270,8 +301,17 @@ clause after the day total isn't derived from that day total — it
 compares the week's running fulfillment so far (worked time plus any
 carry-in) against how much of the week's target should be done by the
 end of today, so its figure can move in a different direction than the
-day total next to it (see Known issues). A past date's status just
-shows that day's total and its week's numbers:
+day total next to it (see Possible issues). While a stint is open, both
+the pace hint and `est. EOD` count the running stint: the hint counts
+down as you work, and `est. EOD` is the open start plus the time left
+to reach the required figure, so it holds still until you add or
+remove a punch. When that lands after today, `est. EOD` names the day
+it falls on. It reads `(tomorrow)` one day out, `(Mon)` two to six days
+out, and `(Mon 2026-10-12)` a week or more out, so a large remaining
+figure can put it days away. While a stint runs, the pace hint counts
+down but the day total and the week line stay put until `stop`, so the
+figures on one screen can disagree (see Possible issues). A past date's
+status just shows that day's total and its week's numbers:
 
 ```sh
 $ mlm status 2026-09-08
@@ -354,7 +394,7 @@ No footer line prints when nothing in the week is flagged.
 An unfixed anomaly in a past week also throws off every later week's
 `Carry-in`, since carry-in is just the prior week's fulfillment vs.
 target variance — that later week's own view carries no `[!]` telling
-you the number traces back to an earlier problem (see Known issues).
+you the number traces back to an earlier problem (see Possible issues).
 
 ### `mlm week|w target [WEEK_ID] DURATION`
 

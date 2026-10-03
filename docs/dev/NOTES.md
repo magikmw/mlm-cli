@@ -3,6 +3,36 @@
 Running log of background/story before formal spec exists. Not a spec —
 decisions here can (will) change. Formal spec comes later as its own doc.
 
+## Current state
+
+Read this block at changeset start, not the log below. Update it at
+each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
+read only the one you need.
+
+- **Next entry**: 90
+- **Last release**: `v0.3.6`
+- **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
+- **Active changeset**: `live-eod`, complete on its branch, awaiting release decision (entry 89),
+  branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
+- **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
+
+Phase 0 profile (`coordinating-development`), set in entry 65:
+
+| Slot | Value |
+|---|---|
+| Verification | `cargo fmt`, `cargo build`, `cargo test`, `cargo clippy --all-targets -- -D warnings`; pre-commit hook adds cognitive complexity ≤ 15 and a coverage ratchet (`coverage-baseline.json`) |
+| Doc root | `docs/dev/` — `SPEC.md`, `NOTES.md`, `specs/`, `plans/`, `plans/reports/` |
+| Decision log | this file, numbered entries |
+| Model tier | Sonnet everywhere; escalation needs in-the-moment approval |
+| Release | `scripts/prep_release.sh` (reversible bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running |
+| Branches | one per changeset, one per task merged `--no-ff` into it, changeset to `main` at release |
+| Changeset id | topic slug, not a number |
+| Spec location | `docs/dev/specs/<date>-<slug>.md` |
+| Plans | `docs/dev/plans/<slug>-plan.md`, `<slug>-task-N-<topic>.md`; reports in `plans/reports/` |
+| Artifact | `cargo build --release` → `target/release/mlm` |
+| User-visible surface | `README.md`, `mlm --help` and subcommand `--help`, `status`/`week`/write-command output |
+| Context-starvation hook | absent |
+
 ## Workflow note (process, not product)
 
 When we get to implementation: use subagents for TDD (write tests first,
@@ -1030,6 +1060,105 @@ SPEC.md and PLAN.md:
     claims this changeset made false. Release not prepared, at the
     user's request; `open-punch-visibility` is not yet merged to
     `main`.
+
+84. **`live-eod` changeset started.** User report from real use
+    2026-10-03: `est. EOD` drifts later while a stint is open, so it
+    can never be reached without `stop`. Root cause is §7.1's
+    `now + (required − fulfillment)` leaving out the open stint's
+    live minutes, which §2.4 already says feed `est. EOD`. User chose
+    to subtract live minutes from the pace hint's `gap` too, so both
+    figures count down together. User also chose to omit EOD for a
+    stale open stint, but today's page only ever pairs today-dated
+    punches, so that case cannot arise and the spec states it as a
+    guarantee. Multiple open starts today use the most recent one's
+    live minutes, which avoids double counting. Phase 0 profile reused
+    from entry 65 unchanged. Baseline `main` at `c9e980b`; branch
+    `live-eod`. Spec `docs/dev/specs/2026-10-03-live-eod.md`. Phase 14
+    runs, because `status` output changes.
+
+85. **`live-eod` spec reviewed and locked**
+    (`docs/dev/plans/reports/live-eod-spec-review.md`,
+    ship-with-followups, 12 findings, all folded). User chose to file
+    the overnight-session gap (F3) as a known issue next to the
+    existing yesterday's-open-session one. Coordinator calls:
+    `live` reads `ctx.day.open.last()`; `est. EOD` is defined as
+    `open start + (required − fulfillment)`, which drops the false
+    one-minute-drift claim and makes a start typed for later today
+    project from its own time; `DailyTargetHint.gap_minutes` holds the
+    post-live value; the hint/week-line divergence, minute-by-minute
+    output, backdated-punch jumps and two-open-start crediting go in
+    the spec's known issues. This changeset reverses SPEC §7.1's
+    explicit "fulfillment here still excludes the open stint's live
+    minutes" for the pace hint and `est. EOD`; entries 19 and 37 stay
+    as history. Phase 14 runs at tier `returning`, because `status`
+    output changes for a daily user. Provisional size two tasks
+    (code in `status.rs`, docs in SPEC/README), so phases 5-7
+    collapse into one short plan and phase 10 is skipped.
+
+86. **`live-eod` plan reviewed and folded**
+    (`docs/dev/plans/reports/live-eod-plan-review.md`,
+    ship-with-followups, 12 findings). Two parallel tasks confirmed:
+    Task 1 owns `src/status.rs`, Task 2 owns SPEC.md and README.md;
+    the reviewer found every `DailyTargetHint`/`gap_minutes`/`EodState`
+    consumer in `status.rs`. F1-F7 folded as a "Review folds" section
+    at the end of the plan. U1-U5 are visible consequences of locked
+    behavior, so they went into spec §1.2 as known issues without
+    changing behavior. The real-clock binary cannot reproduce the
+    pinned sample lines, so Task 1 pins the §7.1 sample in a
+    resolve-level test instead. With one task per file set and a
+    detailed plan, phase 8 task plans are skipped; each implementer
+    plans inside its own dispatch.
+
+87. **`live-eod` Tasks 1 and 2 merged** `--no-ff` into `live-eod`
+    (`139143c` docs, `7a673fb` code). Both shipped to plan; Task 2
+    also fixed three stale old-formula passages in SPEC the plan had
+    not listed. Merge gate first failed on a full disk: 39 leftover
+    agent worktrees held about 60 GB of `target/` caches. At the
+    user's choice the caches were deleted and the 33 worktrees that
+    were merged and clean were removed with their branches; four
+    unmerged and two dirty worktrees were left for the user. Gate then
+    green (fmt, build, 511 lib + integration tests, clippy). Hand run
+    of the binary: two `status` reads 65 s apart printed the same
+    `est. EOD` while `left to` dropped by a minute.
+
+88. **`live-eod` phase 13/14 back and triaged.** Final review ran on
+    Opus at the user's choice
+    (`docs/dev/plans/reports/live-eod-final-review.md`,
+    ship-with-followups, 2 low doc findings, no code findings; tests
+    fail under every regression tried). Fresh-eyes check at tier
+    `returning` (`docs/dev/plans/reports/live-eod-fresh-eyes.md`,
+    11 findings). User triage in chat 2026-10-03, coordinator's
+    recommendations accepted:
+    - Review F1 (SPEC line wrap) and F2 (§2.4 `required` bullet implies
+      `owed` subtracts live): fixed.
+    - Fresh-eyes F1 (`(tomorrow)` on estimates days away, now common):
+      fixed. Spec amended with §3.4: weekday abbreviation 2–6 days out,
+      weekday plus date 7+ days out. This reverses SPEC §7.1's
+      bare-`(tomorrow)` rule.
+    - F7 (which of two open starts counts) and F11 (README `status`
+      section silent on far-off EOD): README doc fixes. F7's narrow
+      `fix:` text filed as a possible issue.
+    - F2 (Saturday treats the whole week as due), F6 (future start shows
+      as `-now`), F8 (future week reads `Total behind`), F9 (raw UTC
+      migration log line on first run): filed as possible issues.
+    - F3, F4, F5, F10: already documented, no action.
+    User also asked to rename "Known issues" to "Possible issues", since
+    the list keeps growing and holds nothing users need to worry about.
+    Applied to the README heading and its cross-references and to SPEC
+    §1.2a's heading; earlier NOTES entries keep their wording.
+
+89. **`live-eod` fix pass merged; changeset complete on its branch.**
+    Fix pass (`docs/dev/plans/reports/live-eod-fixpass.md`) closed both
+    final-review findings and fresh-eyes F1, F2, F6-F9 and F11, plus the
+    "Possible issues" rename. `est. EOD` now names the landing day past
+    tomorrow (weekday, or weekday plus date 7+ days out). The new
+    Saturday possible issue says "from Friday on", because `required`
+    plateaus at the full target from Friday. Merge gate green (fmt,
+    build, 514 lib + integration tests, clippy); hand run printed
+    `est. EOD 01:00 (Mon)` for a Saturday 09:00 start. Fix-pass worktree
+    and branch removed after the gate. Stale-doc grep of README, SPEC
+    and source found no leftover "Known issues" or bare-`(tomorrow)`
+    rule.
 
 ## Open questions (still need answers)
 
