@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 99
+- **Next entry**: 100
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
@@ -1346,6 +1346,26 @@ SPEC.md and PLAN.md:
     builder. U1-U3, U6, U7, U9, U10 added to spec §6; U4/U5 closed by
     F5; U14 T6 wording clarified; the rest already declared or
     timing-only.
+
+99. **`possible-issues-triage` task plans written, cross-checked and
+    folded.** Six task plans under `docs/dev/plans/`
+    (`possible-issues-triage-task-{1..6}-*.md`). T1, T5, T6 planned
+    first; T2-T4 against T1's published seams. Coordinator rulings:
+    `mlm week` carry marker sits in the footer slot above the Carry-in
+    block (contract 6); T5 handles `week target` errors by rewriting
+    clap's error context (covers E10 and too-many-values); short `-h`
+    may gain clap's `(see more with '--help')` suffix instead of a
+    replacement help flag (spec §4.2/§6 updated); T2 prints one `fix:`
+    per overlapping pair and puts the longer stint first on equal
+    starts; `mlm start` gets no refused-join suppression (a page rule).
+    Consistency review (`plans/reports/possible-issues-triage-consistency.md`,
+    8 findings) folded: F1 T2 labels spliced stints with real times;
+    F2 T6 checks literals by shape; F3/F4/F7 changeset plan wording
+    (T3 entry wrapper, loader derives live, `-h` suffix); F5 the merge
+    gate checks hint-then-marker order end to end; F6 T2-T4 may re-pin
+    an inverted assertion in a T1-owned file and must list it; F8 T6
+    rewrites SPEC §7.1's future-date `status` text. T2 and T6 plans
+    re-aligned by dispatch. T1 and T5 implementation dispatched.
 
 ## Open questions (still need answers)
 

@@ -52,7 +52,7 @@ Every task after the foundation edits a different file. The foundation task crea
 - Help and usage: keep the single variadic positional. A required positional cannot follow an optional one in clap, and its comment says so. A clap 4.6 scratch build (plan review F1) showed that a usage override fixes only the usage line, so three parts are needed:
   - override the usage line to `mlm week target [OPTIONS] [WEEK_ID] <DURATION>`;
   - hide the positional from the generated Arguments section and write an Arguments section by hand that names `[WEEK_ID]` and `<DURATION>`;
-  - intercept the missing-argument error for `week target` (E10) in the same fallible-parse step and print clap-style text whose usage line is the overridden one.
+  - in the same fallible-parse step, rewrite the context of clap's own errors for `week target` (missing argument E10, too many values) so they name the two arguments; clap's text and usage line otherwise stay (T5 task plan, finding 1).
   - Acceptance: the substring `<ARGS>` appears nowhere in `mlm week target --help` or in any error printed for that subcommand.
 
 **F8, where anomalies are collected for the carry walk.** The one per-date anomaly module is the single place. The carry scan:
@@ -79,6 +79,7 @@ The per-date fact set grows by the overlap pairs and the clean-pair next-punch t
 - No pointers from SPEC, README or `--help` to the spec file or to `docs/dev/plans/` (AGENTS.md Documentation rule).
 - NOTES.md and the spec file are coordinator-owned. No task edits them.
 - A task that finds it needs a file outside its list stops and reports so the coordinator can re-scope. No two tasks touch a file.
+- One exception, for T2, T3 and T4 only. When the task's own spec change inverts an existing test assertion in a T1-owned file (`src/status.rs`, `src/week_view.rs`, `src/render.rs`, the T1 test files), the task may re-pin that assertion's expected value and nothing else. It lists every such re-pin in its completion report. The coordinator resolves any overlap between two tasks' re-pins at merge.
 - Integration tests under `tests/` follow the existing pattern: drive the compiled binary with `MLM_DB_PATH` and an isolated temp database, seed punches by raw insert, pin `TZ` where the clock matters.
 
 ## Ordering and parallelization
@@ -94,7 +95,7 @@ T6 docs (independent) ───────────────────�
 - **T5 and T6 start immediately**, in parallel with T1. They own files disjoint from every other task, and they quote the literals pinned below. The coordinator checks T6's quoted strings and T5's glossary against the built binary at merge.
 - **T1 is the critical path.** T2, T3 and T4 open their worktrees from the merged T1.
 - **T2, T3 and T4 run in parallel.** Their owned files are disjoint (the per-date anomaly module, the lookback module with `src/commands.rs`, and the carry-scan module).
-- **T4 has one soft dependency on T2.** T4's acceptance test that an overlap-only earlier week raises the marker needs T2's overlap anomaly. T4 builds and tests everything else against T1, and adds that one test after rebasing onto merged T2. Merge order is T2, then T3 and T4 in either order.
+- **T4 has one soft dependency on T2.** T4's acceptance test that an overlap-only earlier week raises the marker needs T2's overlap anomaly. T4 builds and tests everything else against T1, and adds that one test after rebasing onto merged T2. Merge order is T2, then T3 and T4 in either order. After the last of T2-T4 merges, the coordinator's merge gate checks end to end that today's page prints the §3.1 hint and then the §3.3 marker line in that order.
 - **Critical path**: T1 -> T2 -> T4's final test -> merge. T3 and T5 and T6 are off the critical path.
 - T1 is the largest task. Its task plan may split it into sequential commits (loader and read errors, then anomaly/lookback module extraction, then polish), but it stays one worktree because every step edits `src/status.rs` and `src/week_view.rs`.
 
@@ -110,11 +111,11 @@ All in plain terms. The spec's sample blocks are the byte-exact reference.
    - The fact type has a way to build a default value, so adding a field never breaks another file's tests. Only this module constructs it field by field.
 3. **Lookback module entry points.**
    - Today's page: input is the connection, today, now, and a flag saying whether today's own page already shows a refused-join line naming yesterday. Output is the finished lookback and hint lines in the spec §3.1 order, which is lookback lines oldest first, then the hint.
-   - `mlm start`: structured findings for the stderr warnings, with the just-written-punch exemption and best-effort rule of SPEC §7.4 unchanged.
+   - `mlm start`: structured entries for the stderr warnings. T1 publishes the finding types; T3 may wrap them in its own entry type in `src/lookback.rs` to carry the clean-pair `N` and whether today has punches, because T1's frozen `render.rs` test `t33b` builds the finding types as struct literals. The just-written-punch exemption and best-effort rule of SPEC §7.4 stay unchanged.
    - After T1 the behavior equals today's. The flag is accepted and ignored until T3.
 4. **Status page composition.** For any date, `status` prints the date's anomaly block, then (today only) the lookback and hint lines, then the carry marker line. This is the §3.1 and §3.3 placement. T1 builds the composition.
 5. **History loader.**
-   - Input is the connection, the shown week, today and now, and today's live minutes where the page needs them.
+   - Input is the connection, the shown week, today and now. The loader derives today's live minutes itself.
    - Output is the ledger (worked per week with live added to the current week only, data weeks, target overrides) plus the bucketed punches covering earliest data date through the shown week.
    - The earliest data week (punches or notes) anchors the walk, and live credit marks the current week as a data week, both as today.
    - Any storage failure is an error. It never degrades to defaults.
@@ -123,7 +124,7 @@ All in plain terms. The spec's sample blocks are the byte-exact reference.
    - Line text, byte for byte from spec §3.3:
      - `[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)`
      - with one week: `[!] carry-in includes anomalies from 1 earlier week, 2026-38 (see mlm week 2026-38)`
-   - `mlm week` renders the Carry-in figure as `Carry-in:      -80h 00m  [!]` and prints the same line after the footer (the footer, then a blank line, then this line). Nothing is printed when the data is absent.
+   - `mlm week` renders the Carry-in figure as `Carry-in:      -80h 00m  [!]`. The marker line sits in the footer slot, which is above the Carry-in block: day rows, blank line, the anomaly footer if any row is marked, the marker line directly under it (no blank between), then one blank line, then the Carry-in block. With no marked row, the marker line takes the footer's place. Nothing is printed when the data is absent.
    - T1 renders it from hand-built data. T4's scan produces the data.
 7. **Clean-pair rule.**
    - Target: one open start S. N is the first punch on S's date strictly later than S (any punch kind). In practice N is a start, because an end after S with no start between would have closed S.
@@ -264,13 +265,13 @@ All in plain terms. The spec's sample blocks are the byte-exact reference.
 
 **Spec citation**: §3.5, §4.1, §4.2, §4.3, §7 (§4.3 tests).
 
-**Paragraph**: Make `Warn` the default log level and keep `--verbose` at `Debug`. Add the term glossary to `status --help` and `week --help`, leaving short `-h` unchanged. Make `week target` print its echo line. Rework `week target`'s help and usage to name `[WEEK_ID] <DURATION>`, and intercept the `week WEEK_ID target DURATION` shape with the decision F7 mechanism. This task is independent of the other tasks and starts at once.
+**Paragraph**: Make `Warn` the default log level and keep `--verbose` at `Debug`. Add the term glossary to `status --help` and `week --help`. Short `-h` keeps its text apart from clap's `(see more with '--help')` suffix. Make `week target` print its echo line. Rework `week target`'s help and usage to name `[WEEK_ID] <DURATION>`, and intercept the `week WEEK_ID target DURATION` shape with the decision F7 mechanism. This task is independent of the other tasks and starts at once.
 
 **Acceptance criteria**:
 
 - §4.1. A fresh database run without `--verbose` prints nothing on stderr (the migration line no longer shows), for example a first `mlm start`. With `--verbose` the migration line and debug lines appear.
 - §3.5. A successful `mlm week target 20h` prints exactly `Week <current week id> target: 20h 00m` on stdout. `mlm week target 2026-41 20h` prints `Week 2026-41 target: 20h 00m`, and a zero or non-round duration uses the standard formatter. Failures (bad duration, bad week) still print nothing on stdout. `start`, `stop` and `note` stay silent.
-- §4.2. `mlm status --help` and `mlm week --help` end with a glossary that defines worked, carry-in, fulfillment, the week line's `left to` / `over` figure with `by end of <weekday>` (Mon-Thu) against `<target> target` (Fri-Sun), `est. EOD` and `done for today`, `(incl. ongoing)` and `(+ ongoing)`, and `[!]` and `[i]`, in one or two lines each. Carry-in is a signed balance (shortfall negative, surplus positive). `-h` output is byte-identical to before. A test checks each term is present in both long helps and that `done for today` appears, and that `target already met` does not.
+- §4.2. `mlm status --help` and `mlm week --help` end with a glossary that defines worked, carry-in, fulfillment, the week line's `left to` / `over` figure with `by end of <weekday>` (Mon-Thu) against `<target> target` (Fri-Sun), `est. EOD` and `done for today`, `(incl. ongoing)` and `(+ ongoing)`, and `[!]` and `[i]`, in one or two lines each. Carry-in is a signed balance (shortfall negative, surplus positive). `-h` output is byte-identical to before except clap's `(see more with '--help')` suffix on the help line; no replacement help flag. A test checks each term is present in both long helps and that `done for today` appears, and that `target already met` does not.
 - §4.3 help. `mlm week target --help` shows usage `[WEEK_ID] <DURATION>` and an Arguments section that names both, and `<ARGS>` appears nowhere in the help or in the missing-argument (E10) error.
 - §4.3 interception:
   - `mlm week 2026-41 target 20h` prints exactly `error: put WEEK_ID after target: mlm week target 2026-41 20h` on stderr (no `Usage:` block), nothing on stdout, and exits `2`.

@@ -231,7 +231,7 @@ It defines, in one or two lines each:
 - `(incl. ongoing)` and `(+ ongoing)`;
 - `[!]` and `[i]`.
 
-Short `-h` stays unchanged. Exact wording is a task-plan item, checked
+Short `-h` keeps its text, except that clap's help line gains its standard `(see more with '--help')` suffix once a long help exists. Exact wording is a task-plan item, checked
 against SPEC §1.3, §2.4, §7.1 and §7.2.
 
 ### 4.3 `week target` argument order (I32)
@@ -359,6 +359,8 @@ with the list.
   when the user typed the `w` alias, and prints no `Usage:` block.
 - The `week target` echo uses the standard formatter, so `90m` echoes
   as `01h 30m`.
+- `mlm status -h` and `mlm week -h` show `Print help (see more with
+  '--help')` on the help line.
 
 ## 7. Testing
 
