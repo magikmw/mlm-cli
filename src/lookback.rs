@@ -923,7 +923,11 @@ mod tests {
         let older = pos("unclosed start on Sat 2026-02-07");
         let hint = pos("[i] start on Wed 2026-02-11");
         assert!(todays < older && older < hint, "{lines:?}");
-        assert_eq!(lines.len(), hint + 2, "{lines:?}");
+        assert_eq!(lines.len(), hint + 3, "{lines:?}");
+        assert_eq!(
+            lines[hint + 2],
+            "[!] carry-in includes anomalies from 1 earlier week, 2026-06 (see mlm week 2026-06)"
+        );
     }
 
     // ---- week rows ----
