@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 89
+- **Next entry**: 90
 - **Last release**: `v0.3.6`
 - **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, phase 16 (triaged, entry 88),
+- **Active changeset**: `live-eod`, complete on its branch, awaiting release decision (entry 89),
   branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
@@ -1146,6 +1146,19 @@ SPEC.md and PLAN.md:
     the list keeps growing and holds nothing users need to worry about.
     Applied to the README heading and its cross-references and to SPEC
     §1.2a's heading; earlier NOTES entries keep their wording.
+
+89. **`live-eod` fix pass merged; changeset complete on its branch.**
+    Fix pass (`docs/dev/plans/reports/live-eod-fixpass.md`) closed both
+    final-review findings and fresh-eyes F1, F2, F6-F9 and F11, plus the
+    "Possible issues" rename. `est. EOD` now names the landing day past
+    tomorrow (weekday, or weekday plus date 7+ days out). The new
+    Saturday possible issue says "from Friday on", because `required`
+    plateaus at the full target from Friday. Merge gate green (fmt,
+    build, 514 lib + integration tests, clippy); hand run printed
+    `est. EOD 01:00 (Mon)` for a Saturday 09:00 start. Fix-pass worktree
+    and branch removed after the gate. Stale-doc grep of README, SPEC
+    and source found no leftover "Known issues" or bare-`(tomorrow)`
+    rule.
 
 ## Open questions (still need answers)
 
