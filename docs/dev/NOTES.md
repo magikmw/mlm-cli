@@ -11,7 +11,7 @@ read only the one you need.
 
 - **Next entry**: 96
 - **Last release**: `v0.3.6`
-- **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
+- **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
 - **Active changeset**: none (`point-in-time-week` merged to `main`,
   entry 95; release not prepared)
