@@ -176,7 +176,7 @@ pub fn format_date_with_weekday(d: NaiveDate) -> String {
     format!("{} {}", weekday_abbrev(d.weekday()), format_date(d))
 }
 
-/// `Thursday` — §7.1/§7.2's "left by end of <weekday>" headline word.
+/// `Thursday` — §7.1/§7.2's "by end of <weekday>" headline word.
 pub fn format_weekday_full(d: NaiveDate) -> String {
     match d.weekday() {
         Weekday::Mon => "Monday",

@@ -1,6 +1,6 @@
 //! Shared rendering helpers for `status` (Milestone 10) and `week`
-//! (Milestone 11): the §7.1/§7.2 week-owed headline and the §7.3
-//! anomaly rendering. Pure functions only — no DB access, no CLI
+//! (Milestone 11): the §7.1/§7.2 week headline and the §7.3 anomaly
+//! rendering. Pure functions only — no DB access, no CLI
 //! wiring, no `chrono::Local::now()` (PLAN.md contract 6: "now" is
 //! always an injected parameter).
 //!
@@ -13,10 +13,11 @@
 // the public surface here has no in-crate caller yet outside the tests.
 #![allow(dead_code)]
 
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{Datelike, NaiveDate, NaiveTime};
 
 use crate::date::{WeekId, format_date, format_date_with_weekday, format_weekday_full};
 use crate::time::format_minutes;
+use crate::week::{self, WeekAccounting};
 
 /// Width of the left-hand label column shared by §7.1's lead lines and
 /// §7.2's trailing block. Labels are left-aligned and padded to this
@@ -50,61 +51,68 @@ pub fn week_framing(week: WeekId, today: NaiveDate) -> WeekFraming {
     }
 }
 
+/// The point-in-time headline for the current week: `gap` is
+/// `required - fulfillment`, where `required` is the slice of the target due
+/// by the end of `today`. Monday to Thursday it names that slice and
+/// today's weekday. Friday to Sunday the slice is the whole target, so the
+/// line names the target alone.
+fn current_week_headline(acct: &WeekAccounting, today: NaiveDate) -> String {
+    let weekday_number = i64::from(today.weekday().number_from_monday());
+    let required = week::required_minutes(acct.target, weekday_number);
+    let gap = required - acct.fulfillment;
+    let (word, magnitude) = if gap >= 0 {
+        ("left to", gap)
+    } else {
+        ("over", -gap)
+    };
+    let amount = format_minutes(magnitude);
+    if weekday_number >= 5 {
+        format!("{amount} {word} {} target", format_minutes(required))
+    } else {
+        format!(
+            "{amount} {word} {} by end of {}",
+            format_minutes(required),
+            format_weekday_full(today)
+        )
+    }
+}
+
 /// The §7.1/§7.2 headline for a week, in its bare form (no `Week NN:`
 /// label, no fulfillment/target parenthetical).
 ///
-/// `owed_minutes` is Milestone 6's signed `owed` for that week.
-/// `today` is the injected "now" date (PLAN.md contract 6) — the
-/// weekday in the deadline phrase is always *today's*, never that of
+/// The current week reads `acct`'s live-inclusive `fulfillment` and
+/// `target` (see `current_week_headline`). Every other week reads its
+/// signed `owed`. `today` is the injected "now" date (PLAN.md contract 6),
+/// so the weekday in the deadline phrase is always *today's*, never that of
 /// whatever date the caller happens to be displaying (§7.1, F11).
-pub fn week_headline(week: WeekId, owed_minutes: i64, today: NaiveDate) -> String {
-    match week_framing(week, today) {
-        WeekFraming::Current if owed_minutes >= 0 => format!(
-            "{} left by end of {}",
-            format_minutes(owed_minutes),
-            format_weekday_full(today)
-        ),
-        WeekFraming::Current => {
-            format!("{} ahead of target", format_minutes(-owed_minutes))
+pub fn week_headline(acct: &WeekAccounting, today: NaiveDate) -> String {
+    match week_framing(acct.week, today) {
+        WeekFraming::Current => current_week_headline(acct, today),
+        WeekFraming::Closed if acct.owed > 0 => {
+            format!("Total behind: {}", format_minutes(acct.owed))
         }
-        WeekFraming::Closed if owed_minutes > 0 => {
-            format!("Total behind: {}", format_minutes(owed_minutes))
-        }
-        WeekFraming::Closed => format!("Total ahead: {}", format_minutes(-owed_minutes)),
+        WeekFraming::Closed => format!("Total ahead: {}", format_minutes(-acct.owed)),
     }
 }
 
 /// The complete §7.1 week line, label and all, e.g.
-/// `Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)`
-pub fn status_week_line(
-    week: WeekId,
-    owed_minutes: i64,
-    fulfillment_minutes: i64,
-    target_minutes: i64,
-    carry_in_minutes: i64,
-    today: NaiveDate,
-) -> String {
-    let label = format!("Week {}:", week);
-    let headline = week_headline(week, owed_minutes, today);
-    let parenthetical = match week_framing(week, today) {
-        WeekFraming::Current => {
-            let worked_minutes = fulfillment_minutes - carry_in_minutes;
-            if carry_in_minutes == 0 {
-                format!(
-                    " (fulfillment {} / target {})",
-                    format_minutes(fulfillment_minutes),
-                    format_minutes(target_minutes)
-                )
-            } else {
-                format!(
-                    " (fulfillment {} = worked {} + carry-in {} / target {})",
-                    format_minutes(fulfillment_minutes),
-                    format_minutes(worked_minutes),
-                    format_minutes(carry_in_minutes),
-                    format_minutes(target_minutes)
-                )
-            }
-        }
+/// `Week 2026-07:  02h 45m left to 32h 00m by end of Thursday (fulfillment 29h 15m / target 40h 00m)`
+pub fn status_week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
+    let label = format!("Week {}:", acct.week);
+    let headline = week_headline(acct, today);
+    let parenthetical = match week_framing(acct.week, today) {
+        WeekFraming::Current if acct.carry_in == 0 => format!(
+            " (fulfillment {} / target {})",
+            format_minutes(acct.fulfillment),
+            format_minutes(acct.target)
+        ),
+        WeekFraming::Current => format!(
+            " (fulfillment {} = worked {} + carry-in {} / target {})",
+            format_minutes(acct.fulfillment),
+            format_minutes(acct.fulfillment - acct.carry_in),
+            format_minutes(acct.carry_in),
+            format_minutes(acct.target)
+        ),
         WeekFraming::Closed => String::new(),
     };
     format!(
@@ -387,13 +395,44 @@ mod tests {
     /// Reference "today" throughout: a Thursday in ISO week 2026-07.
     const TODAY: fn() -> NaiveDate = || NaiveDate::from_ymd_opt(2026, 2, 12).unwrap();
 
+    /// Accounting with `worked` derived from `fulfillment - carry_in`.
+    /// Current-week framing reads `fulfillment` and `target`, closed-week
+    /// framing reads `owed`, so tests pass all of them explicitly.
+    fn acct(
+        week: WeekId,
+        owed: i64,
+        fulfillment: i64,
+        target: i64,
+        carry_in: i64,
+    ) -> WeekAccounting {
+        WeekAccounting {
+            week,
+            target,
+            carry_in,
+            worked: fulfillment - carry_in,
+            fulfillment,
+            owed,
+            carry_out: -owed,
+        }
+    }
+
+    /// A closed-week accounting that only carries `owed`.
+    fn closed(week: WeekId, owed: i64) -> WeekAccounting {
+        acct(week, owed, 2400 - owed, 2400, 0)
+    }
+
+    /// Current-week (2026-07, target 40h) accounting with `fulfillment`.
+    fn current(fulfillment: i64) -> WeekAccounting {
+        acct(wk(2026, 7), 2400 - fulfillment, fulfillment, 2400, 0)
+    }
+
     // ---- 4.1 headline, current week ----
 
     #[test]
     fn t1_current_week_headline_matches_the_worked_example() {
         assert_eq!(
-            week_headline(wk(2026, 7), 645, TODAY()),
-            "10h 45m left by end of Thursday"
+            week_headline(&current(1755), TODAY()),
+            "02h 45m left to 32h 00m by end of Thursday"
         );
     }
 
@@ -402,7 +441,7 @@ mod tests {
     #[test]
     fn t2_past_week_headline_plain_total() {
         assert_eq!(
-            week_headline(wk(2026, 6), 190, TODAY()),
+            week_headline(&closed(wk(2026, 6), 190), TODAY()),
             "Total behind: 03h 10m"
         );
     }
@@ -410,7 +449,7 @@ mod tests {
     #[test]
     fn t3_status_first_example_past_week() {
         assert_eq!(
-            week_headline(wk(2026, 2), 100, TODAY()),
+            week_headline(&closed(wk(2026, 2), 100), TODAY()),
             "Total behind: 01h 40m"
         );
     }
@@ -427,16 +466,16 @@ mod tests {
         // a `date` parameter would have to change this call to break
         // this test, which is the signal we want.
         assert_eq!(
-            week_headline(wk(2026, 7), 645, TODAY()),
-            "10h 45m left by end of Thursday"
+            week_headline(&current(1755), TODAY()),
+            "02h 45m left to 32h 00m by end of Thursday"
         );
     }
 
     #[test]
     fn t5_f11_status_week_line_uses_todays_weekday() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
-            "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), 645, 1755, 2400, 0), TODAY()),
+            "Week 2026-07:  02h 45m left to 32h 00m by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
         );
     }
 
@@ -445,38 +484,38 @@ mod tests {
     #[test]
     fn t34_carry_in_zero_is_byte_identical_to_current_output() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
-            "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), 645, 1755, 2400, 0), TODAY()),
+            "Week 2026-07:  02h 45m left to 32h 00m by end of Thursday (fulfillment 29h 15m / target 40h 00m)"
         );
     }
 
     #[test]
     fn t35_carry_in_deficit_worked_example() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 645, 1755, 2400, -130, TODAY()),
-            "Week 2026-07:  10h 45m left by end of Thursday (fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), 645, 1755, 2400, -130), TODAY()),
+            "Week 2026-07:  02h 45m left to 32h 00m by end of Thursday (fulfillment 29h 15m = worked 31h 25m + carry-in -02h 10m / target 40h 00m)"
         );
     }
 
     #[test]
     fn t36_carry_in_fulfillment_goes_negative_worked_example() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 2520, -120, 2400, -300, TODAY()),
-            "Week 2026-07:  42h 00m left by end of Thursday (fulfillment -02h 00m = worked 03h 00m + carry-in -05h 00m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), 2520, -120, 2400, -300), TODAY()),
+            "Week 2026-07:  34h 00m left to 32h 00m by end of Thursday (fulfillment -02h 00m = worked 03h 00m + carry-in -05h 00m / target 40h 00m)"
         );
     }
 
     #[test]
     fn t37_carry_in_surplus_worked_example() {
         assert_eq!(
-            status_week_line(wk(2026, 7), 0, 2400, 2400, 50, TODAY()),
-            "Week 2026-07:  00h 00m left by end of Thursday (fulfillment 40h 00m = worked 39h 10m + carry-in 00h 50m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), 0, 1920, 2400, 50), TODAY()),
+            "Week 2026-07:  00h 00m left to 32h 00m by end of Thursday (fulfillment 32h 00m = worked 31h 10m + carry-in 00h 50m / target 40h 00m)"
         );
     }
 
     #[test]
     fn t38_carry_in_gains_no_parenthetical_on_a_closed_week() {
-        let line = status_week_line(wk(2026, 2), 100, 999, 999, -130, TODAY());
+        let line = status_week_line(&acct(wk(2026, 2), 100, 999, 999, -130), TODAY());
         assert_eq!(line, "Week 2026-02:  Total behind: 01h 40m");
         assert!(!line.contains("carry-in"));
     }
@@ -485,7 +524,7 @@ mod tests {
 
     #[test]
     fn t6_f10_status_week_line_past_week_is_plain_total() {
-        let line = status_week_line(wk(2026, 2), 100, 999, 999, 0, TODAY());
+        let line = status_week_line(&acct(wk(2026, 2), 100, 999, 999, 0), TODAY());
         assert_eq!(line, "Week 2026-02:  Total behind: 01h 40m");
         for weekday in [
             "Monday",
@@ -501,7 +540,7 @@ mod tests {
                 "{line} should not contain {weekday}"
             );
         }
-        assert!(!line.contains("left by end of"));
+        assert!(!line.contains("by end of"));
         assert!(!line.contains("fulfillment"));
     }
 
@@ -510,7 +549,7 @@ mod tests {
     #[test]
     fn t7_future_week_gets_the_same_plain_form_as_closed() {
         assert_eq!(
-            week_headline(wk(2026, 10), 2400, TODAY()),
+            week_headline(&closed(wk(2026, 10), 2400), TODAY()),
             "Total behind: 40h 00m"
         );
     }
@@ -520,7 +559,7 @@ mod tests {
     #[test]
     fn t8_zero_owed_on_a_closed_week_is_total_ahead() {
         assert_eq!(
-            week_headline(wk(2026, 6), 0, TODAY()),
+            week_headline(&closed(wk(2026, 6), 0), TODAY()),
             "Total ahead: 00h 00m"
         );
     }
@@ -528,7 +567,7 @@ mod tests {
     #[test]
     fn t9_negative_owed_renders_as_a_magnitude_under_total_ahead() {
         assert_eq!(
-            week_headline(wk(2026, 6), -50, TODAY()),
+            week_headline(&closed(wk(2026, 6), -50), TODAY()),
             "Total ahead: 00h 50m"
         );
     }
@@ -536,50 +575,132 @@ mod tests {
     #[test]
     fn t10_one_minute_owed_is_still_owed_the_boundary_above_t8() {
         assert_eq!(
-            week_headline(wk(2026, 6), 1, TODAY()),
+            week_headline(&closed(wk(2026, 6), 1), TODAY()),
             "Total behind: 00h 01m"
         );
     }
 
     #[test]
-    fn t11_current_week_already_ahead_drops_the_weekday() {
+    fn t11_current_week_past_required_reads_over_with_the_weekday() {
         assert_eq!(
-            week_headline(wk(2026, 7), -150, TODAY()),
-            "02h 30m ahead of target"
+            week_headline(&current(2070), TODAY()),
+            "02h 30m over 32h 00m by end of Thursday"
         );
     }
 
     #[test]
-    fn t11b_current_week_ahead_boundary_one_minute() {
+    fn t11b_current_week_over_boundary_one_minute() {
         assert_eq!(
-            week_headline(wk(2026, 7), -1, TODAY()),
-            "00h 01m ahead of target"
+            week_headline(&current(1921), TODAY()),
+            "00h 01m over 32h 00m by end of Thursday"
+        );
+        assert_eq!(
+            week_headline(&current(1920), TODAY()),
+            "00h 00m left to 32h 00m by end of Thursday"
+        );
+        assert_eq!(
+            week_headline(&current(1919), TODAY()),
+            "00h 01m left to 32h 00m by end of Thursday"
         );
     }
 
     #[test]
-    fn t11c_status_week_line_ahead_form_short_parenthetical() {
+    fn t11c_status_week_line_over_form_short_parenthetical() {
         assert_eq!(
-            status_week_line(wk(2026, 7), -275, 2675, 2400, 0, TODAY()),
-            "Week 2026-07:  04h 35m ahead of target (fulfillment 44h 35m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), -275, 2675, 2400, 0), TODAY()),
+            "Week 2026-07:  12h 35m over 32h 00m by end of Thursday (fulfillment 44h 35m / target 40h 00m)"
         );
     }
 
     #[test]
-    fn t11d_status_week_line_ahead_form_carry_in_surplus_alone() {
+    fn t11d_status_week_line_over_form_carry_in_surplus_alone() {
         // No work logged at all; a carry-in surplus alone puts the week
-        // ahead of target.
+        // over today's slice.
         assert_eq!(
-            status_week_line(wk(2026, 7), -50, 2450, 2400, 2450, TODAY()),
-            "Week 2026-07:  00h 50m ahead of target (fulfillment 40h 50m = worked 00h 00m + carry-in 40h 50m / target 40h 00m)"
+            status_week_line(&acct(wk(2026, 7), -50, 2450, 2400, 2450), TODAY()),
+            "Week 2026-07:  08h 50m over 32h 00m by end of Thursday (fulfillment 40h 50m = worked 00h 00m + carry-in 40h 50m / target 40h 00m)"
         );
     }
 
     #[test]
     fn t12_negative_zero_never_renders_with_a_minus_sign() {
         assert_eq!(format_minutes(-0i64), "00h 00m");
-        assert!(!week_headline(wk(2026, 6), 0, TODAY()).contains("-00h 00m"));
-        assert!(!week_headline(wk(2026, 7), 0, TODAY()).contains("-00h 00m"));
+        assert!(!week_headline(&closed(wk(2026, 6), 0), TODAY()).contains("-00h 00m"));
+        assert!(!week_headline(&current(1920), TODAY()).contains("-00h 00m"));
+    }
+
+    // ---- point-in-time: Mon-Thu slice, Fri-Sun whole target ----
+
+    #[test]
+    fn pit_friday_to_sunday_headline_names_the_whole_target() {
+        for today in [d(2026, 2, 13), d(2026, 2, 14), d(2026, 2, 15)] {
+            assert_eq!(
+                week_headline(&current(2290), today),
+                "01h 50m left to 40h 00m target"
+            );
+            assert_eq!(
+                week_headline(&current(2400), today),
+                "00h 00m left to 40h 00m target"
+            );
+            assert_eq!(
+                week_headline(&current(2401), today),
+                "00h 01m over 40h 00m target"
+            );
+            assert_eq!(
+                week_headline(&current(2470), today),
+                "01h 10m over 40h 00m target"
+            );
+        }
+    }
+
+    #[test]
+    fn pit_friday_required_is_not_rounded_to_five_minutes() {
+        let acct = acct(wk(2026, 7), 2011, 0, 2011, 0);
+        assert_eq!(
+            week_headline(&acct, d(2026, 2, 13)),
+            "33h 31m left to 33h 31m target"
+        );
+    }
+
+    #[test]
+    fn pit_monday_to_thursday_required_is_floor_fifth_times_weekday() {
+        // 2011 / 5 floors to 402; Monday 402, Tuesday 804, Wednesday 1206.
+        let acct = acct(wk(2026, 7), 2011, 0, 2011, 0);
+        assert_eq!(
+            week_headline(&acct, d(2026, 2, 9)),
+            "06h 42m left to 06h 42m by end of Monday"
+        );
+        assert_eq!(
+            week_headline(&acct, d(2026, 2, 10)),
+            "13h 24m left to 13h 24m by end of Tuesday"
+        );
+        assert_eq!(
+            week_headline(&acct, d(2026, 2, 11)),
+            "20h 06m left to 20h 06m by end of Wednesday"
+        );
+    }
+
+    #[test]
+    fn pit_zero_target_headline() {
+        let zero = acct(wk(2026, 7), 0, 0, 0, 0);
+        assert_eq!(
+            week_headline(&zero, d(2026, 2, 9)),
+            "00h 00m left to 00h 00m by end of Monday"
+        );
+        let two_hours = acct(wk(2026, 7), -120, 120, 0, 0);
+        assert_eq!(
+            week_headline(&two_hours, d(2026, 2, 9)),
+            "02h 00m over 00h 00m by end of Monday"
+        );
+    }
+
+    #[test]
+    fn pit_closed_and_future_weeks_ignore_required() {
+        // A future week gets the closed headline whatever today is.
+        assert_eq!(
+            week_headline(&closed(wk(2026, 8), 2400), d(2026, 2, 13)),
+            "Total behind: 40h 00m"
+        );
     }
 
     // ---- 4.7 ISO year-boundary framing ----
@@ -881,14 +1002,15 @@ mod tests {
     #[test]
     fn t33_every_produced_string_is_ascii() {
         let headlines = [
-            week_headline(wk(2026, 7), 645, TODAY()),
-            week_headline(wk(2026, 6), 190, TODAY()),
-            week_headline(wk(2026, 6), 0, TODAY()),
-            week_headline(wk(2026, 6), -50, TODAY()),
-            week_headline(wk(2026, 7), -150, TODAY()),
-            status_week_line(wk(2026, 7), 645, 1755, 2400, 0, TODAY()),
-            status_week_line(wk(2026, 2), 100, 999, 999, 0, TODAY()),
-            status_week_line(wk(2026, 7), 645, 1755, 2400, -130, TODAY()),
+            week_headline(&current(1755), TODAY()),
+            week_headline(&closed(wk(2026, 6), 190), TODAY()),
+            week_headline(&closed(wk(2026, 6), 0), TODAY()),
+            week_headline(&closed(wk(2026, 6), -50), TODAY()),
+            week_headline(&current(2070), TODAY()),
+            week_headline(&current(2290), d(2026, 2, 13)),
+            status_week_line(&acct(wk(2026, 7), 645, 1755, 2400, 0), TODAY()),
+            status_week_line(&acct(wk(2026, 2), 100, 999, 999, 0), TODAY()),
+            status_week_line(&acct(wk(2026, 7), 645, 1755, 2400, -130), TODAY()),
         ];
         for h in headlines {
             assert!(h.is_ascii(), "{h}");
