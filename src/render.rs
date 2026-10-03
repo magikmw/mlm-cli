@@ -1,21 +1,23 @@
 //! Shared rendering helpers for `status` (Milestone 10) and `week`
-//! (Milestone 11): the §7.1/§7.2 week headline and the §7.3 anomaly
-//! rendering. Pure functions only — no DB access, no CLI
+//! (Milestone 11): the §7.1/§7.2 week headline, the stop-hint phrases and
+//! the carry marker line. Pure functions only — no DB access, no CLI
 //! wiring, no `chrono::Local::now()` (PLAN.md contract 6: "now" is
 //! always an injected parameter).
 //!
-//! This module is the single place that decides wording, sign
-//! handling, and "what counts as an anomaly" for both consumers, so
-//! that they never grow their own diverging copies (see
-//! plans/milestone-9-shared-rendering.md).
+//! This module is the single place that decides wording and sign
+//! handling for both consumers, so that they never grow their own
+//! diverging copies (see plans/milestone-9-shared-rendering.md). The
+//! per-date anomaly facts and lines live in `anomalies.rs`, and the
+//! lookback finding types in `lookback.rs`. Both are re-exported here.
 
 // Milestone 9 is built ahead of its consumers (Milestones 10/11), so
 // the public surface here has no in-crate caller yet outside the tests.
 #![allow(dead_code)]
 
-use chrono::{Datelike, NaiveDate, NaiveTime};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, Utc};
 
-use crate::date::{WeekId, format_date, format_date_with_weekday, format_weekday_full};
+use crate::date::{WeekId, format_weekday_full};
+use crate::storage::Punch;
 use crate::time::format_minutes;
 use crate::week::{self, WeekAccounting};
 
@@ -122,251 +124,8 @@ pub fn status_week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
     )
 }
 
-/// Everything one calendar date's `status`/`week` anomaly rendering
-/// needs, as plain data (SPEC.md §4.3/§4.3.1/§7.3). Callers compute
-/// every fact; this type never reads
-/// a clock, a database, or `stint.rs` itself.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DateAnomalies {
-    /// The date this block belongs to. Fills every `D` in this date's
-    /// own `fix:`/`or:` lines (§7.3).
-    pub date: NaiveDate,
-
-    /// How many trailing unmatched starts this date has. 0 or 1 is
-    /// normal; >= 2 is E7.
-    pub open_stint_count: usize,
-
-    /// The most recently opened start's local time, when
-    /// `open_stint_count >= 1`. Only consumed when `open_stint_count
-    /// > 1` (E7's fix line names it, e.g. "14:00" in the spec's worked
-    /// example: "the latest open start on the date"). `None` iff
-    /// `open_stint_count == 0`.
-    pub latest_open_start: Option<NaiveTime>,
-
-    /// One entry per orphaned end (E8), ascending by instant. Never
-    /// deduplicated, never coalesced.
-    pub orphaned_end_times: Vec<NaiveTime>,
-
-    /// Set iff this date has exactly one open start AND it is stale
-    /// (age >= 2). Never set when
-    /// `open_stint_count != 1` (E7 owns the 2+ case entirely, §4.3).
-    pub stale_open_start: Option<StaleOpenStart>,
-
-    /// Set to the previous calendar date iff this date and its
-    /// predecessor form a refused join with THIS date as the later
-    /// (orphaned-end) side (§4.3.1).
-    pub refused_join_with_previous: Option<NaiveDate>,
-
-    /// Set to the next calendar date iff this date and its successor
-    /// form a refused join with THIS date as the earlier
-    /// (open-start) side (§4.3.1).
-    pub refused_join_with_next: Option<NaiveDate>,
-}
-
-/// The one stale-open-start fact a date can carry (§4.3/§7.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StaleOpenStart {
-    /// Local time of the (only) open start.
-    pub time: NaiveTime,
-    /// `today - date` in whole days. Always >= 2 -- callers never
-    /// construct this with a smaller value.
-    pub age_days: i64,
-}
-
-impl DateAnomalies {
-    /// True iff this date has ANY anomaly under the new, wider
-    /// definition: E7, E8, stale, or either refused-join direction.
-    /// The single definition `week`'s per-row `[!]` and `status`'s
-    /// block-or-not decision both key off.
-    pub fn has_any(&self) -> bool {
-        self.open_stint_count > 1
-            || !self.orphaned_end_times.is_empty()
-            || self.stale_open_start.is_some()
-            || self.refused_join_with_previous.is_some()
-            || self.refused_join_with_next.is_some()
-    }
-
-    /// `status`'s per-date block (§7.3), in the fixed order: E7, then
-    /// stale, then E8 (ascending instant), then refused-join-with-
-    /// previous, then refused-join-with-next. Empty vec when
-    /// `has_any()` is false. Does NOT include lookback lines — those
-    /// come from separate `LookbackFinding`s, appended by the caller
-    /// never by this type.
-    pub fn detail_lines(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        out.extend(self.e7_lines());
-        out.extend(self.stale_lines());
-        out.extend(self.e8_lines());
-        out.extend(self.refused_join_lines());
-        out
-    }
-
-    fn e7_lines(&self) -> Vec<String> {
-        let Some(latest) = self.latest_open_start.filter(|_| self.open_stint_count > 1) else {
-            return Vec::new();
-        };
-        let d = format_date(self.date);
-        let latest = latest.format("%H:%M");
-        vec![
-            format!(
-                "[!] {} open stints for this date (only one can be open at a time)",
-                self.open_stint_count
-            ),
-            format!(
-                "    fix: mlm delete punch --date {d}  (lists punches; rerun with the extra start's number)"
-            ),
-            format!(
-                "     or: mlm stop HH:MM --date {d}  (a time after {latest} closes the {latest} start)"
-            ),
-        ]
-    }
-
-    fn stale_lines(&self) -> Vec<String> {
-        let Some(stale) = self.stale_open_start else {
-            return Vec::new();
-        };
-        debug_assert!(stale.age_days >= 2, "stale open start must be age >= 2");
-        let d = format_date(self.date);
-        let time = stale.time.format("%H:%M");
-        vec![
-            format!(
-                "[!] unclosed start at {time}, {} days old (no stop recorded)",
-                stale.age_days
-            ),
-            format!("    fix: mlm stop HH:MM --date {d}  (a time after {time})"),
-            format!(
-                "     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)"
-            ),
-        ]
-    }
-
-    fn e8_lines(&self) -> Vec<String> {
-        let d = format_date(self.date);
-        let mut out = Vec::new();
-        for t in &self.orphaned_end_times {
-            let time = t.format("%H:%M");
-            out.push(format!("[!] orphaned end at {time} (no matching start)"));
-            out.push(format!(
-                "    fix: mlm start HH:MM --date {d}  (a time before {time})"
-            ));
-            out.push(format!(
-                "     or: mlm delete punch --date {d}  (lists punches; rerun with the end's number)"
-            ));
-        }
-        out
-    }
-
-    fn refused_join_lines(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(prev) = self.refused_join_with_previous {
-            out.push(refused_join_line(prev, prev, self.date));
-        }
-        if let Some(next) = self.refused_join_with_next {
-            out.push(refused_join_line(next, self.date, next));
-        }
-        out
-    }
-
-    /// `week`'s per-row suffix (§7.2's "row gets `[!]`" rule):
-    /// `"  [!]"` when `has_any()`, `""` otherwise.
-    pub fn row_marker(&self) -> &'static str {
-        if self.has_any() { "  [!]" } else { "" }
-    }
-}
-
-fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> String {
-    format!(
-        "[!] not joined to {} across midnight (a join needs exactly one open start on {} and exactly one unmatched end, as {}'s first punch)",
-        format_date_with_weekday(named),
-        format_date_with_weekday(earlier),
-        format_date_with_weekday(later),
-    )
-}
-
-/// One window date's finding from the §7.1/§7.4 14-day lookback.
-/// Deliberately narrower than `DateAnomalies`: a lookback line never
-/// carries E8/refused-join detail (§1.2's residual-gap bullets), only
-/// "this window date has an open start" in one of two shapes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LookbackFinding {
-    /// The window date (age 2-14) this finding is about.
-    pub date: NaiveDate,
-    /// `today - date`. Always in 2..=14.
-    pub age_days: i64,
-    pub kind: LookbackKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LookbackKind {
-    /// Exactly one open start on the window date. `punch_id` is that
-    /// start's row id, so `commands::start` can tell whether it's the
-    /// punch it just wrote (§7.4).
-    SingleOpenStart { time: NaiveTime, punch_id: i64 },
-    /// Two or more open starts on the window date (that date's own E7).
-    MultipleOpenStints { count: usize },
-}
-
-impl LookbackFinding {
-    /// `status`'s block form (§7.1, one finding per line-group,
-    /// appended after a date's own `DateAnomalies::detail_lines()`,
-    /// oldest window date first).
-    pub fn detail_lines(&self) -> Vec<String> {
-        debug_assert!(
-            (2..=14).contains(&self.age_days),
-            "lookback age must be 2..=14"
-        );
-        let d = format_date(self.date);
-        let wdy = format_date_with_weekday(self.date);
-        match self.kind {
-            LookbackKind::SingleOpenStart { time, .. } => {
-                let time = time.format("%H:%M");
-                vec![
-                    format!(
-                        "[!] unclosed start on {wdy} at {time} ({} days ago)",
-                        self.age_days
-                    ),
-                    format!("    fix: mlm stop HH:MM --date {d}  (a time after {time})"),
-                    format!(
-                        "     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)"
-                    ),
-                ]
-            }
-            LookbackKind::MultipleOpenStints { count } => vec![
-                format!(
-                    "[!] {count} open stints on {wdy} ({} days ago)",
-                    self.age_days
-                ),
-                format!("    fix: see mlm status {d}"),
-            ],
-        }
-    }
-
-    /// `start`'s stderr form (§7.4). A single open start prints three
-    /// lines laid out like `detail_lines()`, `warning: ` in place of
-    /// `[!] `; two or more open starts stay one line. No trailing
-    /// newline either way.
-    pub fn stderr_line(&self) -> String {
-        debug_assert!(
-            (2..=14).contains(&self.age_days),
-            "lookback age must be 2..=14"
-        );
-        let d = format_date(self.date);
-        let wdy = format_date_with_weekday(self.date);
-        match self.kind {
-            LookbackKind::SingleOpenStart { time, .. } => {
-                let time = time.format("%H:%M");
-                format!(
-                    "warning: unclosed start on {wdy} at {time} ({} days ago)\n    fix: mlm stop HH:MM --date {d}  (a time after {time})\n     or: mlm delete punch --date {d}  (lists punches; rerun with the start's number)",
-                    self.age_days
-                )
-            }
-            LookbackKind::MultipleOpenStints { count } => format!(
-                "warning: {count} open stints on {wdy} ({} days ago); see mlm status {d}",
-                self.age_days
-            ),
-        }
-    }
-}
+pub use crate::anomalies::{DateAnomalies, StaleOpenStart};
+pub use crate::lookback::{LookbackFinding, LookbackKind};
 
 /// The exact, unparameterized §7.2 footer line. The caller decides
 /// whether to append it (at least one row has `[!]`) and where (after
@@ -374,9 +133,74 @@ impl LookbackFinding {
 /// this task owns.
 pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";
 
+/// Local wall-clock time of a UTC instant.
+pub fn local_time(at_utc: DateTime<Utc>) -> NaiveTime {
+    at_utc.with_timezone(&Local).time()
+}
+
+/// The first punch of any kind on `start.date` that is strictly later than
+/// `start`, by `(at_utc, kind, id)`, as a local time. Punches at `start`'s
+/// own instant and punches on other dates are ignored. `punches` may span
+/// several dates.
+pub fn next_punch_after(punches: &[Punch], start: &Punch) -> Option<NaiveTime> {
+    punches
+        .iter()
+        .filter(|p| p.date == start.date && p.at_utc > start.at_utc)
+        .min_by_key(|p| (p.at_utc, p.kind, p.id))
+        .map(|p| local_time(p.at_utc))
+}
+
+fn stop_window(start: NaiveTime, next: Option<NaiveTime>) -> String {
+    let s = start.format("%H:%M");
+    match next {
+        None => format!("a time after {s}"),
+        Some(n) => format!("a time between {s} and {}", n.format("%H:%M")),
+    }
+}
+
+/// `(a time after S)` or `(a time between S and N)`, parentheses included.
+pub fn stop_time_hint(start: NaiveTime, next: Option<NaiveTime>) -> String {
+    format!("({})", stop_window(start, next))
+}
+
+/// The E7 form of [`stop_time_hint`], with a ` closes the S start` tail
+/// inside the parentheses.
+pub fn stop_time_hint_closes(start: NaiveTime, next: Option<NaiveTime>) -> String {
+    format!(
+        "({} closes the {} start)",
+        stop_window(start, next),
+        start.format("%H:%M")
+    )
+}
+
+/// Data behind the carry-in anomaly marker (SPEC §3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CarryMarker {
+    /// Number of earlier weeks with an anomaly, at least 1.
+    pub weeks: usize,
+    /// The oldest such week.
+    pub oldest: WeekId,
+}
+
+/// The marker line. One week names that week alone, several weeks name the
+/// count and the oldest.
+pub fn carry_marker_line(m: &CarryMarker) -> String {
+    debug_assert!(m.weeks >= 1, "a marker needs at least one week");
+    let id = m.oldest;
+    if m.weeks == 1 {
+        format!("[!] carry-in includes anomalies from 1 earlier week, {id} (see mlm week {id})")
+    } else {
+        format!(
+            "[!] carry-in includes anomalies from {} earlier weeks, oldest {id} (see mlm week {id})",
+            m.weeks
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::PunchKind;
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).expect("test fixture is a real date")
@@ -730,188 +554,7 @@ mod tests {
         );
     }
 
-    // ---- DateAnomalies / LookbackFinding (open-punch-visibility) ----
-
-    fn da(date: NaiveDate) -> DateAnomalies {
-        DateAnomalies {
-            date,
-            open_stint_count: 0,
-            latest_open_start: None,
-            orphaned_end_times: Vec::new(),
-            stale_open_start: None,
-            refused_join_with_previous: None,
-            refused_join_with_next: None,
-        }
-    }
-
-    #[test]
-    fn t_e7_reworded_matches_spec_example() {
-        let a = DateAnomalies {
-            open_stint_count: 2,
-            latest_open_start: Some(t(14, 0)),
-            ..da(d(2026, 9, 21))
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] 2 open stints for this date (only one can be open at a time)".to_string(),
-                "    fix: mlm delete punch --date 2026-09-21  (lists punches; rerun with the extra start's number)".to_string(),
-                "     or: mlm stop HH:MM --date 2026-09-21  (a time after 14:00 closes the 14:00 start)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_stale_matches_spec_example() {
-        let a = DateAnomalies {
-            open_stint_count: 1,
-            stale_open_start: Some(StaleOpenStart {
-                time: t(9, 0),
-                age_days: 5,
-            }),
-            ..da(d(2026, 9, 21))
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] unclosed start at 09:00, 5 days old (no stop recorded)".to_string(),
-                "    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)".to_string(),
-                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_e8_gains_fix_lines_text_unchanged() {
-        let a = DateAnomalies {
-            orphaned_end_times: vec![t(18, 0)],
-            ..da(d(2026, 9, 21))
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] orphaned end at 18:00 (no matching start)".to_string(),
-                "    fix: mlm start HH:MM --date 2026-09-21  (a time before 18:00)".to_string(),
-                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the end's number)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_refused_join_previous_side() {
-        let a = DateAnomalies {
-            refused_join_with_previous: Some(d(2026, 9, 21)),
-            ..da(d(2026, 9, 22))
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] not joined to Mon 2026-09-21 across midnight (a join needs exactly one open start on Mon 2026-09-21 and exactly one unmatched end, as Tue 2026-09-22's first punch)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_refused_join_next_side() {
-        let a = DateAnomalies {
-            refused_join_with_next: Some(d(2026, 9, 22)),
-            ..da(d(2026, 9, 21))
-        };
-        assert_eq!(
-            a.detail_lines(),
-            vec![
-                "[!] not joined to Tue 2026-09-22 across midnight (a join needs exactly one open start on Mon 2026-09-21 and exactly one unmatched end, as Tue 2026-09-22's first punch)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_lookback_single_block_matches_spec_example() {
-        let f = LookbackFinding {
-            date: d(2026, 9, 21),
-            age_days: 5,
-            kind: LookbackKind::SingleOpenStart {
-                time: t(9, 0),
-                punch_id: 1,
-            },
-        };
-        assert_eq!(
-            f.detail_lines(),
-            vec![
-                "[!] unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)".to_string(),
-                "    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)".to_string(),
-                "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_lookback_multi_block_matches_spec_example() {
-        let f = LookbackFinding {
-            date: d(2026, 9, 21),
-            age_days: 5,
-            kind: LookbackKind::MultipleOpenStints { count: 2 },
-        };
-        assert_eq!(
-            f.detail_lines(),
-            vec![
-                "[!] 2 open stints on Mon 2026-09-21 (5 days ago)".to_string(),
-                "    fix: see mlm status 2026-09-21".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn t_ordering_all_kinds_at_once() {
-        // Unrealistic combination (stale + E7 together) is impossible
-        // under the real stale/E7 predicate, but render.rs enforces no such
-        // invariant -- this test only pins detail_lines()'s ordering.
-        let a = DateAnomalies {
-            date: d(2026, 9, 21),
-            open_stint_count: 2,
-            latest_open_start: Some(t(14, 0)),
-            orphaned_end_times: vec![t(10, 0), t(11, 0)],
-            stale_open_start: Some(StaleOpenStart {
-                time: t(9, 0),
-                age_days: 5,
-            }),
-            refused_join_with_previous: Some(d(2026, 9, 20)),
-            refused_join_with_next: Some(d(2026, 9, 22)),
-        };
-        let lines = a.detail_lines();
-        assert_eq!(lines.len(), 3 + 3 + 3 + 3 + 1 + 1);
-        assert!(lines[0].starts_with("[!] 2 open stints"));
-        assert!(lines[3].starts_with("[!] unclosed start at 09:00"));
-        assert!(lines[6].starts_with("[!] orphaned end at 10:00"));
-        assert!(lines[9].starts_with("[!] orphaned end at 11:00"));
-        assert!(lines[12].starts_with("[!] not joined to Sun 2026-09-20"));
-        assert!(lines[13].starts_with("[!] not joined to Tue 2026-09-22"));
-    }
-
-    #[test]
-    fn t_lookback_ordering_oldest_first() {
-        // This only proves rendering preserves caller-supplied order;
-        // the actual "oldest first" scan guarantee is the lookback
-        // scan's own job.
-        let findings = [
-            LookbackFinding {
-                date: d(2026, 9, 20),
-                age_days: 6,
-                kind: LookbackKind::SingleOpenStart {
-                    time: t(8, 0),
-                    punch_id: 1,
-                },
-            },
-            LookbackFinding {
-                date: d(2026, 9, 21),
-                age_days: 5,
-                kind: LookbackKind::MultipleOpenStints { count: 2 },
-            },
-        ];
-        let combined: Vec<String> = findings.iter().flat_map(|f| f.detail_lines()).collect();
-        assert!(combined[0].contains("2026-09-20"));
-        assert!(combined[3].contains("2026-09-21"));
-    }
+    // ---- week footer ----
 
     #[test]
     fn t_week_footer_matches_spec_example() {
@@ -919,82 +562,6 @@ mod tests {
             WEEK_ANOMALY_FOOTER,
             "[!] needs a look: run mlm status DATE for details and fixes"
         );
-    }
-
-    #[test]
-    fn t_lookback_stderr_single_is_three_lines_like_status_block() {
-        let f = LookbackFinding {
-            date: d(2026, 9, 21),
-            age_days: 5,
-            kind: LookbackKind::SingleOpenStart {
-                time: t(9, 0),
-                punch_id: 1,
-            },
-        };
-        assert_eq!(
-            f.stderr_line(),
-            "warning: unclosed start on Mon 2026-09-21 at 09:00 (5 days ago)\n    fix: mlm stop HH:MM --date 2026-09-21  (a time after 09:00)\n     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)"
-        );
-    }
-
-    #[test]
-    fn t_lookback_stderr_multi_matches_spec_example() {
-        let f = LookbackFinding {
-            date: d(2026, 9, 21),
-            age_days: 5,
-            kind: LookbackKind::MultipleOpenStints { count: 2 },
-        };
-        assert_eq!(
-            f.stderr_line(),
-            "warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21"
-        );
-    }
-
-    #[test]
-    fn t_lookback_stderr_single_matches_block_fix_or_wording_exactly() {
-        // §7.4: the single-open-start warning is laid out
-        // identically to status's own lookback block, "warning: "
-        // swapped in for the leading "[!] " -- same fix/or wording,
-        // same double-space before the parenthetical.
-        let f = LookbackFinding {
-            date: d(2026, 9, 21),
-            age_days: 5,
-            kind: LookbackKind::SingleOpenStart {
-                time: t(9, 0),
-                punch_id: 1,
-            },
-        };
-        let block = f.detail_lines();
-        let stderr = f.stderr_line();
-        let stderr_lines: Vec<&str> = stderr.split('\n').collect();
-        assert_eq!(stderr_lines.len(), 3);
-        assert_eq!(stderr_lines[0], format!("warning: {}", &block[0][4..]));
-        assert_eq!(stderr_lines[1], block[1]);
-        assert_eq!(stderr_lines[2], block[2]);
-    }
-
-    #[test]
-    fn t_date_anomalies_new_fixtures_never_contain_old_e7_suffix() {
-        let fixtures = [
-            DateAnomalies {
-                open_stint_count: 2,
-                latest_open_start: Some(t(14, 0)),
-                ..da(d(2026, 9, 21))
-            },
-            DateAnomalies {
-                open_stint_count: 1,
-                stale_open_start: Some(StaleOpenStart {
-                    time: t(9, 0),
-                    age_days: 5,
-                }),
-                ..da(d(2026, 9, 21))
-            },
-        ];
-        for a in fixtures {
-            for line in a.detail_lines() {
-                assert!(!line.contains("(unmatched starts)"), "{line}");
-            }
-        }
     }
 
     #[test]
@@ -1025,7 +592,7 @@ mod tests {
             DateAnomalies {
                 open_stint_count: 2,
                 latest_open_start: Some(t(14, 0)),
-                ..da(d(2026, 9, 21))
+                ..DateAnomalies::none(d(2026, 9, 21))
             },
             DateAnomalies {
                 open_stint_count: 1,
@@ -1033,19 +600,19 @@ mod tests {
                     time: t(9, 0),
                     age_days: 5,
                 }),
-                ..da(d(2026, 9, 21))
+                ..DateAnomalies::none(d(2026, 9, 21))
             },
             DateAnomalies {
                 orphaned_end_times: vec![t(18, 0)],
-                ..da(d(2026, 9, 21))
+                ..DateAnomalies::none(d(2026, 9, 21))
             },
             DateAnomalies {
                 refused_join_with_previous: Some(d(2026, 9, 21)),
-                ..da(d(2026, 9, 22))
+                ..DateAnomalies::none(d(2026, 9, 22))
             },
             DateAnomalies {
                 refused_join_with_next: Some(d(2026, 9, 22)),
-                ..da(d(2026, 9, 21))
+                ..DateAnomalies::none(d(2026, 9, 21))
             },
         ];
         for a in date_anomaly_fixtures {
@@ -1078,5 +645,149 @@ mod tests {
         }
 
         assert!(WEEK_ANOMALY_FOOTER.is_ascii());
+    }
+
+    // ---- clean-pair helper and stop-hint phrases ----
+
+    fn punch(id: i64, kind: PunchKind, date: NaiveDate, h: u32, m: u32) -> Punch {
+        crate::storage::punch_from_local(id, kind, date, t(h, m), &Local)
+            .expect("test punch is a real local time")
+    }
+
+    fn start_at(id: i64, date: NaiveDate, h: u32, m: u32) -> Punch {
+        punch(id, PunchKind::Start, date, h, m)
+    }
+
+    fn end_at(id: i64, date: NaiveDate, h: u32, m: u32) -> Punch {
+        punch(id, PunchKind::End, date, h, m)
+    }
+
+    #[test]
+    fn next_punch_after_none_when_no_later_punch() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        assert_eq!(next_punch_after(&[s], &s), None);
+    }
+
+    #[test]
+    fn next_punch_after_finds_a_later_start() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        let later = start_at(2, day, 11, 0);
+        assert_eq!(next_punch_after(&[s, later], &s), Some(t(11, 0)));
+    }
+
+    #[test]
+    fn next_punch_after_finds_a_later_end() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        let later = end_at(2, day, 12, 30);
+        assert_eq!(next_punch_after(&[s, later], &s), Some(t(12, 30)));
+    }
+
+    #[test]
+    fn next_punch_after_ignores_a_punch_at_the_same_minute() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        let same = end_at(2, day, 9, 0);
+        assert_eq!(next_punch_after(&[s, same], &s), None);
+    }
+
+    #[test]
+    fn next_punch_after_is_none_for_a_start_at_2359() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 23, 59);
+        let next_day = start_at(2, d(2026, 1, 15), 0, 5);
+        assert_eq!(next_punch_after(&[s, next_day], &s), None);
+    }
+
+    #[test]
+    fn next_punch_after_ignores_other_dates() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        let before = start_at(2, d(2026, 1, 13), 20, 0);
+        let after = start_at(3, d(2026, 1, 15), 10, 0);
+        assert_eq!(next_punch_after(&[before, s, after], &s), None);
+    }
+
+    #[test]
+    fn next_punch_after_returns_the_earlier_of_two_later_punches() {
+        let day = d(2026, 1, 14);
+        let s = start_at(1, day, 9, 0);
+        let far = start_at(2, day, 15, 0);
+        let near = start_at(3, day, 11, 0);
+        assert_eq!(next_punch_after(&[s, far, near], &s), Some(t(11, 0)));
+    }
+
+    #[test]
+    fn stop_time_hint_without_a_next_punch() {
+        assert_eq!(stop_time_hint(t(18, 2), None), "(a time after 18:02)");
+    }
+
+    #[test]
+    fn stop_time_hint_with_a_next_punch() {
+        assert_eq!(
+            stop_time_hint(t(18, 2), Some(t(19, 0))),
+            "(a time between 18:02 and 19:00)"
+        );
+    }
+
+    #[test]
+    fn stop_time_hint_one_minute_window() {
+        assert_eq!(
+            stop_time_hint(t(18, 2), Some(t(18, 3))),
+            "(a time between 18:02 and 18:03)"
+        );
+    }
+
+    #[test]
+    fn stop_time_hint_closes_without_a_next_punch() {
+        assert_eq!(
+            stop_time_hint_closes(t(14, 0), None),
+            "(a time after 14:00 closes the 14:00 start)"
+        );
+    }
+
+    #[test]
+    fn stop_time_hint_closes_with_a_next_punch() {
+        assert_eq!(
+            stop_time_hint_closes(t(14, 0), Some(t(15, 0))),
+            "(a time between 14:00 and 15:00 closes the 14:00 start)"
+        );
+    }
+
+    // ---- carry marker line ----
+
+    #[test]
+    fn carry_marker_line_plural() {
+        let m = CarryMarker {
+            weeks: 2,
+            oldest: wk(2026, 38),
+        };
+        assert_eq!(
+            carry_marker_line(&m),
+            "[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)"
+        );
+    }
+
+    #[test]
+    fn carry_marker_line_singular() {
+        let m = CarryMarker {
+            weeks: 1,
+            oldest: wk(2026, 38),
+        };
+        assert_eq!(
+            carry_marker_line(&m),
+            "[!] carry-in includes anomalies from 1 earlier week, 2026-38 (see mlm week 2026-38)"
+        );
+    }
+
+    #[test]
+    fn carry_marker_line_is_ascii() {
+        let m = CarryMarker {
+            weeks: 3,
+            oldest: wk(2026, 1),
+        };
+        assert!(carry_marker_line(&m).is_ascii());
     }
 }

@@ -10,24 +10,23 @@
 //! Landmine notes (plans/reports/milestone-9-review.md):
 //! - `render::week_headline` takes the whole `WeekAccounting`, so the
 //!   current week's headline here and in `status` come from one function.
-//! - Per-row anomaly detection goes through `render::DateAnomalies`
+//! - Per-row anomaly detection goes through `anomalies::build_facts`
 //!   exclusively (`has_any()`), never `DayStints::has_anomaly()` /
 //!   `DayStints::anomalies()` directly, even though the latter are public
 //!   and would compile.
-
-use std::collections::HashMap;
+//! - Accounting comes from `history::load_history`, the same loader
+//!   `status` uses. A failed storage read is a hard error.
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
 
+use crate::anomalies;
+use crate::carry_scan;
 use crate::cli::WeekArgs;
 use crate::date::{WeekId, format_date, parse_week_id};
-use crate::render::{self, DateAnomalies};
-use crate::stint;
-use crate::storage::{self, Punch};
+use crate::history::{self, PunchBuckets};
+use crate::render::{self, CarryMarker};
 use crate::time::format_minutes;
-use crate::week::{self, WeekData, WeekTargets};
-use crate::week_target;
 
 /// Left-hand label column width shared with the trailing block (§4.2).
 /// Mirrors `render::LABEL_WIDTH`; kept as a local constant so this
@@ -67,12 +66,23 @@ pub struct WeekView {
     pub worked_minutes: i64,
     pub fulfillment_minutes: i64,
     pub target_minutes: i64,
+    /// Set when earlier weeks hold anomalies that feed this week's
+    /// carry-in (SPEC §3.3). Adds a line above the totals and a `[!]` on
+    /// the Carry-in figure.
+    pub carry_marker: Option<CarryMarker>,
 }
 
-/// The §7.2/§7.3 16-line layout, byte-exact. Pure: no I/O, no clock.
+/// The §7.2/§7.3 layout, byte-exact. Pure: no I/O, no clock.
 pub fn render_week(view: &WeekView) -> String {
     let mut out = String::new();
+    push_header(&mut out, view);
+    push_rows(&mut out, view);
+    push_notices(&mut out, view);
+    push_totals(&mut out, view);
+    out
+}
 
+fn push_header(out: &mut String, view: &WeekView) {
     out.push_str(&format!(
         "Week {} ({} - {})\n",
         view.week_id_display, view.span_start_display, view.span_end_display
@@ -81,7 +91,10 @@ pub fn render_week(view: &WeekView) -> String {
     out.push_str(&view.headline);
     out.push('\n');
     out.push('\n');
+}
 
+/// The seven day rows, then one blank line.
+fn push_rows(out: &mut String, view: &WeekView) {
     for row in &view.rows {
         out.push_str("  ");
         out.push_str(row.weekday_abbrev);
@@ -98,13 +111,27 @@ pub fn render_week(view: &WeekView) -> String {
         out.push('\n');
     }
     out.push('\n');
+}
 
-    if view.rows.iter().any(|r| r.has_anomaly) {
+/// The footer slot above the totals. The anomaly footer comes first when
+/// any row is marked, and the carry marker line sits directly under it.
+/// One blank line follows whenever either line printed.
+fn push_notices(out: &mut String, view: &WeekView) {
+    let any_row_marked = view.rows.iter().any(|r| r.has_anomaly);
+    if any_row_marked {
         out.push_str(render::WEEK_ANOMALY_FOOTER);
         out.push('\n');
+    }
+    if let Some(marker) = &view.carry_marker {
+        out.push_str(&render::carry_marker_line(marker));
         out.push('\n');
     }
+    if any_row_marked || view.carry_marker.is_some() {
+        out.push('\n');
+    }
+}
 
+fn push_totals(out: &mut String, view: &WeekView) {
     for (label, minutes) in [
         ("Carry-in:", view.carry_in_minutes),
         ("Worked:", view.worked_minutes),
@@ -112,213 +139,61 @@ pub fn render_week(view: &WeekView) -> String {
         ("Target:", view.target_minutes),
     ] {
         out.push_str(&format!(
-            "{:<width$}{}\n",
+            "{:<width$}{}",
             label,
             format_minutes(minutes),
             width = LABEL_WIDTH
         ));
+        if label == "Carry-in:" && view.carry_marker.is_some() {
+            out.push_str("  [!]");
+        }
+        out.push('\n');
     }
-
-    out
 }
 
-/// Contract 4: bucket `punches` by their `date` column, then classify
-/// each of the week's 7 dates independently via `stint::classify_at`,
-/// looking up each date's immediate neighbors (`date.pred_opt()`/
-/// `date.succ_opt()`) in the same bucket map — `punches` is expected to
-/// already span one day past each end of the week (boundary-stint-pairing
-/// spec §4.3's widened `punches_in_range` fetch in `build_week_view`), so
-/// a midnight-spanning stint that starts or ends just outside the week's
-/// own 7 dates still resolves correctly at the boundary date it touches.
-fn build_rows(
+/// One row per date of the week. Each date is classified against its own
+/// previous and next buckets, so a midnight-spanning stint that starts or
+/// ends just outside the week's seven dates still resolves at the
+/// boundary date it touches. `buckets` must cover one day past each end of
+/// the week, which `history::load_history` guarantees.
+///
+/// Anomalies go through `anomalies::build_facts` exclusively, never
+/// `day.has_anomaly()`/`day.anomalies()` directly.
+fn build_rows_from(
     dates: [NaiveDate; 7],
-    punches: &[Punch],
+    buckets: &PunchBuckets,
     today: NaiveDate,
     now_utc: DateTime<Utc>,
 ) -> [WeekRow; 7] {
-    let mut by_date: HashMap<NaiveDate, Vec<Punch>> = HashMap::new();
-    for p in punches {
-        by_date.entry(p.date).or_default().push(*p);
-    }
-
     std::array::from_fn(|i| {
         let date = dates[i];
-        let bucket = by_date.get(&date).cloned().unwrap_or_default();
-        let prev_bucket = date
-            .pred_opt()
-            .and_then(|d| by_date.get(&d).cloned())
-            .unwrap_or_default();
-        let next_bucket = date
-            .succ_opt()
-            .and_then(|d| by_date.get(&d).cloned())
-            .unwrap_or_default();
-        let day = stint::classify_at(&prev_bucket, &bucket, &next_bucket, now_utc);
-
-        // Landmine 2: go through `render::DateAnomalies` exclusively, never
-        // `day.has_anomaly()`/`day.anomalies()` directly.
-        let anomalies = row_anomalies(
-            &day,
-            &prev_bucket,
-            &bucket,
-            &next_bucket,
-            date,
-            today,
-            now_utc,
-        );
-
+        let trio = buckets.trio(date);
+        let ctx = anomalies::classify_context(&trio, now_utc);
+        let facts = anomalies::build_facts(&ctx, &trio, date, today, now_utc);
+        let is_today = date == today;
         WeekRow {
             weekday_abbrev: WEEKDAY_ABBREVS[i],
             date_display: format_date(date),
-            minutes: day.completed_minutes() + if date == today { day.live_minutes() } else { 0 },
-            is_ongoing: day.is_ongoing() && date == today,
-            has_anomaly: anomalies.has_any(),
+            minutes: ctx.day.completed_minutes()
+                + if is_today { ctx.day.live_minutes() } else { 0 },
+            is_ongoing: ctx.day.is_ongoing() && is_today,
+            has_anomaly: facts.has_any(),
         }
     })
 }
 
-/// Builds the full `render::DateAnomalies` fact set for one row's date:
-/// the existing E7/E8 facts plus whether the date's lone open start is
-/// stale, and whether it forms a refused join with either calendar
-/// neighbor. Refused-join checks use each date's *raw* single-date
-/// classification (`stint::classify`), never the splice-resolved `day`
-/// passed in -- the same raw-classification rule `status.rs` uses, so
-/// `status` and `week` can never disagree on a date pair.
-fn row_anomalies(
-    day: &stint::DayStints,
-    prev_bucket: &[Punch],
-    bucket: &[Punch],
-    next_bucket: &[Punch],
-    date: NaiveDate,
+#[cfg(test)]
+fn build_rows(
+    dates: [NaiveDate; 7],
+    punches: &[crate::storage::Punch],
     today: NaiveDate,
     now_utc: DateTime<Utc>,
-) -> DateAnomalies {
-    let raw_prev = stint::classify(prev_bucket, now_utc);
-    let raw_day = stint::classify(bucket, now_utc);
-    let raw_next = stint::classify(next_bucket, now_utc);
-
-    let stale_open_start =
-        stint::stale_open_start(day, date, today).map(|s| render::StaleOpenStart {
-            time: s.at.with_timezone(&Local).time(),
-            age_days: s.age_days,
-        });
-
-    let refused_join_with_previous = refused_join_neighbor(
-        &raw_prev,
-        &raw_day,
-        bucket,
-        date.pred_opt()
-            .expect("every calendar date has a predecessor"),
-    );
-    let refused_join_with_next = refused_join_neighbor(
-        &raw_day,
-        &raw_next,
-        next_bucket,
-        date.succ_opt()
-            .expect("every calendar date has a successor"),
-    );
-
-    DateAnomalies {
-        date,
-        open_stint_count: day.open.len(),
-        latest_open_start: day
-            .open
-            .last()
-            .map(|o| o.start.at_utc.with_timezone(&Local).time()),
-        orphaned_end_times: day
-            .orphaned_ends
-            .iter()
-            .map(|o| o.punch.at_utc.with_timezone(&Local).time())
-            .collect(),
-        stale_open_start,
-        refused_join_with_previous,
-        refused_join_with_next,
-    }
+) -> [WeekRow; 7] {
+    build_rows_from(dates, &PunchBuckets::from_punches(punches), today, now_utc)
 }
 
-/// One direction of the refused-join check (`earlier` has the open
-/// start(s), `later` has the orphaned end(s)); returns the neighbor
-/// date to name when it fires, `None` otherwise. Shared by both call
-/// sites in `row_anomalies` so the two directions can never diverge in
-/// how they interpret the predicate's result.
-fn refused_join_neighbor(
-    earlier: &stint::DayStints,
-    later: &stint::DayStints,
-    later_punches: &[Punch],
-    neighbor_date: NaiveDate,
-) -> Option<NaiveDate> {
-    stint::is_refused_join(earlier, later, later_punches).then_some(neighbor_date)
-}
-
-/// `WeekData`/`WeekTargets` adapter over live storage (contract 4/10's
-/// wave-3 integration seam, done here since Milestone 6 declares the
-/// traits but not this binding). `now_utc` and `today` are injected, never
-/// read from a system clock inside this module. `today` is the local date
-/// whose running stint counts as live. Only the week containing it gets
-/// live minutes, matching the rows `build_rows` builds.
-///
-/// Both trait methods collapse a storage/DB error to "no data" rather
-/// than propagating `Result` (the traits are infallible by design) —
-/// acceptable because a DB already opened and migrated successfully by
-/// `main` is not expected to fail on a read here; see the milestone
-/// report's risk notes.
-struct DbWeekData<'a> {
-    conn: &'a Connection,
-    now_utc: DateTime<Utc>,
-    today: NaiveDate,
-}
-
-impl WeekData for DbWeekData<'_> {
-    fn earliest_data_week(&self) -> Option<WeekId> {
-        storage::earliest_data_date(self.conn)
-            .ok()
-            .flatten()
-            .map(WeekId::from_date)
-    }
-
-    fn worked_minutes(&self, week: WeekId) -> i64 {
-        let (start, end) = week.span();
-        let padded_start = start.pred_opt().unwrap();
-        let padded_end = end.succ_opt().unwrap();
-        let punches =
-            storage::punches_in_range(self.conn, padded_start, padded_end).unwrap_or_default();
-        let mut by_date: HashMap<NaiveDate, Vec<Punch>> = HashMap::new();
-        for p in punches {
-            by_date.entry(p.date).or_default().push(p);
-        }
-
-        week.dates()
-            .into_iter()
-            .map(|date| {
-                let bucket = by_date.get(&date).cloned().unwrap_or_default();
-                let prev_bucket = date
-                    .pred_opt()
-                    .and_then(|d| by_date.get(&d).cloned())
-                    .unwrap_or_default();
-                let next_bucket = date
-                    .succ_opt()
-                    .and_then(|d| by_date.get(&d).cloned())
-                    .unwrap_or_default();
-                let day = stint::classify_at(&prev_bucket, &bucket, &next_bucket, self.now_utc);
-                day.completed_minutes()
-                    + if date == self.today {
-                        day.live_minutes()
-                    } else {
-                        0
-                    }
-            })
-            .sum()
-    }
-}
-
-impl WeekTargets for DbWeekData<'_> {
-    fn target_override(&self, week: WeekId) -> Option<i64> {
-        week_target::get_week_target(self.conn, &week)
-            .ok()
-            .flatten()
-    }
-}
-
-/// Build the full `WeekView` for `week` (resolution step 2-6 of the plan).
+/// Build the full `WeekView` for `week`. Every storage read goes through
+/// `history::load_history`, so a failed read is an error.
 pub fn build_week_view(
     conn: &Connection,
     week: WeekId,
@@ -327,31 +202,23 @@ pub fn build_week_view(
     let today = now.date_naive();
     let now_utc = now.with_timezone(&Utc);
     let (start, end) = week.span();
-    let dates = week.dates();
 
-    let punches =
-        storage::punches_in_range(conn, start.pred_opt().unwrap(), end.succ_opt().unwrap())?;
-    let rows = build_rows(dates, &punches, today, now_utc);
-
-    let data = DbWeekData {
-        conn,
-        now_utc,
-        today,
-    };
-    let acct = week::week_accounting(week, &data, &data);
-
-    let headline = render::week_headline(&acct, today);
+    let history = history::load_history(conn, week, today, now_utc)?;
+    let rows = build_rows_from(week.dates(), &history.buckets, today, now_utc);
+    let acct = history.accounting(week);
+    let carry_marker = carry_scan::carry_marker(&history, week, today, now_utc);
 
     Ok(WeekView {
         week_id_display: week.to_string(),
         span_start_display: format_date(start),
         span_end_display: format_date(end),
-        headline,
+        headline: render::week_headline(&acct, today),
         rows,
         carry_in_minutes: acct.carry_in,
         worked_minutes: acct.worked,
         fulfillment_minutes: acct.fulfillment,
         target_minutes: acct.target,
+        carry_marker,
     })
 }
 
@@ -373,7 +240,9 @@ pub fn run(conn: &Connection, now: DateTime<Local>, args: &WeekArgs) -> anyhow::
 mod tests {
     use super::*;
     use crate::db;
-    use crate::storage::{PunchKind, punch_from_local};
+    use crate::storage::{self, Punch, PunchKind, punch_from_local};
+    use crate::week::WeekData;
+    use crate::week_target;
     use chrono::{NaiveTime, TimeZone};
     use chrono_tz::UTC as TZ_UTC;
 
@@ -424,6 +293,7 @@ mod tests {
             worked_minutes: 1885,
             fulfillment_minutes: 1755,
             target_minutes: 2400,
+            carry_marker: None,
         }
     }
 
@@ -449,6 +319,7 @@ mod tests {
             worked_minutes: 2210,
             fulfillment_minutes: 2210,
             target_minutes: 2400,
+            carry_marker: None,
         }
     }
 
@@ -552,6 +423,7 @@ Target:        40h 00m
             worked_minutes: 0,
             fulfillment_minutes: 0,
             target_minutes: 2400,
+            carry_marker: None,
         };
         let out = render_week(&view);
         assert!(!out.contains("ongoing"));
@@ -573,6 +445,7 @@ Target:        40h 00m
             worked_minutes: 0,
             fulfillment_minutes: -1872,
             target_minutes: 2400,
+            carry_marker: None,
         };
         let out = render_week(&view);
         let zero_rows = out
@@ -708,6 +581,86 @@ Target:        40h 00m
         view.rows[2].has_anomaly = true;
         let out = render_week(&view);
         assert_eq!(out.matches('\n').count(), 18);
+    }
+
+    // Carry marker layouts: the marker line sits in the footer slot above
+    // the Carry-in block, and the Carry-in figure gains `  [!]`.
+    fn marker(weeks: usize, oldest: WeekId) -> Option<render::CarryMarker> {
+        Some(render::CarryMarker { weeks, oldest })
+    }
+
+    #[test]
+    fn carry_marker_alone_takes_the_footer_slot() {
+        let mut view = example_b();
+        view.carry_marker = marker(2, wk(2026, 38));
+        let want = "\
+Week 2026-06 (2026-02-02 - 2026-02-08)
+
+Total behind: 03h 10m
+
+  Mon 2026-02-02   07h 30m
+  Tue 2026-02-03   08h 00m
+  Wed 2026-02-04   07h 45m
+  Thu 2026-02-05   08h 10m
+  Fri 2026-02-06   05h 25m
+  Sat 2026-02-07   00h 00m
+  Sun 2026-02-08   00h 00m
+
+[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
+
+Carry-in:      00h 00m  [!]
+Worked:        36h 50m
+Fulfillment:   36h 50m
+Target:        40h 00m
+";
+        assert_eq!(render_week(&view), want);
+    }
+
+    #[test]
+    fn carry_marker_sits_directly_under_the_footer() {
+        let mut view = example_b();
+        view.rows[2].has_anomaly = true;
+        view.carry_marker = marker(2, wk(2026, 38));
+        let want = "\
+Week 2026-06 (2026-02-02 - 2026-02-08)
+
+Total behind: 03h 10m
+
+  Mon 2026-02-02   07h 30m
+  Tue 2026-02-03   08h 00m
+  Wed 2026-02-04   07h 45m  [!]
+  Thu 2026-02-05   08h 10m
+  Fri 2026-02-06   05h 25m
+  Sat 2026-02-07   00h 00m
+  Sun 2026-02-08   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
+
+Carry-in:      00h 00m  [!]
+Worked:        36h 50m
+Fulfillment:   36h 50m
+Target:        40h 00m
+";
+        assert_eq!(render_week(&view), want);
+    }
+
+    #[test]
+    fn carry_marker_one_week_form() {
+        let mut view = example_b();
+        view.carry_marker = marker(1, wk(2026, 38));
+        let out = render_week(&view);
+        assert!(out.contains(
+            "\n[!] carry-in includes anomalies from 1 earlier week, 2026-38 (see mlm week 2026-38)\n\nCarry-in:      00h 00m  [!]\n"
+        ));
+    }
+
+    #[test]
+    fn no_carry_marker_leaves_the_output_unchanged() {
+        let mut view = example_b();
+        view.carry_marker = None;
+        assert_eq!(render_week(&view), EXAMPLE_B_GOLDEN);
+        assert!(!render_week(&view).contains("carry-in includes"));
     }
 
     // A13
@@ -1027,13 +980,8 @@ Target:        40h 00m
         let rows = build_rows(dates, &punches, d(2026, 2, 15), now);
         let row_sum: i64 = rows.iter().map(|r| r.minutes).sum();
 
-        let data = DbWeekData {
-            conn: &conn,
-            now_utc: now,
-            today: d(2026, 2, 15),
-        };
-        let acct = week::week_accounting(week, &data, &data);
-        assert_eq!(row_sum, acct.worked);
+        let history = history::load_history(&conn, week, d(2026, 2, 15), now).unwrap();
+        assert_eq!(row_sum, history.accounting(week).worked);
         assert_eq!(row_sum, 480 + 510 + 120);
     }
 
@@ -1044,14 +992,40 @@ Target:        40h 00m
         use PunchKind::Start;
         let conn = new_test_db();
         storage::insert_punch(&conn, Start, d(2026, 2, 15), t(18, 0), &TZ_UTC).unwrap();
-        let data = DbWeekData {
-            conn: &conn,
-            now_utc: now_utc(2026, 2, 15, 20, 0),
-            today: d(2026, 2, 15),
-        };
-        assert_eq!(data.worked_minutes(wk(2026, 7)), 120);
-        assert_eq!(data.worked_minutes(wk(2026, 6)), 0);
-        assert_eq!(data.worked_minutes(wk(2026, 8)), 0);
+        let history = history::load_history(
+            &conn,
+            wk(2026, 8),
+            d(2026, 2, 15),
+            now_utc(2026, 2, 15, 20, 0),
+        )
+        .unwrap();
+        assert_eq!(history.ledger.worked_minutes(wk(2026, 7)), 120);
+        assert_eq!(history.ledger.worked_minutes(wk(2026, 6)), 0);
+        assert_eq!(history.ledger.worked_minutes(wk(2026, 8)), 0);
+    }
+
+    // Any failed read is a hard error, never a silent default.
+    #[test]
+    fn build_week_view_errors_when_week_targets_is_unreadable() {
+        let conn = new_test_db();
+        conn.execute("DROP TABLE week_targets", []).unwrap();
+        let err = build_week_view(&conn, wk(2026, 7), fixed_now());
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn build_week_view_errors_when_notes_is_unreadable() {
+        let conn = new_test_db();
+        conn.execute("DROP TABLE notes", []).unwrap();
+        let err = build_week_view(&conn, wk(2026, 7), fixed_now());
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn build_week_view_has_no_carry_marker_while_the_scan_is_a_stub() {
+        let conn = new_test_db();
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        assert_eq!(view.carry_marker, None);
     }
 
     // ---- Group C: resolver / end-to-end ----
@@ -1253,14 +1227,13 @@ Target:        40h 00m
         assert_eq!(view8.worked_minutes, 0);
     }
 
-    // C14: `DbWeekData::worked_minutes` padding-day isolation (round 2
-    // finding 2) -- a real, unrelated (non-spliced) stint on the calendar
-    // date just outside the week's own 7 dates, but inside
-    // `worked_minutes`'s widened 9-day fetch, must appear in only its own
-    // week's figures, never leaked into or double-counted with a
-    // neighboring week. `c7`/`c8` above seed only fully-idle padding
-    // weeks and cannot distinguish the old `by_date.values().sum()` bug
-    // from the fix -- this fixture can.
+    // C14: `history::load_history` padding-day isolation -- a real,
+    // unrelated (non-spliced) stint on the calendar date just outside the
+    // week's own 7 dates, but inside the loader's widened fetch, must
+    // appear in only its own week's figures, never leaked into or
+    // double-counted with a neighboring week. `c7`/`c8` above seed only
+    // fully-idle padding weeks, so only this fixture can tell the two
+    // apart.
     #[test]
     fn c14_worked_minutes_padding_day_isolation() {
         let conn = new_test_db();
@@ -1269,8 +1242,8 @@ Target:        40h 00m
 
         // An ordinary, unrelated, fully self-contained stint on the
         // padding day immediately BEFORE the week's own span (outside
-        // `week`'s own 7 dates, but inside `worked_minutes`'s widened
-        // 9-day fetch). No splice involved.
+        // `week`'s own 7 dates, but inside the loader's widened fetch).
+        // No splice involved.
         let padding_before = dates[0].pred_opt().unwrap(); // 2026-02-08
         storage::insert_punch(&conn, PunchKind::Start, padding_before, t(9, 0), &TZ_UTC).unwrap();
         storage::insert_punch(&conn, PunchKind::End, padding_before, t(11, 0), &TZ_UTC).unwrap(); // 120m
@@ -1287,26 +1260,23 @@ Target:        40h 00m
         storage::insert_punch(&conn, PunchKind::End, dates[2], t(17, 0), &TZ_UTC).unwrap(); // 480m
 
         let now = now_utc(2026, 2, 15, 20, 0);
-        let data = DbWeekData {
-            conn: &conn,
-            now_utc: now,
-            today: d(2026, 2, 15),
-        };
-        let this_week = data.worked_minutes(week);
+        let history = history::load_history(&conn, wk(2026, 8), d(2026, 2, 15), now).unwrap();
+        let ledger = &history.ledger;
+        let this_week = ledger.worked_minutes(week);
         assert_eq!(this_week, 480, "padding-day stints must not leak in");
 
         // And the mirror check: each padding day's own week sees ITS
         // stint, undiminished and un-doubled.
         let week_before = WeekId::from_date(padding_before); // wk 2026-06
         let week_after = WeekId::from_date(padding_after); // wk 2026-08
-        assert_eq!(data.worked_minutes(week_before), 120);
-        assert_eq!(data.worked_minutes(week_after), 90);
+        assert_eq!(ledger.worked_minutes(week_before), 120);
+        assert_eq!(ledger.worked_minutes(week_after), 90);
 
         // Total across the three adjacent weeks equals the sum of the
         // three independent stints exactly once each -- the direct
         // anti-double-count assertion.
         assert_eq!(
-            data.worked_minutes(week_before) + this_week + data.worked_minutes(week_after),
+            ledger.worked_minutes(week_before) + this_week + ledger.worked_minutes(week_after),
             120 + 480 + 90
         );
     }

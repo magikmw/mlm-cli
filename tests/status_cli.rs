@@ -256,3 +256,23 @@ fn status_on_a_fresh_empty_database_exits_zero() {
     assert!(out.contains("Week"));
     assert!(out.ends_with('\n') && !out.ends_with("\n\n"));
 }
+
+/// A future `status DATE` is rejected like `start --date` in the future:
+/// exit 1, nothing on stdout, one `error:` line on stderr.
+#[test]
+fn status_future_date_is_rejected() {
+    let dir = TempDir::new().expect("temp dir");
+    let db_path = dir.path().join("mlm.db");
+
+    let output = mlm(&db_path, &["status", "2099-01-01"]);
+    assert_eq!(output.status.code(), Some(1), "{:?}", output);
+    assert_eq!(stdout(&output), "");
+    // A fresh database may log its migration line first, so check the
+    // last stderr line.
+    let err = stderr(&output);
+    assert_eq!(
+        err.lines().last(),
+        Some("error: invalid DATE \"2099-01-01\": date is in the future"),
+        "{err}"
+    );
+}
