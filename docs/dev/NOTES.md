@@ -9,11 +9,11 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 90
+- **Next entry**: 91
 - **Last release**: `v0.3.6`
 - **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
-- **Active changeset**: none (`live-eod` merged to `main`, entry 89;
-  release held for further changes)
+- **Active changeset**: `point-in-time-week` (entry 90), phase 2 spec
+  draft
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1159,6 +1159,25 @@ SPEC.md and PLAN.md:
     and branch removed after the gate. Stale-doc grep of README, SPEC
     and source found no leftover "Known issues" or bare-`(tomorrow)`
     rule.
+
+90. **`point-in-time-week` changeset started.** User report from real
+    use (Thursday 2026-10-01): the week line read `left by end of
+    Thursday` against the full 40h target while the pace hint said 32h
+    was due by end of Thursday. Code matched SPEC; the design paired the
+    whole-week `owed` with today's deadline wording. User chose to make
+    the current week's headline point-in-time (`required − fulfillment`)
+    in both `status` and `mlm week`, with "left to / over" wording
+    ("by end of <Weekday>" Mon-Thu, "<target> target" Fri-Sun). User
+    also chose that the running stint's live minutes count everywhere
+    for the current week (day total, worked, fulfillment, week line,
+    `mlm week` rows and block), with `(incl. ongoing)` replacing
+    `(+ ongoing)`/`(ongoing)`, and that `est. EOD` stays on the Day
+    total line while the pace clause is removed. Coordinator call:
+    Fri-Sun `required` becomes the exact target instead of
+    `5 x floor(target / 5)`, so Friday's figure matches the target the
+    line names. Phase 0 profile reused from entry 65. Baseline `main`
+    at `efd97e4`; branch `point-in-time-week`. Spec
+    `docs/dev/specs/2026-10-03-point-in-time-week.md`.
 
 ## Open questions (still need answers)
 
