@@ -195,6 +195,27 @@ fn kind_refused_join_names_its_week() {
     assert_eq!(week_marker(&db, "2026-10"), Some(singular("2026-05")));
 }
 
+/// Week 2026-06, date 02-03. A closed 10:00-11:00 stint sits inside a
+/// closed 09:00-12:00 stint, so overlap is the only anomaly.
+fn seed_overlap(db: &Path) {
+    seed(db, "2026-02-03", "09:00", "start");
+    seed(db, "2026-02-03", "12:00", "end");
+    seed(db, "2026-02-03", "10:00", "start");
+    seed(db, "2026-02-03", "11:00", "end");
+}
+
+#[test]
+fn overlap_only_earlier_week_raises_marker() {
+    let (_d, db) = fresh();
+    seed_overlap(&db);
+    assert_eq!(week_marker(&db, "2026-10"), Some(singular("2026-06")));
+    let week = out(&mlm_tz(&db, &["week", "2026-06"]));
+    assert!(row_flagged(&week), "{week}");
+    let status = out(&mlm_tz(&db, &["status", "2026-02-03"]));
+    assert!(status.contains("[!] overlapping stints"), "{status}");
+    assert!(!status.contains("2 open stints"), "{status}");
+}
+
 #[test]
 fn marker_weeks_each_have_a_marked_row() {
     let (_d, db) = fresh();

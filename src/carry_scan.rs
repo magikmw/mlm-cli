@@ -195,6 +195,34 @@ mod tests {
         assert_eq!(scan(&v, wk(2026, 7)), one(1, 2026, 5));
     }
 
+    /// Nested closed stints on one date, so overlap is the only anomaly.
+    fn overlap_only(date: NaiveDate) -> Vec<Punch> {
+        vec![
+            p(1, PunchKind::Start, date, (9, 0)),
+            p(2, PunchKind::End, date, (12, 0)),
+            p(3, PunchKind::Start, date, (10, 0)),
+            p(4, PunchKind::End, date, (11, 0)),
+        ]
+    }
+
+    #[test]
+    fn kind_overlap_raises_marker() {
+        assert_eq!(
+            scan(&overlap_only(d(2026, 2, 3)), wk(2026, 10)),
+            one(1, 2026, 6)
+        );
+    }
+
+    #[test]
+    fn overlap_only_date_counts_once_t2_merged() {
+        let mut v = overlap_only(d(2026, 2, 3));
+        v.extend(overlap_only(d(2026, 2, 4)).into_iter().map(|mut x| {
+            x.id += 10;
+            x
+        }));
+        assert_eq!(scan(&v, wk(2026, 10)), one(1, 2026, 6));
+    }
+
     #[test]
     fn refused_join_with_recent_open_start_flags_later_date() {
         let v = vec![
