@@ -9,12 +9,13 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 94
+- **Next entry**: 95
 - **Last release**: `v0.3.6`
 - **`main`**: `92ab797` (`v0.3.6` + unreleased `open-punch-visibility` and `live-eod`)
 - **Active changeset**: `point-in-time-week` (entry 90), spec locked
   (entry 91), plan folded (entry 92),
-  tasks merged (entry 93), phase 13/14 review
+  tasks merged (entry 93), triaged (entry 94),
+  phase 16 fix pass
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1235,6 +1236,28 @@ SPEC.md and PLAN.md:
     and `week` print the same `05h 16m over 40h 00m target`, `week`
     rows sum to `Worked:`, and the closed week 39 still reads
     `Total behind`. Both worktrees and branches removed after the gate.
+
+94. **`point-in-time-week` phase 13/14 back and triaged.** Final review
+    ran on Opus at the user's choice
+    (`docs/dev/plans/reports/point-in-time-week-final-review.md`,
+    ship-with-followups, 3 findings; 10 mutations all caught except one
+    with no visible effect). Fresh-eyes at tier `returning`
+    (`docs/dev/plans/reports/point-in-time-week-fresh-eyes.md`,
+    14 findings; the weekend clock hid the Mon-Thu form, which the
+    fixed-clock tests cover). User accepted the coordinator's triage in
+    chat 2026-10-03:
+    - R1 (`est. EOD` formula docs read live-inclusive fulfillment),
+      R2 (duplicate gap computation, unrendered `daily_target`, dead
+      shim), R3 (SPEC §4.2 minus-sign sentence): fix.
+    - F3: one README line saying `est. EOD` assumes no breaks.
+    - F2 (`target already met` reads as a today-only target): kept as
+      is; spec §6 already records it. The user gave no option, so the
+      coordinator took the no-change one.
+    - F13 (debt week reads more left than the target), F8 (`week target`
+      silent), F9 (`week target` usage on wrong argument order), F11
+      (`--help` defines no terms): filed as possible issues.
+    - F1, F4-F7, F10, F12, F14: already declared, pre-existing, or
+      covered by tests; no action.
 
 ## Open questions (still need answers)
 
