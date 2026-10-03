@@ -33,10 +33,24 @@ real logic instead of re-deriving it — new top-level modules go in
   resolution via `directories::ProjectDirs` (+ `MLM_DB_PATH` override)
 - `src/time.rs` — TIME/DURATION parsing and the one duration formatter
 - `src/date.rs` — DATE/WEEK_ID parsing, `WeekId`
-- `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read
+- `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read,
+  one ranged week-target-override read
 - `src/stint.rs` — LIFO stint-pairing algorithm (§4.3)
 - `src/week.rs` — target/carry/fulfillment accounting (§2.4/§5)
-- `src/render.rs` — shared rendering helpers used by both `status`/`week`
+- `src/anomalies.rs` — per-date anomaly facts (E7, stale, E8, overlap,
+  refused joins) built from raw punch buckets, and their rendered
+  lines. `status`, `week` rows and the carry scan all call it.
+- `src/lookback.rs` — today's lookback scan (ages 1-14), the yesterday
+  hint and `mlm start`'s stderr warnings
+- `src/history.rs` — the shared history loader. One earliest-date read,
+  one ranged punch read and one ranged target read build the week
+  ledger and the bucketed punches for `status` and `mlm week`. Any read
+  failure is an error.
+- `src/carry_scan.rs` — the carry-in marker data (earlier weeks with an
+  anomaly), computed over the loader's punches with no reads of its own
+- `src/render.rs` — shared rendering helpers used by both `status`/`week`,
+  including the clean-pair stop-hint helper and phrases and the carry-in
+  marker line
 - `src/commands.rs`, `src/status.rs`, `src/week_target.rs`,
   `src/week_view.rs` — per-command wiring over the above
 - `src/main.rs` — CLI entry point: parses args, dispatches, exit code
