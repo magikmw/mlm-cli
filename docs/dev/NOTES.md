@@ -9,12 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 88
+- **Next entry**: 89
 - **Last release**: `v0.3.6`
 - **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, phase 13/14 (tasks merged, entry 87),
+- **Active changeset**: `live-eod`, phase 16 (triaged, entry 88),
   branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
-- **Known issues**: SPEC.md §1.2a (the only list; not duplicated here)
+- **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
 
@@ -1120,6 +1120,32 @@ SPEC.md and PLAN.md:
     green (fmt, build, 511 lib + integration tests, clippy). Hand run
     of the binary: two `status` reads 65 s apart printed the same
     `est. EOD` while `left to` dropped by a minute.
+
+88. **`live-eod` phase 13/14 back and triaged.** Final review ran on
+    Opus at the user's choice
+    (`docs/dev/plans/reports/live-eod-final-review.md`,
+    ship-with-followups, 2 low doc findings, no code findings; tests
+    fail under every regression tried). Fresh-eyes check at tier
+    `returning` (`docs/dev/plans/reports/live-eod-fresh-eyes.md`,
+    11 findings). User triage in chat 2026-10-03, coordinator's
+    recommendations accepted:
+    - Review F1 (SPEC line wrap) and F2 (§2.4 `required` bullet implies
+      `owed` subtracts live): fixed.
+    - Fresh-eyes F1 (`(tomorrow)` on estimates days away, now common):
+      fixed. Spec amended with §3.4: weekday abbreviation 2–6 days out,
+      weekday plus date 7+ days out. This reverses SPEC §7.1's
+      bare-`(tomorrow)` rule.
+    - F7 (which of two open starts counts) and F11 (README `status`
+      section silent on far-off EOD): README doc fixes. F7's narrow
+      `fix:` text filed as a possible issue.
+    - F2 (Saturday treats the whole week as due), F6 (future start shows
+      as `-now`), F8 (future week reads `Total behind`), F9 (raw UTC
+      migration log line on first run): filed as possible issues.
+    - F3, F4, F5, F10: already documented, no action.
+    User also asked to rename "Known issues" to "Possible issues", since
+    the list keeps growing and holds nothing users need to worry about.
+    Applied to the README heading and its cross-references and to SPEC
+    §1.2a's heading; earlier NOTES entries keep their wording.
 
 ## Open questions (still need answers)
 
