@@ -2283,8 +2283,15 @@ mod tests {
             &conn,
         )
         .expect("resolve");
+        // The stale date sits in an earlier week, so the carry-in marker
+        // line is expected. Only lookback lines are ruled out.
+        let lookback: Vec<_> = view
+            .anomaly_lines
+            .iter()
+            .filter(|l| !l.starts_with("[!] carry-in includes anomalies"))
+            .collect();
         assert!(
-            view.anomaly_lines.is_empty(),
+            lookback.is_empty(),
             "no lookback for a non-today date: {:?}",
             view.anomaly_lines
         );
