@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::cli::WeekTargetArgs;
 use crate::date::{WeekId, parse_week_id};
-use crate::time::parse_duration;
+use crate::time::{format_minutes, parse_duration};
 
 /// Set (insert or replace) a week's absolute target override (§2.3, §3.7).
 ///
@@ -44,7 +44,13 @@ pub fn get_week_target(conn: &Connection, week_id: &WeekId) -> anyhow::Result<Op
     .map_err(anyhow::Error::from)
 }
 
-/// `mlm week target [WEEK_ID] DURATION` (§3.7).
+/// The success line of `week target` (SPEC §3.5), e.g.
+/// `Week 2026-41 target: 20h 00m`.
+pub fn echo_line(week: &WeekId, minutes: i64) -> String {
+    format!("Week {week} target: {}", format_minutes(minutes))
+}
+
+/// Parse, write, and return the echo line. Nothing prints here.
 ///
 /// `today` is the injected "now" (never read from a global clock here),
 /// which is what makes the omitted-`WEEK_ID` default deterministic under
@@ -52,7 +58,7 @@ pub fn get_week_target(conn: &Connection, week_id: &WeekId) -> anyhow::Result<Op
 /// a spec mandate) so that with both tokens malformed, the leftmost one
 /// wins. Both parses complete before the single upsert call, so a
 /// failure at either step cannot leave a write behind.
-pub fn run(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow::Result<()> {
+pub fn apply(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow::Result<String> {
     let (week_tok, dur_tok) = args.split();
 
     let week = match week_tok {
@@ -64,6 +70,13 @@ pub fn run(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow
     debug_assert!(minutes >= 0, "parse_duration guarantees non-negative");
 
     set_week_target(conn, &week, minutes)?;
+    Ok(echo_line(&week, minutes))
+}
+
+/// `mlm week target [WEEK_ID] DURATION` (§3.7): writes the override, then
+/// prints one line (§3.5).
+pub fn run(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow::Result<()> {
+    println!("{}", apply(conn, today, args)?);
     Ok(())
 }
 
@@ -148,6 +161,42 @@ mod tests {
         set_week_target(&conn, &from_padded, 200).unwrap();
         assert_eq!(row_count(&conn), 1);
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(200));
+    }
+
+    // --- echo line (§3.5) ------------------------------------------------
+
+    #[test]
+    fn echo_line_formats_week_and_duration() {
+        assert_eq!(
+            echo_line(&wk(2026, 41), 1200),
+            "Week 2026-41 target: 20h 00m"
+        );
+    }
+
+    #[test]
+    fn apply_returns_echo_and_writes_row() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let line = apply(&conn, today, &args(&["2026-41", "20h"])).unwrap();
+        assert_eq!(line, "Week 2026-41 target: 20h 00m");
+        assert_eq!(get_week_target(&conn, &wk(2026, 41)).unwrap(), Some(1200));
+    }
+
+    #[test]
+    fn apply_without_week_echoes_current_week() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2026, 2, 12).unwrap();
+        let line = apply(&conn, today, &args(&["33h30m"])).unwrap();
+        assert_eq!(line, "Week 2026-07 target: 33h 30m");
+    }
+
+    #[test]
+    fn apply_failures_return_err_and_write_nothing() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        assert!(apply(&conn, today, &args(&["2027-53", "20h"])).is_err());
+        assert!(apply(&conn, today, &args(&["2026-07", "abc"])).is_err());
+        assert_eq!(row_count(&conn), 0);
     }
 
     // --- 5.3 command-body tests: run -----------------------------------
