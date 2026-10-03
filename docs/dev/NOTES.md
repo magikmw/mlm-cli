@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 87
+- **Next entry**: 88
 - **Last release**: `v0.3.6`
 - **`main`**: `c9e980b` (`v0.3.6` + unreleased `open-punch-visibility`)
-- **Active changeset**: `live-eod`, phase 8/11 (plan folded, entry 86),
+- **Active changeset**: `live-eod`, phase 13/14 (tasks merged, entry 87),
   branch `live-eod`, spec `docs/dev/specs/2026-10-03-live-eod.md`
 - **Known issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
@@ -1108,6 +1108,18 @@ SPEC.md and PLAN.md:
     resolve-level test instead. With one task per file set and a
     detailed plan, phase 8 task plans are skipped; each implementer
     plans inside its own dispatch.
+
+87. **`live-eod` Tasks 1 and 2 merged** `--no-ff` into `live-eod`
+    (`139143c` docs, `7a673fb` code). Both shipped to plan; Task 2
+    also fixed three stale old-formula passages in SPEC the plan had
+    not listed. Merge gate first failed on a full disk: 39 leftover
+    agent worktrees held about 60 GB of `target/` caches. At the
+    user's choice the caches were deleted and the 33 worktrees that
+    were merged and clean were removed with their branches; four
+    unmerged and two dirty worktrees were left for the user. Gate then
+    green (fmt, build, 511 lib + integration tests, clippy). Hand run
+    of the binary: two `status` reads 65 s apart printed the same
+    `est. EOD` while `left to` dropped by a minute.
 
 ## Open questions (still need answers)
 
