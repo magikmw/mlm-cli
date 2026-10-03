@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 100
+- **Next entry**: 101
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
@@ -1366,6 +1366,43 @@ SPEC.md and PLAN.md:
     an inverted assertion in a T1-owned file and must list it; F8 T6
     rewrites SPEC §7.1's future-date `status` text. T2 and T6 plans
     re-aligned by dispatch. T1 and T5 implementation dispatched.
+
+100. **`possible-issues-triage` all tasks merged; phase 13/14 out.**
+    Merged `--no-ff` into `possible-issues-triage`: T5 (`8d823a2`), T6
+    (`872d915`), T1 (`f8789ee`), T2, T3 (`fc44f4d`), T4 (`0897272`), then
+    an integration fix (`83e3506`) that re-pins T3's order test to end
+    with T4's carry marker (the F5 hint-then-marker check) and adds T4's
+    deferred overlap-only marker tests. T4 re-pinned one assertion in
+    T1-owned `src/status.rs` under the plan's exception; accepted. T2
+    dropped the receiving-side splice span (unreachable: the spliced end
+    is that date's first punch); accepted. Coverage-baseline conflicts
+    resolved to the higher value. Merge gate green: fmt, build, 804
+    tests, clippy, smoke runs; T6's doc literals checked against the
+    binary. Timing: `mlm week 9000-01` 0.3 s (was 59 s); 150-week seeded
+    DB `status`/`week` ~0.01 s release. Incident: a T4 smoke run without
+    `MLM_DB_PATH` wrote a punch and a note to the user's real DB; the
+    agent deleted both; user told. Discovered: `.githooks/pre-commit`
+    passes commits with failing tests, because a failed `cargo llvm-cov`
+    yields empty JSON and the coverage check prints SKIP; the T4 merge
+    went in red that way. User chose to fold the hook fix into the fix
+    pass. Phase 14 ran (`first-run`, 10 findings; the agent's report
+    file was not written, so the findings from its reply are kept here):
+    FE1 a 3-week-old unclosed start shows `160h left`, carry-in -120h,
+    empty weeks count -40h each, `[!]` names only the anomalous week;
+    FE2 carry-in over empty weeks differs between a fresh DB and one
+    with punches, future weeks say `Total behind`; FE3 glossary omits
+    Total behind/ahead, Day total, overlapping, orphaned end, `N days
+    old`, and nothing points from `-h` or top-level help to it; FE4 old
+    unclosed stints print `09:00-now (unclosed)` at 3 or 21 days; FE5
+    overlap `fix:` does not say which punch, today's page does not
+    mention an older overlap (the carry marker does, from the next
+    week); FE6 `stop` accepts times outside the advised window silently;
+    FE7 the `or: mlm stop` line vanishes once today has a start, with no
+    word that a bare `stop` would close the new stint; FE8 `est. EOD
+    17:08 (tomorrow)` on a first Sunday run surprises; FE9 the future
+    `status` error does not point to `mlm week`; FE10 the `week target`
+    echo has no date range, and README's Possible issues mentions E7/E8
+    codes users never see. User approved Opus for phase 13.
 
 ## Open questions (still need answers)
 
