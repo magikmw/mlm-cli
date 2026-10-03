@@ -9,12 +9,11 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 96
+- **Next entry**: 98
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
-- **Active changeset**: none (`point-in-time-week` merged to `main`,
-  entry 95; release not prepared)
+- **Active changeset**: `possible-issues-triage` (entry 96)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1269,6 +1268,59 @@ SPEC.md and PLAN.md:
     Stale-doc grep of README, SPEC, AGENTS.md and `src/` (including
     `--help` text in `src/cli.rs`) found no leftover old-rule claim.
     Release not prepared; awaiting the user's call.
+
+96. **`possible-issues-triage` changeset started.** User asked for a
+    PO-style triage of SPEC §1.2a (32 items) by impact and agreed with
+    the result. Tier 1 (fix; wrong data or silent failure): (a) a
+    session left open from yesterday gives no signal on today's
+    `status`/`mlm start` and drops out at midnight (two items, one
+    root), fixed by a hint line rather than an anomaly so the 2-day
+    stale rule stays; (b) nested entry double-counts overlap with no
+    `[!]`, fixed by an overlap anomaly with LIFO pairing unchanged;
+    (c) `mlm week` shows a storage read failure as no data
+    (`unwrap_or_default` in `src/week_view.rs`), fixed by propagating
+    the error; (d) `mlm week target` prints nothing on success, fixed
+    by echoing the stored target. Tier 2 (cheap polish): default log
+    level `Warn` so the migration line needs `--verbose`; a short term
+    glossary in `status --help`; a targeted error for `week WEEK_ID
+    target DURATION`; reword `target already met` on the Day total
+    line; reject a future `status DATE` like `start`/`stop`, which also
+    retires the future-date weekday and future-week `Total behind`
+    items. Tier 3 (accept): the live-model items (minute-by-minute
+    figures, backdate jumps, `est. EOD` semantics, framing wording,
+    `incl./+ ongoing`, debt-week left, two-open-starts credit, 14-day
+    window, earlier-date week line) move out of §1.2a into the
+    relevant spec sections as plain behavior statements. Deferred, kept
+    in §1.2a: a past week's anomaly skewing later carry-in with no
+    pointer. README's list trims to the items still open. User asked
+    that every item be re-validated against current code first, since
+    many were filed in recent changesets and never revisited. Phase 0
+    profile reused from entry 65. Baseline `main` at `be85617`; branch
+    `possible-issues-triage`.
+
+97. **`possible-issues-triage` spec reviewed and locked**
+    (`docs/dev/specs/2026-10-03-possible-issues-triage.md`). Validation
+    (`plans/reports/possible-issues-triage-validation-review.md`) found
+    34 items, not 32; 31 valid, I4/I5/I28 partly valid. Changes to
+    entry 96: I1 and I4 are fixed together by a carry-in `[!]` line
+    (user's call; I1 skews carry-in silently past the 14-day window);
+    I28 is hardening of three reads, not the main punch read; future
+    `mlm week` keeps `Total behind`, accepted as behavior. User approved
+    the draft's visible choices (`[i]` hint, overlap line, carry line,
+    `Week W target: D` echo, `done for today`, glossary in long help).
+    Adversarial review (`plans/reports/possible-issues-triage-spec-review.md`,
+    needs-rework, 11 findings + U1-U10) folded: F1 inverted the stop-hint
+    rule, so hints now name `between S and N` (first punch after the
+    target start) when one exists; F2 glossary now says surplus carries,
+    matching `week.rs` and SPEC §1.3; F3 overlap covers today's open
+    stint; F4 exit codes pinned to 1 (runtime) and 2 (usage), since
+    §6.3 has no named codes; F5 the age-1 hint reads today's punches;
+    F6/F7/F8 mechanisms left to the plan with constraints pinned; F9
+    adds a SPEC section map and a test list; F10 defines overlap
+    exactly; F11 suppresses the hint beside a refused join and records
+    `mlm start` and `23:59` as non-goals. U1-U10 recorded in spec §6.
+    Phase 14 runs, tier `first-run` (default log level and `--help`
+    change first-run output). Provisional task count 4-5: full ladder.
 
 ## Open questions (still need answers)
 
