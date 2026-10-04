@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 104
+- **Next entry**: 105
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
@@ -1447,6 +1447,23 @@ SPEC.md and PLAN.md:
     Phase 0 profile reused from entry 65. Baseline `main` at `6edd67b`;
     branch `overnight-visibility`. Spec
     `docs/dev/specs/2026-10-04-overnight-visibility.md`.
+
+104. **`overnight-visibility` spec reviewed and locked.** Adversarial
+    review (`plans/reports/overnight-visibility-spec-review.md`, 9
+    findings + U1-U8) folded: F1 footers point to `mlm status` (today's
+    page carries the fix lines; `status DATE` for a past date has none);
+    F2/U5 a row with an anomaly and the overnight stint shows `[!] [i]`
+    and both footers, so `[!]` never hides it; F3 the line is rendered
+    apart from the date-sorted stint list, and `status -1` keeps its
+    wording; F4 stale SPEC passages and the `lookback.rs` test that
+    asserts the old rule are listed for update; F5 data model left to
+    the plan (reviewer confirmed `mlm week` can decide the trigger from
+    loaded buckets, no new reads); F6 §1.2a and README both read "None
+    currently."; F7 moved behavior adds no `est. EOD` and the
+    Sunday-midnight `Worked` gap; F8 spec drops option narration; F9
+    tests added. U1-U4, U7, U8 recorded in spec §7. Phase 14 runs, tier
+    `returning`. Provisional task count 2 (code, docs): collapsed
+    phases 5-7, phase 10 skipped.
 
 ## Open questions (still need answers)
 

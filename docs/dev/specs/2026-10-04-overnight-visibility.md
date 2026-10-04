@@ -3,10 +3,11 @@
 **Baseline**: written against `main` at `6edd67b` (`v0.3.6` plus the
 unreleased `open-punch-visibility`, `live-eod`, `point-in-time-week`
 and `possible-issues-triage` changesets).
-**Status**: draft.
+**Status**: adversarially reviewed 2026-10-04
+(`docs/dev/plans/reports/overnight-visibility-spec-review.md`, 9
+findings + U1-U8, folded — NOTES.md entry 104). Locked.
 **Input**: SPEC §1.2a's last item (a stint open across midnight).
-User chose to make it visible without counting it (option B), and to
-mark `mlm week` rows (NOTES.md entry 103).
+Decisions: NOTES.md entries 103-104.
 
 ## 1. Summary
 
@@ -54,6 +55,8 @@ today's own stints (it started earlier):
 - The range uses the same column layout as other stint lines.
 - `15h 30m` is whole minutes from the start to now, in the standard
   formatter (§4.2).
+- The line is rendered on its own, ahead of the date-sorted stint
+  list, so it is not part of today's stint pairing or sorting.
 - The line prints even when today has punches of its own. It is the
   only stint line on today's page that is not part of today's day
   total.
@@ -64,12 +67,12 @@ today's own stints (it started earlier):
 
 - The overnight stint's date row (yesterday) ends with `  [i]`, in
   the same column as `  [!]`.
-- A row that has both an anomaly and the overnight stint shows `[!]`
-  only.
+- A row that has both an anomaly and the overnight stint shows both
+  markers, `  [!] [i]`, and both footers print.
 - When any row in the table shows `[i]`, one footer line prints:
 
   ```
-  [i] open stint: run mlm status DATE to stop it
+  [i] open stint: run mlm status to stop it
   ```
 
 - Footer order: the `[!]` footer, then the `[i]` footer, then the
@@ -83,7 +86,7 @@ today's own stints (it started earlier):
   marked:
 
   ```
-  [i] open stint on Sun 2026-10-04 (last week): run mlm status 2026-10-04 to stop it
+  [i] open stint on Sun 2026-10-04 (last week): run mlm status to stop it
   ```
 
   This line prints only in the view of the week containing today, and
@@ -97,12 +100,20 @@ today's own stints (it started earlier):
   `mlm week` while a start from yesterday is still open.
 - SPEC §1.2a: the last item is removed. Its behavior moves into §7.1
   (status) and §7.2 (week) as plain statements: the stint gets no live
-  credit, its minutes return to yesterday on `stop`, the week line
-  jumps at 00:00 because `required` steps up and the stint is not
-  counted, and the overnight stint is listed and marked as above.
-  §1.2a is left with its heading and an empty-list sentence.
-- README: the Possible issues section is removed or reads "none
-  currently". Output examples follow §4 and §5.
+  credit and no `est. EOD`; its minutes return to yesterday on `stop`;
+  the week line jumps at 00:00 because `required` steps up and the
+  stint is not counted; past Sunday midnight the closed week's
+  `Worked` leaves the stint out until `stop`; the overnight stint is
+  listed and marked as above. §1.2a keeps its heading and reads "None
+  currently."
+- README: the Possible issues section keeps its heading and reads
+  "None currently." Output examples follow §4 and §5.
+- Every other SPEC passage this changes is updated, including the ones
+  that say the `[i]` hint never marks a row or that `mlm week` has no
+  yesterday hint (SPEC.md around lines 311, 869-875, 1185, 1450 at
+  baseline; relocate by content). The existing test that asserts the
+  hint does not mark yesterday's week row (`src/lookback.rs` near line
+  959) is rewritten to the new rule.
 
 ## 7. Visible consequences
 
@@ -114,6 +125,19 @@ today's own stints (it started earlier):
   footer line naming Sunday; last week's view marks the Sunday row.
 - `mlm week` output for any week containing yesterday changes while
   such a start is open.
+- Today's page names the same stint twice: once in the `[i]` hint
+  (with fix lines) and once in the stint list. Yesterday's own page
+  keeps its older wording (`ongoing - duration as of right now`,
+  `(+ ongoing)`).
+- A today page with no punches now shows a stint line under `Day
+  total: 00h 00m`, with no `est. EOD`.
+- When the start turns 2 days old, the stint line and `[i]` marks
+  disappear and the `[!]` stale lookback line and row marker take over,
+  though the stint is still open.
+- On a Monday the current week's view has a footer line and no marked
+  row.
+- Scripts that sum today's stint lines now see a line whose minutes
+  are not in the Day total.
 
 ## 8. Testing
 
@@ -124,3 +148,9 @@ today's own stints (it started earlier):
   footer order with both footers and the carry marker; Monday case (current week footer line names Sunday, last week's Sunday row marked, no line on other weeks).
 - `has_any`, the `[!]` footer and the carry marker ignore `[i]`.
 - Glossary golden updated.
+- Also: a past week viewed by `WEEK_ID` that contains yesterday (row
+  marked); any other past or future week (nothing); today with its own
+  open stint as well (both lines, correct order); a stint running over
+  24h (formatter); the age-2 transition (line gone, `[!]` lookback
+  instead); an end-to-end `status` test with the hint and the line
+  together.
