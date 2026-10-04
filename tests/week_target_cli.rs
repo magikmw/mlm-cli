@@ -236,9 +236,10 @@ Options:
 #[test]
 fn short_help_goldens() {
     let s = run(&["status", "-h"]);
-    assert_eq!(out(&s), STATUS_SHORT);
+    // Windows prints the binary as mlm.exe in usage lines.
+    assert_eq!(out(&s).replace("mlm.exe ", "mlm "), STATUS_SHORT);
     let w = run(&["week", "-h"]);
-    assert_eq!(out(&w), WEEK_SHORT);
+    assert_eq!(out(&w).replace("mlm.exe ", "mlm "), WEEK_SHORT);
     assert!(!out(&s).contains("Glossary"));
     assert!(!out(&w).contains("Glossary"));
 }
