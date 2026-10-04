@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 107
+- **Next entry**: 108
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
@@ -1490,6 +1490,15 @@ SPEC.md and PLAN.md:
     open start; clock-dependent cases are unit tests with injected
     `now`. T2 covers four SPEC passages the spec missed and adds edge
     case E26 for `week`. Phase 10 skipped (two tasks).
+
+107. **`overnight-visibility` tasks merged.** T2 docs (`78c172f`), T1
+    code (merge after it). Merge gate green: fmt, build, 841 tests,
+    clippy; hand repro (22:00 start yesterday plus today's own open
+    stint) shows the hint, the overnight line ahead of today's stint,
+    the Saturday `[i]` row and footer, unchanged figures. Doc literals
+    match the binary. T1 notes: some new tests were red only as compile
+    errors; one CLI test written after the code. Worktrees and branches
+    removed.
 
 ## Open questions (still need answers)
 
