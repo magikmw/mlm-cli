@@ -9,12 +9,11 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 103
+- **Next entry**: 104
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
-- **Active changeset**: none (`possible-issues-triage` merged to `main`,
-  entry 102; release not prepared)
+- **Active changeset**: `overnight-visibility` (entry 103)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1434,6 +1433,20 @@ SPEC.md and PLAN.md:
     grep of README, SPEC, AGENTS.md and `src/` found one stale test
     comment (lookback window ages), fixed. All task worktrees and
     branches removed. Release not prepared; awaiting the user's call.
+
+103. **`overnight-visibility` changeset started.** Last SPEC §1.2a
+    item: a stint open across midnight gets no live credit and, beyond
+    the `[i]` hint, no visibility. Options laid out: A live credit while
+    the stint would splice, B show it without counting, C accept. User
+    chose B (they do not work overnight; it happened once waiting on a
+    migration), and asked that `mlm week` mark yesterday's row too,
+    after seeing mockups. On Mondays the current week's view also
+    names Sunday's open stint in a footer line (user's call, from a
+    side-agent note). Reverses `possible-issues-triage`'s rule that
+    `[i]` never marks a row. If overnight users appear, revisit A.
+    Phase 0 profile reused from entry 65. Baseline `main` at `6edd67b`;
+    branch `overnight-visibility`. Spec
+    `docs/dev/specs/2026-10-04-overnight-visibility.md`.
 
 ## Open questions (still need answers)
 
