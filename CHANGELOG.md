@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-10-04
+
+### 🚀 Features
+
+- *(status, start)* An unclosed start up to 14 days old shows on today's `status` and as a `mlm start` warning, with `fix:` / `or:` commands to close or delete it
+- *(status, week)* A start still open from yesterday gets an `[i]` hint, is listed on today's page as `started yesterday, not counted until stopped`, and marks yesterday's `week` row with `[i]`
+- *(status, week)* Overlapping stints are flagged `[!]`
+- *(status, week)* A carry-in skewed by an anomaly in any earlier week is flagged: `[!] carry-in includes anomalies from N earlier weeks, oldest W`
+- *(cli)* `status --help` and `week --help` end with a glossary of the terms and markers on screen
+
+### 🔄 Changed
+
+- *(status, week)* The current week's line is point-in-time: `left to` / `over` the slice due by end of today Mon-Thu (`32h 00m by end of Thursday`), and the full target Fri-Sun
+- *(status, week)* A running stint counts everywhere in the current week (day total, worked, fulfillment, week line, `week` rows), marked `(incl. ongoing)`
+- *(status, week)* `[!]` anomaly lines carry `fix:` / `or:` suggestions; stop hints name a time window that pairs cleanly, e.g. `(a time between 08:00 and 09:00)`; a refused cross-midnight join is reported on both dates
+- *(status)* `done for today` replaces `target already met` on the Day total line
+- *(status)* `est. EOD` past tomorrow names the landing day, e.g. `(Mon)`
+- *(status)* An unclosed start two or more days old prints as `09:00-?`, not `09:00-now`
+- *(status)* `status` rejects a future date and points to `mlm week WEEK_ID`
+- *(week)* `week target` prints the stored target, e.g. `Week 2026-41 target: 20h 00m`
+- *(cli)* Default log level is `warn`, so a new database no longer logs a migration line on first run; `--verbose` shows it
+
+### 🐛 Bug Fixes
+
+- *(status)* `est. EOD` counts the running stint, so it no longer drifts later while you work
+- *(week)* A storage read failure is an error (exit 1) instead of silently falling back to the default target
+- *(week)* Viewing a far-future week is fast (one ranged read instead of one per week)
+- *(cli)* `mlm week 2026-41 target 20h` explains the argument order; `week target --help` names `[WEEK_ID] <DURATION>`
+
+### 📚 Documentation
+
+- README and SPEC.md: the known-issues list is resolved; each accepted behavior is described where it belongs
+
+### ⚙️ Miscellaneous Tasks
+
+- The pre-commit hook blocks commits when tests fail
+- Move aarch64 macOS runners off retiring macos-14
+
 ## [0.3.6] - 2026-09-23
 
 ### 🚀 Features
