@@ -261,6 +261,18 @@ with a future `--date` (§6.1). It uses the same message shape and
 exits `1`. §6.1's line that says `status` has no future restriction
 is replaced. `mlm week WEEK_ID` for a future week stays allowed.
 
+### 4.6 Old unclosed stint line (fresh-eyes FE4, added at phase 15)
+
+A stint line for an open start two or more days old prints its range
+as `09:00-?`, not `09:00-now`, so a 21-day-old start no longer reads
+as running now. The `(unclosed)` tag and column alignment stay:
+
+```
+  09:00-?      (unclosed)
+```
+
+Today's and yesterday's open stints keep `-now`.
+
 ## 5. Documentation
 
 ### 5.1 SPEC §1.2a after this changeset

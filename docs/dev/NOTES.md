@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 101
+- **Next entry**: 102
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
@@ -1403,6 +1403,25 @@ SPEC.md and PLAN.md:
     `status` error does not point to `mlm week`; FE10 the `week target`
     echo has no date range, and README's Possible issues mentions E7/E8
     codes users never see. User approved Opus for phase 13.
+
+101. **`possible-issues-triage` phase 13 back and triaged.** Opus
+    final review (`plans/reports/possible-issues-triage-final-review.md`):
+    ship-with-followups, 5 findings, all gates re-run green in a clone,
+    25 deliberate mutations all caught by tests. User approved the
+    triage plus FE4. Fix pass: F1 the yesterday hint's `or: mlm stop`
+    prints only when no punch follows the open start on yesterday and
+    today is empty (otherwise following it nests a later stint); F2 the
+    argument-order interception fires only when the tokens parse as a
+    week id and a duration (stops echoing arbitrary text into a
+    copyable command); F3 `week target --help` stray blank lines; F4
+    replace the tautological history test with concrete figures; hook
+    fails on a nonzero `cargo llvm-cov`; FE3 glossary adds `Total
+    behind`/`Total ahead`, overlapping stints, orphaned end; FE9 future
+    `status DATE` error points to `mlm week WEEK_ID`; FE10b README
+    Possible issues drops E7/E8 codes; FE4 old unclosed stint lines
+    print `09:00-?` (spec §4.6, coordinator wording). Accepted as-is:
+    FE1, FE2, FE5, FE6, FE7, FE8, FE10a. F5 (README period, archive
+    banners) at close.
 
 ## Open questions (still need answers)
 
