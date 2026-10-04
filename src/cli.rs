@@ -45,7 +45,8 @@ Glossary:
       `[!]` flags an anomaly, such as an unclosed start, an orphaned end
       or overlapping stints. In `mlm week` it marks the date's row. `[i]`
       is a hint, not an anomaly, such as a start still open from
-      yesterday. It never marks a row.";
+      yesterday. It marks yesterday's row in `mlm week` until that start
+      is stopped.";
 
 #[derive(Parser, Debug)]
 #[command(name = "mlm", version, about = "Quick time tracking from the CLI")]
@@ -767,6 +768,11 @@ mod tests {
     #[test]
     fn glossary_is_ascii_and_ends_cleanly() {
         assert!(GLOSSARY.is_ascii());
+        let flat = GLOSSARY.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.contains("It marks yesterday's row in `mlm week` until that start is stopped.")
+        );
+        assert!(GLOSSARY.ends_with("stopped."));
         assert!(!GLOSSARY.ends_with('\n'));
     }
 

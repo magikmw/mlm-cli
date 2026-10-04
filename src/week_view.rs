@@ -25,6 +25,7 @@ use crate::carry_scan;
 use crate::cli::WeekArgs;
 use crate::date::{WeekId, format_date, parse_week_id};
 use crate::history::{self, PunchBuckets};
+use crate::lookback;
 use crate::render::{self, CarryMarker};
 use crate::time::format_minutes;
 
@@ -49,6 +50,10 @@ pub struct WeekRow {
     pub is_ongoing: bool,
     /// `[!]` marker, via `render::DateAnomalies::has_any()` exclusively.
     pub has_anomaly: bool,
+    /// `[i]` marker: this row's date is the overnight stint's date. Never
+    /// feeds `has_any`, the `[!]` footer, the carry marker or carry
+    /// accounting.
+    pub has_overnight: bool,
 }
 
 /// Everything `render_week` needs, and nothing it can compute itself
@@ -70,6 +75,10 @@ pub struct WeekView {
     /// carry-in (SPEC §3.3). Adds a line above the totals and a `[!]` on
     /// the Carry-in figure.
     pub carry_marker: Option<CarryMarker>,
+    /// Monday case: the overnight stint's date when the shown week contains
+    /// today and that date is in the previous week. Names Sunday in the
+    /// `[i]` footer slot because no row of this week is marked.
+    pub overnight_last_week: Option<NaiveDate>,
 }
 
 /// The §7.2/§7.3 layout, byte-exact. Pure: no I/O, no clock.
@@ -105,30 +114,53 @@ fn push_rows(out: &mut String, view: &WeekView) {
         if row.is_ongoing {
             out.push_str(" (incl. ongoing)");
         }
-        if row.has_anomaly {
-            out.push_str("  [!]");
-        }
+        out.push_str(row_markers(row));
         out.push('\n');
     }
     out.push('\n');
 }
 
-/// The footer slot above the totals. The anomaly footer comes first when
-/// any row is marked, and the carry marker line sits directly under it.
-/// One blank line follows whenever either line printed.
+/// `  [!]`, `  [i]` or `  [!] [i]`, or nothing.
+fn row_markers(row: &WeekRow) -> &'static str {
+    match (row.has_anomaly, row.has_overnight) {
+        (true, true) => "  [!] [i]",
+        (true, false) => "  [!]",
+        (false, true) => "  [i]",
+        (false, false) => "",
+    }
+}
+
+/// The footer slot above the totals, followed by one blank line whenever
+/// any line printed.
 fn push_notices(out: &mut String, view: &WeekView) {
-    let any_row_marked = view.rows.iter().any(|r| r.has_anomaly);
-    if any_row_marked {
-        out.push_str(render::WEEK_ANOMALY_FOOTER);
+    let lines = notice_lines(view);
+    for line in &lines {
+        out.push_str(line);
         out.push('\n');
     }
-    if let Some(marker) = &view.carry_marker {
-        out.push_str(&render::carry_marker_line(marker));
+    if !lines.is_empty() {
         out.push('\n');
     }
-    if any_row_marked || view.carry_marker.is_some() {
-        out.push('\n');
+}
+
+/// Footer order: `[!]` footer, `[i]` footer or Monday line, carry marker line.
+fn notice_lines(view: &WeekView) -> Vec<String> {
+    let mut lines = Vec::new();
+    if view.rows.iter().any(|r| r.has_anomaly) {
+        lines.push(render::WEEK_ANOMALY_FOOTER.to_string());
     }
+    lines.extend(overnight_footer(view));
+    lines.extend(view.carry_marker.as_ref().map(render::carry_marker_line));
+    lines
+}
+
+/// The plain footer when any row shows `[i]`, else the Monday line.
+fn overnight_footer(view: &WeekView) -> Option<String> {
+    if view.rows.iter().any(|r| r.has_overnight) {
+        return Some(render::WEEK_OVERNIGHT_FOOTER.to_string());
+    }
+    view.overnight_last_week
+        .map(render::week_overnight_monday_footer)
 }
 
 fn push_totals(out: &mut String, view: &WeekView) {
@@ -164,6 +196,7 @@ fn build_rows_from(
     buckets: &PunchBuckets,
     today: NaiveDate,
     now_utc: DateTime<Utc>,
+    overnight: Option<NaiveDate>,
 ) -> [WeekRow; 7] {
     std::array::from_fn(|i| {
         let date = dates[i];
@@ -178,6 +211,7 @@ fn build_rows_from(
                 + if is_today { ctx.day.live_minutes() } else { 0 },
             is_ongoing: ctx.day.is_ongoing() && is_today,
             has_anomaly: facts.has_any(),
+            has_overnight: Some(date) == overnight,
         }
     })
 }
@@ -189,7 +223,9 @@ fn build_rows(
     today: NaiveDate,
     now_utc: DateTime<Utc>,
 ) -> [WeekRow; 7] {
-    build_rows_from(dates, &PunchBuckets::from_punches(punches), today, now_utc)
+    let buckets = PunchBuckets::from_punches(punches);
+    let overnight = lookback::overnight_stint(&buckets, today, now_utc).map(|o| o.date);
+    build_rows_from(dates, &buckets, today, now_utc, overnight)
 }
 
 /// Build the full `WeekView` for `week`. Every storage read goes through
@@ -204,7 +240,8 @@ pub fn build_week_view(
     let (start, end) = week.span();
 
     let history = history::load_history(conn, week, today, now_utc)?;
-    let rows = build_rows_from(week.dates(), &history.buckets, today, now_utc);
+    let overnight = lookback::overnight_stint(&history.buckets, today, now_utc).map(|o| o.date);
+    let rows = build_rows_from(week.dates(), &history.buckets, today, now_utc, overnight);
     let acct = history.accounting(week);
     let carry_marker = carry_scan::carry_marker(&history, week, today, now_utc);
 
@@ -219,7 +256,19 @@ pub fn build_week_view(
         fulfillment_minutes: acct.fulfillment,
         target_minutes: acct.target,
         carry_marker,
+        overnight_last_week: monday_overnight(week, today, overnight),
     })
+}
+
+/// The overnight date when the shown week holds today but not that date.
+fn monday_overnight(
+    week: WeekId,
+    today: NaiveDate,
+    overnight: Option<NaiveDate>,
+) -> Option<NaiveDate> {
+    let (start, end) = week.span();
+    let holds = |d: NaiveDate| (start..=end).contains(&d);
+    overnight.filter(|&d| holds(today) && !holds(d))
 }
 
 /// `mlm week [WEEK_ID]` (the `action: None` arm; `week target` is
@@ -265,6 +314,7 @@ mod tests {
             minutes,
             is_ongoing: false,
             has_anomaly: false,
+            has_overnight: false,
         }
     }
 
@@ -294,6 +344,7 @@ mod tests {
             fulfillment_minutes: 1755,
             target_minutes: 2400,
             carry_marker: None,
+            overnight_last_week: None,
         }
     }
 
@@ -320,6 +371,7 @@ mod tests {
             fulfillment_minutes: 2210,
             target_minutes: 2400,
             carry_marker: None,
+            overnight_last_week: None,
         }
     }
 
@@ -424,6 +476,7 @@ Target:        40h 00m
             fulfillment_minutes: 0,
             target_minutes: 2400,
             carry_marker: None,
+            overnight_last_week: None,
         };
         let out = render_week(&view);
         assert!(!out.contains("ongoing"));
@@ -446,6 +499,7 @@ Target:        40h 00m
             fulfillment_minutes: -1872,
             target_minutes: 2400,
             carry_marker: None,
+            overnight_last_week: None,
         };
         let out = render_week(&view);
         let zero_rows = out
@@ -1476,5 +1530,238 @@ Fulfillment:   28h 40m
 Target:        40h 00m
 ";
         assert_eq!(render_week(&view), want);
+    }
+
+    // ---- overnight stint marker ----
+
+    fn seed_at(conn: &Connection, kind: PunchKind, date: NaiveDate, h: u32, m: u32) {
+        storage::insert_punch(conn, kind, date, t(h, m), &Local).expect("insert");
+    }
+
+    fn mon_0900() -> DateTime<Local> {
+        Local.with_ymd_and_hms(2026, 2, 16, 9, 0, 0).unwrap()
+    }
+
+    fn overnight_rows(view: &WeekView) -> Vec<usize> {
+        (0..7).filter(|&i| view.rows[i].has_overnight).collect()
+    }
+
+    #[test]
+    fn build_week_view_marks_yesterday_row() {
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 11), 18, 2);
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        assert_eq!(overnight_rows(&view), vec![2]);
+        assert_eq!(view.overnight_last_week, None);
+        assert!(view.rows.iter().all(|r| !r.has_anomaly));
+        let out = render_week(&view);
+        assert!(out.contains("  Wed 2026-02-11   00h 00m  [i]\n"), "{out}");
+        assert_eq!(out.matches(render::WEEK_OVERNIGHT_FOOTER).count(), 1);
+        assert!(!out.contains("needs a look"), "{out}");
+    }
+
+    #[test]
+    fn past_week_by_id_marks_sunday_row() {
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 15), 22, 0);
+        let view = build_week_view(&conn, wk(2026, 7), mon_0900()).unwrap();
+        assert_eq!(overnight_rows(&view), vec![6]);
+        assert_eq!(view.overnight_last_week, None);
+        let out = render_week(&view);
+        assert_eq!(out.matches(render::WEEK_OVERNIGHT_FOOTER).count(), 1);
+        assert!(!out.contains("(last week)"), "{out}");
+    }
+
+    #[test]
+    fn row_mark_follows_the_trigger() {
+        type Seeder = Box<dyn Fn(&Connection)>;
+        let fixtures: Vec<Seeder> = vec![
+            Box::new(|c| {
+                seed_at(c, PunchKind::Start, d(2026, 2, 11), 23, 0);
+                seed_at(c, PunchKind::End, d(2026, 2, 12), 0, 10);
+            }),
+            Box::new(|c| {
+                seed_at(c, PunchKind::Start, d(2026, 2, 11), 18, 2);
+                seed_at(c, PunchKind::End, d(2026, 2, 12), 0, 10);
+                seed_at(c, PunchKind::End, d(2026, 2, 12), 0, 20);
+            }),
+            Box::new(|c| {
+                seed_at(c, PunchKind::Start, d(2026, 2, 11), 9, 0);
+                seed_at(c, PunchKind::Start, d(2026, 2, 11), 10, 0);
+            }),
+            Box::new(|c| seed_at(c, PunchKind::Start, d(2026, 2, 10), 9, 0)),
+        ];
+        for (i, seed) in fixtures.iter().enumerate() {
+            let conn = new_test_db();
+            seed(&conn);
+            let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+            assert!(view.rows.iter().all(|r| !r.has_overnight), "fixture {i}");
+        }
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 10), 9, 0);
+        let view = build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap();
+        assert!(view.rows[1].has_anomaly);
+        let out = render_week(&view);
+        assert!(out.contains("  Tue 2026-02-10   00h 00m  [!]\n"), "{out}");
+        assert!(!out.contains("[i]"), "{out}");
+    }
+
+    #[test]
+    fn monday_current_week_uses_loaded_buckets() {
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 15), 22, 0);
+        let view = build_week_view(&conn, wk(2026, 8), mon_0900()).unwrap();
+        assert_eq!(view.overnight_last_week, Some(d(2026, 2, 15)));
+        assert!(overnight_rows(&view).is_empty());
+    }
+
+    #[test]
+    fn monday_footer_names_sunday_once() {
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 15), 22, 0);
+        let out = render_week(&build_week_view(&conn, wk(2026, 8), mon_0900()).unwrap());
+        let line = "[i] open stint on Sun 2026-02-15 (last week): run mlm status to stop it";
+        assert_eq!(out.matches(line).count(), 1, "{out}");
+        assert!(!out.contains(render::WEEK_OVERNIGHT_FOOTER), "{out}");
+    }
+
+    #[test]
+    fn monday_other_weeks_show_nothing() {
+        let with = new_test_db();
+        let without = new_test_db();
+        // An earlier closed pair in both keeps the ledger start equal.
+        for conn in [&with, &without] {
+            seed_at(conn, PunchKind::Start, d(2026, 2, 2), 9, 0);
+            seed_at(conn, PunchKind::End, d(2026, 2, 2), 17, 0);
+        }
+        seed_at(&with, PunchKind::Start, d(2026, 2, 15), 22, 0);
+        for week in [wk(2026, 6), wk(2026, 9)] {
+            let a = build_week_view(&with, week, mon_0900()).unwrap();
+            let b = build_week_view(&without, week, mon_0900()).unwrap();
+            assert_eq!(render_week(&a), render_week(&b), "{week}");
+            assert!(overnight_rows(&a).is_empty());
+            assert_eq!(a.overnight_last_week, None);
+        }
+    }
+
+    #[test]
+    fn monday_sunday_row_with_anomaly_shows_both_markers() {
+        let conn = new_test_db();
+        seed_at(&conn, PunchKind::End, d(2026, 2, 15), 8, 0);
+        seed_at(&conn, PunchKind::Start, d(2026, 2, 15), 22, 0);
+        let current = build_week_view(&conn, wk(2026, 8), mon_0900()).unwrap();
+        assert_eq!(current.overnight_last_week, Some(d(2026, 2, 15)));
+        let past = render_week(&build_week_view(&conn, wk(2026, 7), mon_0900()).unwrap());
+        assert!(
+            past.contains("  Sun 2026-02-15   00h 00m  [!] [i]\n"),
+            "{past}"
+        );
+    }
+
+    #[test]
+    fn monday_footer_hand_built_golden() {
+        let mut view = example_a();
+        view.overnight_last_week = Some(d(2026, 2, 15));
+        let line = "[i] open stint on Sun 2026-02-15 (last week): run mlm status to stop it";
+        let want = EXAMPLE_A_GOLDEN.replace("\n\nCarry-in:", &format!("\n\n{line}\n\nCarry-in:"));
+        assert_eq!(render_week(&view), want);
+    }
+
+    #[test]
+    fn shared_row_prints_both_markers_and_footers_in_order() {
+        let mut view = example_b();
+        view.rows[2].has_anomaly = true;
+        view.rows[2].has_overnight = true;
+        view.carry_marker = marker(2, wk(2026, 38));
+        let want = "\
+Week 2026-06 (2026-02-02 - 2026-02-08)
+
+Total behind: 03h 10m
+
+  Mon 2026-02-02   07h 30m
+  Tue 2026-02-03   08h 00m
+  Wed 2026-02-04   07h 45m  [!] [i]
+  Thu 2026-02-05   08h 10m
+  Fri 2026-02-06   05h 25m
+  Sat 2026-02-07   00h 00m
+  Sun 2026-02-08   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+[i] open stint: run mlm status to stop it
+[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
+
+Carry-in:      00h 00m  [!]
+Worked:        36h 50m
+Fulfillment:   36h 50m
+Target:        40h 00m
+";
+        assert_eq!(render_week(&view), want);
+    }
+
+    #[test]
+    fn ongoing_anomaly_and_overnight_marker_order() {
+        let mut view = example_a();
+        view.rows[3].has_anomaly = true;
+        view.rows[3].has_overnight = true;
+        assert!(render_week(&view).contains("07h 25m (incl. ongoing)  [!] [i]\n"));
+    }
+
+    #[test]
+    fn overnight_only_row_prints_no_anomaly_footer() {
+        let mut view = example_b();
+        view.rows[2].has_overnight = true;
+        let out = render_week(&view);
+        assert!(!out.contains(render::WEEK_ANOMALY_FOOTER));
+        assert!(!out.contains("carry-in includes"));
+        assert!(out.contains("Carry-in:      00h 00m\n"));
+        assert_eq!(out.lines().count(), 18);
+    }
+
+    #[test]
+    fn overnight_does_not_change_any_figure() {
+        let with = new_test_db();
+        let without = new_test_db();
+        for conn in [&with, &without] {
+            seed_at(conn, PunchKind::Start, d(2026, 2, 9), 9, 0);
+            seed_at(conn, PunchKind::End, d(2026, 2, 9), 17, 0);
+        }
+        seed_at(&with, PunchKind::Start, d(2026, 2, 11), 18, 2);
+        let a = build_week_view(&with, wk(2026, 7), fixed_now()).unwrap();
+        let b = build_week_view(&without, wk(2026, 7), fixed_now()).unwrap();
+        for i in 0..7 {
+            assert_eq!(a.rows[i].minutes, b.rows[i].minutes);
+            assert_eq!(a.rows[i].is_ongoing, b.rows[i].is_ongoing);
+            assert_eq!(a.rows[i].has_anomaly, b.rows[i].has_anomaly);
+        }
+        assert_eq!(a.carry_in_minutes, b.carry_in_minutes);
+        assert_eq!(a.worked_minutes, b.worked_minutes);
+        assert_eq!(a.fulfillment_minutes, b.fulfillment_minutes);
+        assert_eq!(a.target_minutes, b.target_minutes);
+        assert_eq!(a.headline, b.headline);
+        assert_eq!(a.carry_marker, b.carry_marker);
+    }
+
+    #[test]
+    fn blank_line_follows_footer_block_only_when_a_line_printed() {
+        for mask in 0..16u32 {
+            let anomaly = mask & 1 != 0;
+            let overnight = mask & 2 != 0;
+            let last_week = mask & 4 != 0;
+            let carry = mask & 8 != 0;
+            let mut view = example_b();
+            view.rows[2].has_anomaly = anomaly;
+            view.rows[2].has_overnight = overnight;
+            if last_week {
+                view.overnight_last_week = Some(d(2026, 2, 1));
+            }
+            if carry {
+                view.carry_marker = marker(2, wk(2026, 38));
+            }
+            let lines =
+                usize::from(anomaly) + usize::from(overnight || last_week) + usize::from(carry);
+            let out = render_week(&view);
+            let extra = if lines > 0 { lines + 1 } else { 0 };
+            assert_eq!(out.matches('\n').count(), 16 + extra, "mask {mask}");
+        }
     }
 }

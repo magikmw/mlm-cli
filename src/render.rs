@@ -16,7 +16,7 @@
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, Utc};
 
-use crate::date::{WeekId, format_weekday_full};
+use crate::date::{WeekId, format_date_with_weekday, format_weekday_full};
 use crate::storage::Punch;
 use crate::time::format_minutes;
 use crate::week::{self, WeekAccounting};
@@ -132,6 +132,18 @@ pub use crate::lookback::{LookbackFinding, LookbackKind};
 /// the table, after one blank line) — this constant is the only thing
 /// this task owns.
 pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";
+
+/// Footer when a `mlm week` row shows `[i]`.
+pub const WEEK_OVERNIGHT_FOOTER: &str = "[i] open stint: run mlm status to stop it";
+
+/// Monday footer for the current week's view. `date` is the overnight
+/// stint's date.
+pub fn week_overnight_monday_footer(date: NaiveDate) -> String {
+    format!(
+        "[i] open stint on {} (last week): run mlm status to stop it",
+        format_date_with_weekday(date)
+    )
+}
 
 /// Local wall-clock time of a UTC instant.
 pub fn local_time(at_utc: DateTime<Utc>) -> NaiveTime {
@@ -645,6 +657,20 @@ mod tests {
         }
 
         assert!(WEEK_ANOMALY_FOOTER.is_ascii());
+        assert!(WEEK_OVERNIGHT_FOOTER.is_ascii());
+        assert!(week_overnight_monday_footer(d(2026, 10, 4)).is_ascii());
+    }
+
+    #[test]
+    fn overnight_footers_have_exact_text() {
+        assert_eq!(
+            WEEK_OVERNIGHT_FOOTER,
+            "[i] open stint: run mlm status to stop it"
+        );
+        assert_eq!(
+            week_overnight_monday_footer(d(2026, 10, 4)),
+            "[i] open stint on Sun 2026-10-04 (last week): run mlm status to stop it"
+        );
     }
 
     // ---- clean-pair helper and stop-hint phrases ----

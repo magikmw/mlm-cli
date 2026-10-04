@@ -7,6 +7,7 @@
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, NaiveTime, Utc};
 use rusqlite::Connection;
 
+use crate::anomalies;
 use crate::date::{format_date, format_date_with_weekday};
 use crate::history::PunchBuckets;
 use crate::render;
@@ -185,6 +186,61 @@ fn yesterday_hint_lines(wdy: &str, d: &str, time: NaiveTime, facts: LineFacts) -
     lines
 }
 
+/// The overnight stint: yesterday's one open start, not joined to today by
+/// the splice, with no refused join naming yesterday on today's page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OvernightStint {
+    /// Yesterday.
+    pub date: NaiveDate,
+    /// Local time of the open start.
+    pub start: NaiveTime,
+    /// Whole minutes from the start to `now_utc`.
+    pub minutes_so_far: i64,
+}
+
+/// `buckets` must hold yesterday and today (the `status` and `week` loaders
+/// both do).
+pub fn overnight_stint(
+    buckets: &PunchBuckets,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> Option<OvernightStint> {
+    let date = today.pred_opt()?;
+    let trio = buckets.trio(date);
+    if trio.day.is_empty() {
+        return None;
+    }
+    let ctx = anomalies::classify_context(&trio, now_utc);
+    let [only] = ctx.day.open.as_slice() else {
+        return None;
+    };
+    if stint::is_refused_join(&ctx.day_raw, &ctx.next_raw, trio.next) {
+        return None;
+    }
+    Some(OvernightStint {
+        date,
+        start: render::local_time(only.start.at_utc),
+        minutes_so_far: only.minutes_so_far,
+    })
+}
+
+fn load_buckets(conn: &Connection, today: NaiveDate) -> anyhow::Result<PunchBuckets> {
+    let from = today - ChronoDuration::days(MAX_AGE_DAYS + 1);
+    let punches = storage::punches_in_range(conn, from, today)?;
+    Ok(PunchBuckets::from_punches(&punches))
+}
+
+fn scan(buckets: &PunchBuckets, today: NaiveDate, now_utc: DateTime<Utc>) -> Vec<LookbackEntry> {
+    let today_has_punches = !buckets.day(today).is_empty();
+    (MIN_AGE_DAYS..=MAX_AGE_DAYS)
+        .rev()
+        .filter_map(|age| {
+            let date = today - ChronoDuration::days(age);
+            entry_for_date(date, age, buckets, today_has_punches, now_utc)
+        })
+        .collect()
+}
+
 /// One entry per date with open starts, ages 1-14, oldest first. One ranged
 /// read over `[today - 15, today]` covers the 14 window dates, the previous
 /// day of age 14, and today (the next day of age 1 and the source of
@@ -197,17 +253,7 @@ pub fn lookback(
     today: NaiveDate,
     now_utc: DateTime<Utc>,
 ) -> anyhow::Result<Vec<LookbackEntry>> {
-    let from = today - ChronoDuration::days(MAX_AGE_DAYS + 1);
-    let punches = storage::punches_in_range(conn, from, today)?;
-    let buckets = PunchBuckets::from_punches(&punches);
-    let today_has_punches = !buckets.day(today).is_empty();
-    Ok((MIN_AGE_DAYS..=MAX_AGE_DAYS)
-        .rev()
-        .filter_map(|age| {
-            let date = today - ChronoDuration::days(age);
-            entry_for_date(date, age, &buckets, today_has_punches, now_utc)
-        })
-        .collect())
+    Ok(scan(&load_buckets(conn, today)?, today, now_utc))
 }
 
 /// The entry for one window date, or `None` when it has no open start after
@@ -249,18 +295,17 @@ fn entry_for_date(
 }
 
 /// Finished lookback lines for today's page, oldest first, with the age-1
-/// hint last. `refused_join_names_yesterday` is true when today's anomaly
-/// block already holds a refused-join line naming yesterday. It drops the
-/// hint and nothing else (§3.1).
+/// hint last. The hint prints exactly when `overnight_stint` finds a stint.
 pub fn today_page_lines(
     conn: &Connection,
     today: NaiveDate,
     now_utc: DateTime<Utc>,
-    refused_join_names_yesterday: bool,
 ) -> anyhow::Result<Vec<String>> {
-    Ok(lookback(conn, today, now_utc)?
+    let buckets = load_buckets(conn, today)?;
+    let overnight = overnight_stint(&buckets, today, now_utc).is_some();
+    Ok(scan(&buckets, today, now_utc)
         .iter()
-        .filter(|e| !(refused_join_names_yesterday && e.finding.is_yesterday_hint()))
+        .filter(|e| overnight || !e.finding.is_yesterday_hint())
         .flat_map(LookbackEntry::detail_lines)
         .collect())
 }
@@ -494,7 +539,7 @@ mod tests {
         insert_start(&conn, 1, 9, 0);
         insert_start(&conn, 1, 14, 0);
         ins(&conn, PunchKind::End, 1, 15, 0);
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[1].contains("a time between 09:00 and 14:00"));
     }
@@ -660,7 +705,7 @@ mod tests {
     // ---- today's page entry point ----
 
     #[test]
-    fn today_page_lines_equals_flattened_entries_for_either_flag() {
+    fn today_page_lines_equals_flattened_entries() {
         let conn = test_db();
         insert_start(&conn, 10, 9, 0);
         insert_start(&conn, 4, 9, 0);
@@ -673,16 +718,14 @@ mod tests {
             .collect();
         assert!(!expected.is_empty());
         assert!(expected[0].contains("(10 days ago)"));
-        for flag in [true, false] {
-            let lines = today_page_lines(&conn, today(), now(), flag).expect("lines");
-            assert_eq!(lines, expected, "flag {flag}");
-        }
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
+        assert_eq!(lines, expected);
     }
 
     #[test]
     fn today_page_lines_is_empty_without_findings() {
         let conn = test_db();
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert!(lines.is_empty());
     }
 
@@ -696,7 +739,7 @@ mod tests {
     fn page_shows_three_line_hint_when_today_is_empty() {
         let conn = test_db();
         insert_start(&conn, 1, 18, 2);
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(lines, HINT);
     }
 
@@ -705,11 +748,11 @@ mod tests {
         let conn = test_db();
         insert_start(&conn, 1, 18, 2);
         insert_start(&conn, 0, 9, 0);
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(lines, HINT[..2]);
 
         ins(&conn, PunchKind::End, 0, 10, 0);
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(lines, HINT[..2]);
     }
 
@@ -719,7 +762,7 @@ mod tests {
         insert_start(&conn, 1, 18, 2);
         ins(&conn, PunchKind::End, 0, 0, 30);
         assert!(
-            today_page_lines(&conn, today(), now(), false)
+            today_page_lines(&conn, today(), now())
                 .expect("lines")
                 .is_empty()
         );
@@ -731,35 +774,36 @@ mod tests {
         insert_start(&conn, 1, 18, 2);
         ins(&conn, PunchKind::End, 1, 19, 0);
         assert!(
-            today_page_lines(&conn, today(), now(), false)
+            today_page_lines(&conn, today(), now())
                 .expect("lines")
                 .is_empty()
         );
     }
 
     #[test]
-    fn refused_join_flag_drops_only_the_hint() {
+    fn refused_join_drops_only_the_hint() {
         let conn = test_db();
         insert_start(&conn, 1, 18, 2);
         ins(&conn, PunchKind::End, 0, 0, 10);
         ins(&conn, PunchKind::End, 0, 0, 20);
 
         assert!(
-            today_page_lines(&conn, today(), now(), true)
+            today_page_lines(&conn, today(), now())
                 .expect("lines")
                 .is_empty()
         );
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].starts_with("[i] "));
+        // `mlm start` reads the unfiltered scan and keeps its warning.
+        let entries = lookback(&conn, today(), now()).expect("lookback");
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].finding.is_yesterday_hint());
     }
 
     #[test]
-    fn refused_join_flag_keeps_the_yesterday_multi_line() {
+    fn yesterday_multi_line_prints_without_a_hint() {
         let conn = test_db();
         insert_start(&conn, 1, 9, 0);
         insert_start(&conn, 1, 10, 0);
-        let lines = today_page_lines(&conn, today(), now(), true).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(
             lines,
             vec![
@@ -775,7 +819,7 @@ mod tests {
         insert_start(&conn, 14, 9, 0);
         insert_start(&conn, 5, 9, 0);
         insert_start(&conn, 1, 18, 2);
-        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        let lines = today_page_lines(&conn, today(), now()).expect("lines");
         assert_eq!(lines.len(), 9);
         assert!(lines[0].contains("(14 days ago)"));
         assert!(lines[3].contains("(5 days ago)"));
@@ -956,14 +1000,88 @@ mod tests {
     // ---- week rows ----
 
     #[test]
-    fn hint_does_not_mark_the_yesterday_week_row() {
+    fn hint_marks_the_yesterday_week_row() {
         let conn = test_db();
         insert_start(&conn, 1, 18, 2);
         let now_local = Local
             .from_local_datetime(&today().and_hms_opt(18, 0, 0).unwrap())
             .unwrap();
-        let week = crate::date::WeekId::from_date(today() - ChronoDuration::days(1));
+        let yesterday = today() - ChronoDuration::days(1);
+        let week = crate::date::WeekId::from_date(yesterday);
         let view = crate::week_view::build_week_view(&conn, week, now_local).expect("view");
         assert!(view.rows.iter().all(|r| !r.has_anomaly));
+        for row in &view.rows {
+            let is_yesterday = row.date_display == format_date(yesterday);
+            assert_eq!(row.has_overnight, is_yesterday, "{}", row.date_display);
+        }
+    }
+
+    // ---- overnight stint decision ----
+
+    fn buckets_of(conn: &Connection) -> PunchBuckets {
+        let punches = storage::punches_in_range(conn, today() - ChronoDuration::days(15), today())
+            .expect("range");
+        PunchBuckets::from_punches(&punches)
+    }
+
+    fn overnight_in(conn: &Connection) -> Option<OvernightStint> {
+        overnight_stint(&buckets_of(conn), today(), now())
+    }
+
+    #[test]
+    fn overnight_stint_lone_start_yesterday() {
+        let conn = test_db();
+        insert_start(&conn, 1, 18, 2);
+        let o = overnight_in(&conn).expect("stint");
+        assert_eq!(o.date, d(2026, 2, 11));
+        assert_eq!(o.start, t(18, 2));
+        assert_eq!(o.minutes_so_far, 23 * 60 + 58);
+    }
+
+    #[test]
+    fn overnight_stint_none_when_joined() {
+        let conn = test_db();
+        insert_start(&conn, 1, 23, 0);
+        ins(&conn, PunchKind::End, 0, 0, 10);
+        assert_eq!(overnight_in(&conn), None);
+    }
+
+    #[test]
+    fn overnight_stint_none_on_refused_join() {
+        let conn = test_db();
+        insert_start(&conn, 1, 18, 2);
+        ins(&conn, PunchKind::End, 0, 0, 10);
+        ins(&conn, PunchKind::End, 0, 0, 20);
+        assert_eq!(overnight_in(&conn), None);
+    }
+
+    #[test]
+    fn overnight_stint_none_with_two_opens() {
+        let conn = test_db();
+        insert_start(&conn, 1, 9, 0);
+        insert_start(&conn, 1, 10, 0);
+        assert_eq!(overnight_in(&conn), None);
+    }
+
+    #[test]
+    fn overnight_stint_none_at_age_two() {
+        let conn = test_db();
+        insert_start(&conn, 2, 9, 0);
+        assert_eq!(overnight_in(&conn), None);
+    }
+
+    #[test]
+    fn overnight_stint_ignores_an_older_open_start() {
+        let conn = test_db();
+        insert_start(&conn, 2, 9, 0);
+        insert_start(&conn, 1, 9, 0);
+        let o = overnight_in(&conn).expect("stint");
+        assert_eq!(o.date, d(2026, 2, 11));
+    }
+
+    #[test]
+    fn overnight_stint_none_without_punches() {
+        let conn = test_db();
+        assert_eq!(overnight_in(&conn), None);
     }
 }
