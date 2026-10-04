@@ -182,10 +182,11 @@ fn hint_marks_week_row_and_prints_footer() {
         .find(|l| l.starts_with(&prefix))
         .expect("yesterday row");
     assert!(row.ends_with("  [i]"), "{row}");
-    let footers = text
-        .lines()
-        .filter(|l| *l == "[i] open stint: run mlm status to stop it")
-        .count();
+    let footer = format!(
+        "[i] open stint on {}: mlm status shows how to stop it",
+        format_date_with_weekday(yesterday())
+    );
+    let footers = text.lines().filter(|l| *l == footer).count();
     assert_eq!(footers, 1, "{text}");
 }
 

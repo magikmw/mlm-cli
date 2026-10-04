@@ -156,8 +156,9 @@ fn notice_lines(view: &WeekView) -> Vec<String> {
 
 /// The plain footer when any row shows `[i]`, else the Monday line.
 fn overnight_footer(view: &WeekView) -> Option<String> {
-    if view.rows.iter().any(|r| r.has_overnight) {
-        return Some(render::WEEK_OVERNIGHT_FOOTER.to_string());
+    if let Some(row) = view.rows.iter().find(|r| r.has_overnight) {
+        let label = format!("{} {}", row.weekday_abbrev, row.date_display);
+        return Some(render::week_overnight_footer(&label));
     }
     view.overnight_last_week
         .map(render::week_overnight_monday_footer)
@@ -1556,7 +1557,8 @@ Target:        40h 00m
         assert!(view.rows.iter().all(|r| !r.has_anomaly));
         let out = render_week(&view);
         assert!(out.contains("  Wed 2026-02-11   00h 00m  [i]\n"), "{out}");
-        assert_eq!(out.matches(render::WEEK_OVERNIGHT_FOOTER).count(), 1);
+        let foot = "[i] open stint on Wed 2026-02-11: mlm status shows how to stop it";
+        assert_eq!(out.matches(foot).count(), 1, "{out}");
         assert!(!out.contains("needs a look"), "{out}");
     }
 
@@ -1568,7 +1570,8 @@ Target:        40h 00m
         assert_eq!(overnight_rows(&view), vec![6]);
         assert_eq!(view.overnight_last_week, None);
         let out = render_week(&view);
-        assert_eq!(out.matches(render::WEEK_OVERNIGHT_FOOTER).count(), 1);
+        let foot = "[i] open stint on Sun 2026-02-15: mlm status shows how to stop it";
+        assert_eq!(out.matches(foot).count(), 1, "{out}");
         assert!(!out.contains("(last week)"), "{out}");
     }
 
@@ -1620,9 +1623,9 @@ Target:        40h 00m
         let conn = new_test_db();
         seed_at(&conn, PunchKind::Start, d(2026, 2, 15), 22, 0);
         let out = render_week(&build_week_view(&conn, wk(2026, 8), mon_0900()).unwrap());
-        let line = "[i] open stint on Sun 2026-02-15 (last week): run mlm status to stop it";
+        let line = "[i] open stint on Sun 2026-02-15 (last week): mlm status shows how to stop it";
         assert_eq!(out.matches(line).count(), 1, "{out}");
-        assert!(!out.contains(render::WEEK_OVERNIGHT_FOOTER), "{out}");
+        assert_eq!(out.matches("[i] open stint").count(), 1, "{out}");
     }
 
     #[test]
@@ -1662,7 +1665,7 @@ Target:        40h 00m
     fn monday_footer_hand_built_golden() {
         let mut view = example_a();
         view.overnight_last_week = Some(d(2026, 2, 15));
-        let line = "[i] open stint on Sun 2026-02-15 (last week): run mlm status to stop it";
+        let line = "[i] open stint on Sun 2026-02-15 (last week): mlm status shows how to stop it";
         let want = EXAMPLE_A_GOLDEN.replace("\n\nCarry-in:", &format!("\n\n{line}\n\nCarry-in:"));
         assert_eq!(render_week(&view), want);
     }
@@ -1687,7 +1690,7 @@ Total behind: 03h 10m
   Sun 2026-02-08   00h 00m
 
 [!] needs a look: run mlm status DATE for details and fixes
-[i] open stint: run mlm status to stop it
+[i] open stint on Wed 2026-02-04: mlm status shows how to stop it
 [!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
 
 Carry-in:      00h 00m  [!]

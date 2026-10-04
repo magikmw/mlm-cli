@@ -12,7 +12,13 @@ use mlm::date::{WeekId, format_date, format_date_with_weekday};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-const WEEK_FOOTER: &str = "[i] open stint: run mlm status to stop it";
+fn week_footer(date: NaiveDate) -> String {
+    format!(
+        "[i] open stint on {}: mlm status shows how to stop it",
+        format_date_with_weekday(date)
+    )
+}
+
 const STATUS_LINE_TAIL: &str = "started yesterday, not counted until stopped";
 
 fn mlm_utc(db: &Path, args: &[&str]) -> Output {
@@ -148,7 +154,8 @@ fn week_by_id_marks_yesterday_row() {
         .filter(|l| l.starts_with("  ") && l.contains("[i]"))
         .count();
     assert_eq!(marked, 1, "{text}");
-    let footers = text.lines().filter(|l| *l == WEEK_FOOTER).count();
+    let footer = week_footer(yesterday());
+    let footers = text.lines().filter(|l| *l == footer).count();
     assert_eq!(footers, 1, "{text}");
 }
 
@@ -160,17 +167,14 @@ fn week_without_id_follows_the_weekday() {
     let text = stdout(&mlm_utc(&db, &["week"]));
     if today().weekday() == Weekday::Mon {
         let monday = format!(
-            "[i] open stint on {} (last week): run mlm status to stop it",
+            "[i] open stint on {} (last week): mlm status shows how to stop it",
             format_date_with_weekday(yesterday())
         );
         assert_eq!(text.lines().filter(|l| *l == monday).count(), 1, "{text}");
         assert!(!text.contains("  [i]"), "{text}");
     } else {
-        assert_eq!(
-            text.lines().filter(|l| *l == WEEK_FOOTER).count(),
-            1,
-            "{text}"
-        );
+        let footer = week_footer(yesterday());
+        assert_eq!(text.lines().filter(|l| *l == footer).count(), 1, "{text}");
         let marked = text
             .lines()
             .filter(|l| l.starts_with("  ") && l.ends_with("  [i]"))

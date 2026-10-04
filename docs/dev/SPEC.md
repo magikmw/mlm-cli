@@ -309,7 +309,14 @@ future; to view a future week, run mlm week WEEK_ID`.
 `mlm status --help` and `mlm week --help` end with a short glossary of
 the terms the week line and the markers use. Short `-h` does not carry
 it, and its help line gains clap's `(see more with '--help')` suffix.
-The `[i]` entry ends ``It marks yesterday's row in `mlm week` until that start is stopped.``
+Two entries precede the `[!], [i]` one. The first is `so far, started
+yesterday`, for the overnight stint line (§7.1): a start still open
+from yesterday, listed on today's page and not counted until stopped.
+The second is `spans to next day, continues previous day's stint`, for
+the §4.3.1 suffixes: a stint stopped after midnight is counted on the
+day it started, `spans to next day` ends the start date's stint line
+and `continues previous day's stint` ends the next date's header. The
+`[i]` entry, last, ends ``It marks yesterday's row in `mlm week` until that start is stopped.``
 
 ### 3.6 `mlm week [WEEK_ID]`
 
@@ -1075,10 +1082,11 @@ view a future week, because `status DATE` rejects a future date (§6.1).
   shows nothing. The mark follows the hint's own trigger, so it is absent
   when the start is joined to today, when a refused-join line names
   yesterday, when yesterday has two or more open starts, and when the
-  start is two days old. When any row shows `[i]`, one footer line prints:
+  start is two days old. When any row shows `[i]`, one footer line
+  prints. It names the marked row's weekday and date, here a Sat:
 
 ```
-[i] open stint: run mlm status to stop it
+[i] open stint on Sat 2026-10-03: mlm status shows how to stop it
 ```
 
   The Sunday row of last week's view, on a Monday:
@@ -1087,7 +1095,7 @@ view a future week, because `status DATE` rejects a future date (§6.1).
   Sat 2026-10-03   00h 00m
   Sun 2026-10-04   00h 00m  [i]
 
-[i] open stint: run mlm status to stop it
+[i] open stint on Sun 2026-10-04: mlm status shows how to stop it
 ```
 
   The `00h 00m` is correct because the overnight stint is not counted.
@@ -1096,7 +1104,7 @@ view a future week, because `status DATE` rejects a future date (§6.1).
   names the stint instead:
 
 ```
-[i] open stint on Sun 2026-10-04 (last week): run mlm status to stop it
+[i] open stint on Sun 2026-10-04 (last week): mlm status shows how to stop it
 ```
 
   The weekday and date are the stint's own, in the row display form. This
@@ -1573,13 +1581,13 @@ or less directly.
   today exits `1` with the future-date message. `mlm week` for a
   future week still prints.
 - **E26** - Overnight stint in `week` (§7.2): while the hint prints,
-  yesterday's row ends with `  [i]` and the `[i] open stint: run mlm
-  status to stop it` footer prints once, after the `[!]` footer and
+  yesterday's row ends with `  [i]` and the `[i] open stint on DATE:
+  mlm status shows how to stop it` footer prints once, after the `[!]` footer and
   before the carry-in marker line. A row with an anomaly too ends `  [!]
   [i]` and both footers print. A row with only `[i]` prints no `[!]`
   footer. On a Monday the current week's view has no marked row and
-  prints `[i] open stint on Sun DATE (last week): run mlm status to stop
-  it`, last week's view marks the Sunday row, and no other week prints
+  prints `[i] open stint on Sun DATE (last week): mlm status shows how
+  to stop it`, last week's view marks the Sunday row, and no other week prints
   anything. No `[i]` mark or footer appears when the start is joined,
   refused-join, doubled, or two days old.
 

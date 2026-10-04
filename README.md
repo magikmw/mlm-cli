@@ -423,7 +423,7 @@ and no figure changes:
   Sat 2026-10-03   00h 00m
   Sun 2026-10-04   00h 00m  [i]
 
-[i] open stint: run mlm status to stop it
+[i] open stint on Sun 2026-10-04: mlm status shows how to stop it
 ```
 
 On a Monday, yesterday is last week's Sunday. The current week's view
@@ -431,7 +431,7 @@ has no marked row, so its footer line names the stint instead, and last
 week's view marks the Sunday row. Other weeks print nothing:
 
 ```
-[i] open stint on Sun 2026-10-04 (last week): run mlm status to stop it
+[i] open stint on Sun 2026-10-04 (last week): mlm status shows how to stop it
 ```
 
 An unfixed anomaly in a past week also throws off every later week's
