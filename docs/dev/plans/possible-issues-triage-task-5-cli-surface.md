@@ -1,5 +1,7 @@
 # Task 5 plan: CLI surface (log level, glossary, argument order, `week target` echo)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/possible-issues-triage-plan.md` (T5 section, decisions F7, contracts 8 and 9). Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md` (§3.5, §4.1, §4.2, §4.3, §7).
 
 ## Read for this plan

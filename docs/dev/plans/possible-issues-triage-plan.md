@@ -1,5 +1,7 @@
 # Plan: possible-issues-triage
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md` (locked). Spec review: `docs/dev/plans/reports/possible-issues-triage-spec-review.md`. Decision log: NOTES.md entries 96-98. Plan review: `docs/dev/plans/reports/possible-issues-triage-plan-review.md` (folded, entry 98).
 
 **Altitude note**: scope of work only. No code, no pseudocode, no function, type or SQL names. File paths, including paths of new files, are named because ownership depends on them. Task plans choose the identifiers.

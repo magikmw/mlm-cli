@@ -1,5 +1,7 @@
 # Possible-issues triage — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `be85617` (`v0.3.6` plus the
 unreleased `open-punch-visibility`, `live-eod` and
 `point-in-time-week` changesets).

@@ -1,5 +1,7 @@
 # Task plan: possible-issues-triage, T1 Foundation, read errors and one-line polish
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/possible-issues-triage-plan.md` (T1 section, contracts 1-9, decisions F6 and F8). Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md`.
 
 ## What I read

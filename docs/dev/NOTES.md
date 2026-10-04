@@ -9,11 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 102
+- **Next entry**: 103
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
-- **Active changeset**: `possible-issues-triage` (entry 96)
+- **Active changeset**: none (`possible-issues-triage` merged to `main`,
+  entry 102; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1422,6 +1423,17 @@ SPEC.md and PLAN.md:
     print `09:00-?` (spec §4.6, coordinator wording). Accepted as-is:
     FE1, FE2, FE5, FE6, FE7, FE8, FE10a. F5 (README period, archive
     banners) at close.
+
+102. **`possible-issues-triage` fix pass merged; changeset merged to
+    `main`.** Fix pass (`docs/dev/plans/reports/possible-issues-triage-fixpass.md`)
+    closed F1-F4, the hook, FE3, FE9, FE10b and FE4. The pre-commit hook
+    now fails the coverage step when `cargo llvm-cov` exits nonzero.
+    Merge gate green: fmt, build, 808 tests, clippy, smoke runs; F1, F2,
+    FE4 and FE9 checked by hand. Close-out: archive banners on the spec,
+    changeset plan and six task plans; README period (F5); stale-doc
+    grep of README, SPEC, AGENTS.md and `src/` found one stale test
+    comment (lookback window ages), fixed. All task worktrees and
+    branches removed. Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 

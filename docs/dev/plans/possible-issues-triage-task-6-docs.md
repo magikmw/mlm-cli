@@ -1,5 +1,7 @@
 # Task 6 plan: Docs (possible-issues-triage)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 ## What I read
 
 - `docs/dev/plans/possible-issues-triage-plan.md` (full): architecture, F6/F7/F8 decisions, global constraints, interface contracts 1-9, T1-T6 sections.

@@ -1,5 +1,7 @@
 # Task plan: possible-issues-triage, T3 Yesterday hint, lookback window and `mlm start` warning
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/possible-issues-triage-plan.md` (T3 section, contracts 3, 4, 7, 8). Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md` §3.1, §3.2.2, §7.
 
 ## What I read

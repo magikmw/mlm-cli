@@ -2351,7 +2351,7 @@ mod tests {
     }
 
     // §4.3/§7.1 boundary -- age 15 is stale on its own status DATE but
-    // absent from today's lookback (window is ages 2-14 only).
+    // absent from today's lookback (window is ages 1-14).
     #[test]
     fn resolve_age_fifteen_stale_on_own_date_but_absent_from_lookback() {
         let conn = test_db();

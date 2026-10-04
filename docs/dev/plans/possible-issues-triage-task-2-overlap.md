@@ -1,5 +1,7 @@
 # Task plan: possible-issues-triage, T2 Overlap anomaly and clean-pair stop hints in anomaly lines
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/possible-issues-triage-plan.md` (T2 section, contracts 2 and 7, decision F8). Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md` (§3.2.1, §3.2.2, §7).
 
 ## What I read

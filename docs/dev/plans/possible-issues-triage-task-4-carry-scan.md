@@ -1,5 +1,7 @@
 # Task plan: possible-issues-triage, T4 Carry-in anomaly scan
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/possible-issues-triage-plan.md` (T4 section, contracts 4, 6 and 7, decision F8). Spec: `docs/dev/specs/2026-10-03-possible-issues-triage.md` §3.3 and §7.
 
 ## What I read

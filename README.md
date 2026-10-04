@@ -51,7 +51,7 @@ later:
   `stop`, and the week line jumps at 00:00. When this happens past
   Sunday midnight, the closed week's `Worked` drops by those minutes.
   Today's `status` shows an `[i]` hint for the open start that points to
-  `stop`
+  `stop`.
 
 ## Install
 
