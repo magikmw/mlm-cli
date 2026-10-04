@@ -138,6 +138,14 @@ pub struct StintLine {
     pub open_stint_age: Option<OpenStintAge>,
 }
 
+/// The overnight stint's line on today's page. Kept apart from `stints`,
+/// which stays sorted and day-total-only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OvernightLine {
+    pub start: NaiveTime,
+    pub duration_minutes: i64,
+}
+
 /// Everything `render` needs, already computed and in final form
 /// (plans/milestone-10-status-command.md §1). `render` makes no
 /// decisions beyond layout and section omission.
@@ -166,6 +174,9 @@ pub struct StatusView {
     pub anomaly_lines: Vec<String>,
     /// Stint rows, already sorted by start time ascending.
     pub stints: Vec<StintLine>,
+    /// Today's page only: yesterday's still-open start. Printed before
+    /// `stints`. Not part of any total.
+    pub overnight: Option<OvernightLine>,
     /// Note bodies, in insertion order, verbatim (already trimmed at
     /// storage, §2.3).
     pub notes: Vec<String>,
@@ -256,6 +267,23 @@ fn stint_line(line: &StintLine) -> String {
     }
 }
 
+fn overnight_line(o: &OvernightLine) -> String {
+    format!(
+        "  {:<11}  ({} so far, started yesterday, not counted until stopped)",
+        format!("{}-now", o.start.format("%H:%M")),
+        format_minutes(o.duration_minutes)
+    )
+}
+
+fn push_stint_section(lines: &mut Vec<String>, view: &StatusView) {
+    if view.overnight.is_none() && view.stints.is_empty() {
+        return;
+    }
+    lines.push(String::new());
+    lines.extend(view.overnight.iter().map(overnight_line));
+    lines.extend(view.stints.iter().map(stint_line));
+}
+
 /// The complete rendered status view (plans/milestone-10-status-command.md
 /// §3.1): pure, no I/O, no clock. Lines joined by `\n`, exactly one
 /// trailing `\n`, no trailing blank line.
@@ -276,10 +304,7 @@ pub fn render(view: &StatusView) -> String {
         lines.extend(view.anomaly_lines.iter().cloned());
     }
 
-    if !view.stints.is_empty() {
-        lines.push(String::new());
-        lines.extend(view.stints.iter().map(stint_line));
-    }
+    push_stint_section(&mut lines, view);
 
     if !view.notes.is_empty() {
         lines.push(String::new());
@@ -405,6 +430,21 @@ fn future_week_pointer(err: date::DateWeekError) -> anyhow::Error {
     }
 }
 
+fn overnight_for(
+    is_today: bool,
+    buckets: &history::PunchBuckets,
+    today: NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> Option<OvernightLine> {
+    if !is_today {
+        return None;
+    }
+    lookback::overnight_stint(buckets, today, now_utc).map(|o| OvernightLine {
+        start: o.start,
+        duration_minutes: o.minutes_so_far,
+    })
+}
+
 /// Resolution flow (plans/milestone-10-status-command.md §2.2, exact
 /// order): parses `date_arg` against `now`'s local date and rejects a
 /// future date (§4.5), loads the history through `target_date`'s week,
@@ -442,12 +482,7 @@ pub fn resolve(
 
     let facts = anomalies::build_facts(&ctx, &buckets, target_date, today, now_utc);
     let lookback_lines = if is_today {
-        lookback::today_page_lines(
-            conn,
-            today,
-            now_utc,
-            facts.refused_join_with_previous.is_some(),
-        )?
+        lookback::today_page_lines(conn, today, now_utc)?
     } else {
         Vec::new()
     };
@@ -461,6 +496,7 @@ pub fn resolve(
     };
 
     let stints = build_stint_lines(&ctx.day, open_stint_age);
+    let overnight = overnight_for(is_today, &history.buckets, today, now_utc);
     let note_bodies = notes.into_iter().map(|n| n.body).collect();
 
     Ok(StatusView {
@@ -472,6 +508,7 @@ pub fn resolve(
         week_line: week_line_str,
         anomaly_lines,
         stints,
+        overnight,
         notes: note_bodies,
         open_stint_age,
     })
@@ -560,6 +597,7 @@ mod tests {
             eod: None,
             week_line: week_line(&current_week_acct(645, 1755, 2400), today()),
             anomaly_lines: vec![],
+            overnight: None,
             stints: vec![],
             notes: vec![],
             open_stint_age: OpenStintAge::Today,
@@ -999,6 +1037,7 @@ mod tests {
             eod: None,
             week_line: week_line(&closed_week_acct(wk(2026, 2), 100), today()),
             anomaly_lines: vec![],
+            overnight: None,
             stints: vec![StintLine {
                 start: t(8, 30),
                 end: StintEnd::At(t(14, 45)),
@@ -1129,6 +1168,7 @@ mod tests {
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec![],
+            overnight: None,
             stints: vec![
                 StintLine {
                     start: t(9, 0),
@@ -1222,6 +1262,7 @@ mod tests {
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec![],
+            overnight: None,
             stints: vec![StintLine {
                 start: t(9, 0),
                 end: StintEnd::At(t(13, 0)),
@@ -1240,6 +1281,7 @@ mod tests {
             eod: None,
             week_line: week_line(&closed_week_acct(wk(2026, 2), 100), today()),
             anomaly_lines: vec![],
+            overnight: None,
             stints: vec![StintLine {
                 start: t(8, 30),
                 end: StintEnd::At(t(14, 45)),
@@ -1274,6 +1316,7 @@ mod tests {
             eod: Some(EodState::At(t(20, 30), EodDay::Today)),
             week_line: week_line(&acct, today()),
             anomaly_lines: vec!["[!] orphaned end at 18:00 (no matching start)".to_string()],
+            overnight: None,
             stints: vec![StintLine {
                 start: t(9, 0),
                 end: StintEnd::At(t(13, 0)),
@@ -3277,5 +3320,213 @@ Week 2026-40:  03h 20m left to 32h 00m by end of Thursday (fulfillment 28h 40m =
             let second = history::load_history(&conn, week, today(), now_utc).expect("load");
             assert_eq!(first.accounting(week), second.accounting(week), "{week}");
         }
+    }
+
+    // -----------------------------------------------------------------
+    // overnight stint line
+    // -----------------------------------------------------------------
+
+    fn now_1330() -> DateTime<Local> {
+        now_at(today(), 13, 30, 0)
+    }
+
+    fn yesterday() -> NaiveDate {
+        today() - ChronoDuration::days(1)
+    }
+
+    const OVERNIGHT_22: &str =
+        "  22:00-now    (15h 30m so far, started yesterday, not counted until stopped)";
+
+    #[test]
+    fn overnight_line_with_no_punches_today() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, yesterday(), t(22, 0));
+        let view = resolve(None, now_1330(), &conn).expect("resolve");
+        assert_eq!(
+            view.overnight,
+            Some(OvernightLine {
+                start: t(22, 0),
+                duration_minutes: 930
+            })
+        );
+        let out = render(&view);
+        assert!(out.contains("Day total:     00h 00m\n"), "{out}");
+        assert!(out.ends_with(&format!("{OVERNIGHT_22}\n")), "{out}");
+        assert!(!out.contains("est. EOD"), "{out}");
+        assert!(!out.contains("(incl. ongoing)"), "{out}");
+        let hint = out.find("[i] start on").expect("hint");
+        assert!(hint < out.find(OVERNIGHT_22).unwrap());
+    }
+
+    #[test]
+    fn overnight_line_precedes_todays_stints_and_figures_unchanged() {
+        let with = test_db();
+        let without = test_db();
+        for conn in [&with, &without] {
+            punch(conn, PunchKind::Start, today(), t(9, 0));
+            punch(conn, PunchKind::End, today(), t(12, 0));
+        }
+        punch(&with, PunchKind::Start, yesterday(), t(22, 0));
+
+        let a = resolve(None, now_1330(), &with).expect("resolve");
+        let b = resolve(None, now_1330(), &without).expect("resolve");
+        let lines: Vec<String> = render(&a).lines().map(str::to_string).collect();
+        let over = lines.iter().position(|l| l == OVERNIGHT_22).expect("line");
+        assert!(lines[over + 1].starts_with("  09:00-12:00"), "{lines:?}");
+        assert_eq!(b.overnight, None);
+        assert_eq!(a.day_total_minutes, b.day_total_minutes);
+        assert_eq!(a.has_open_stint, b.has_open_stint);
+        assert_eq!(a.eod, b.eod);
+        assert_eq!(a.week_line, b.week_line);
+        assert_eq!(a.stints, b.stints);
+        assert_eq!(a.open_stint_age, b.open_stint_age);
+
+        let wa = week_view::build_week_view(&with, wk(2026, 7), now_1330()).expect("view");
+        let wb = week_view::build_week_view(&without, wk(2026, 7), now_1330()).expect("view");
+        assert_eq!(wa.worked_minutes, wb.worked_minutes);
+        assert_eq!(wa.fulfillment_minutes, wb.fulfillment_minutes);
+        assert_eq!(wa.carry_in_minutes, wb.carry_in_minutes);
+        assert_eq!(wa.headline, wb.headline);
+    }
+
+    #[test]
+    fn overnight_line_and_own_open_stint_both_print_overnight_first() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, yesterday(), t(22, 0));
+        punch(&conn, PunchKind::Start, today(), t(9, 0));
+        let view = resolve(None, now_1330(), &conn).expect("resolve");
+        let out = render(&view);
+        let now_lines: Vec<&str> = out.lines().filter(|l| l.contains("-now")).collect();
+        assert_eq!(now_lines.len(), 2, "{out}");
+        assert_eq!(now_lines[0], OVERNIGHT_22);
+        assert_eq!(now_lines[1], "  09:00-now    (04h 30m, ongoing)");
+        assert_eq!(view.day_total_minutes, 270);
+        assert!(view.has_open_stint);
+        assert!(view.eod.is_some());
+    }
+
+    type Seeder = Box<dyn Fn(&Connection)>;
+
+    fn overnight_fixtures() -> Vec<(&'static str, Seeder, bool)> {
+        vec![
+            (
+                "lone",
+                Box::new(|c: &Connection| punch(c, PunchKind::Start, yesterday(), t(18, 2))),
+                true,
+            ),
+            (
+                "lone plus own punch",
+                Box::new(|c: &Connection| {
+                    punch(c, PunchKind::Start, yesterday(), t(18, 2));
+                    punch(c, PunchKind::Start, today(), t(9, 0));
+                }),
+                true,
+            ),
+            (
+                "joined",
+                Box::new(|c: &Connection| {
+                    punch(c, PunchKind::Start, yesterday(), t(23, 0));
+                    punch(c, PunchKind::End, today(), t(0, 10));
+                }),
+                false,
+            ),
+            (
+                "refused",
+                Box::new(|c: &Connection| {
+                    punch(c, PunchKind::Start, yesterday(), t(18, 2));
+                    punch(c, PunchKind::End, today(), t(0, 10));
+                    punch(c, PunchKind::End, today(), t(0, 20));
+                }),
+                false,
+            ),
+            (
+                "two opens",
+                Box::new(|c: &Connection| {
+                    punch(c, PunchKind::Start, yesterday(), t(9, 0));
+                    punch(c, PunchKind::Start, yesterday(), t(10, 0));
+                }),
+                false,
+            ),
+            (
+                "age two",
+                Box::new(|c: &Connection| {
+                    punch(
+                        c,
+                        PunchKind::Start,
+                        today() - ChronoDuration::days(2),
+                        t(9, 0),
+                    );
+                }),
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn overnight_line_and_hint_appear_together() {
+        for (name, seed, expected) in overnight_fixtures() {
+            let conn = test_db();
+            seed(&conn);
+            let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+            let hint = view
+                .anomaly_lines
+                .iter()
+                .any(|l| l.starts_with("[i] start on"));
+            assert_eq!(hint, view.overnight.is_some(), "{name}");
+            assert_eq!(view.overnight.is_some(), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn overnight_absent_at_age_two_keeps_its_unclosed_line() {
+        let conn = test_db();
+        punch(
+            &conn,
+            PunchKind::Start,
+            today() - ChronoDuration::days(2),
+            t(9, 0),
+        );
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.overnight, None);
+        let joined = view.anomaly_lines.join("\n");
+        assert!(joined.contains("unclosed start"), "{joined}");
+        assert!(joined.contains("(2 days ago)"), "{joined}");
+    }
+
+    #[test]
+    fn overnight_line_formats_over_24h() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, yesterday(), t(0, 30));
+        let view = resolve(None, now_1330(), &conn).expect("resolve");
+        assert!(render(&view).contains("(37h 00m so far,"));
+
+        let mut hand = base_view();
+        hand.overnight = Some(OvernightLine {
+            start: t(0, 30),
+            duration_minutes: 2490,
+        });
+        assert!(render(&hand).contains("(41h 30m so far,"));
+        hand.overnight = Some(OvernightLine {
+            start: t(0, 30),
+            duration_minutes: 0,
+        });
+        assert!(render(&hand).contains("(00h 00m so far,"));
+    }
+
+    #[test]
+    fn overnight_absent_for_other_dates() {
+        let conn = test_db();
+        punch(&conn, PunchKind::Start, yesterday(), t(22, 0));
+        for arg in ["-1", "2026-02-11"] {
+            let view = resolve(Some(arg), now_1330(), &conn).expect("resolve");
+            assert_eq!(view.overnight, None, "{arg}");
+            let out = render(&view);
+            assert!(!out.contains("so far, started yesterday"), "{out}");
+        }
+        let out = render(&resolve(Some("-1"), now_1330(), &conn).expect("resolve"));
+        assert!(
+            out.contains("ongoing - duration as of right now, not a running total"),
+            "{out}"
+        );
     }
 }

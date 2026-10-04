@@ -181,7 +181,12 @@ fn long_help_carries_glossary() {
         assert!(s.contains("shortfall is negative"), "{args:?}");
         assert!(s.contains("surplus is positive"), "{args:?}");
         assert!(!s.contains("target already met"), "{args:?}");
-        assert!(s.trim_end().ends_with("It never marks a row."), "{args:?}");
+        let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.ends_with("It marks yesterday's row in `mlm week` until that start is stopped."),
+            "{args:?}"
+        );
+        assert!(!flat.contains("It never marks a row."), "{args:?}");
     }
 }
 

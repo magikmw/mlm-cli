@@ -168,7 +168,7 @@ fn two_open_starts_yesterday_print_the_yesterday_e7_line() {
 }
 
 #[test]
-fn hint_does_not_mark_week_row_or_footer() {
+fn hint_marks_week_row_and_prints_footer() {
     let (_dir, db) = boot();
     seed(&db, yesterday(), "18:02", "start");
     let week = WeekId::from_date(yesterday()).to_string();
@@ -176,6 +176,17 @@ fn hint_does_not_mark_week_row_or_footer() {
     let text = stdout(&mlm_utc(&db, &["week", &week]));
     assert!(!text.contains("[!]"), "{text}");
     assert!(!text.contains("needs a look"), "{text}");
+    let prefix = format!("  {}", format_date_with_weekday(yesterday()));
+    let row = text
+        .lines()
+        .find(|l| l.starts_with(&prefix))
+        .expect("yesterday row");
+    assert!(row.ends_with("  [i]"), "{row}");
+    let footers = text
+        .lines()
+        .filter(|l| *l == "[i] open stint: run mlm status to stop it")
+        .count();
+    assert_eq!(footers, 1, "{text}");
 }
 
 #[test]
