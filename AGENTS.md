@@ -142,6 +142,10 @@ nothing to measure yet — an empty/near-empty codebase, or missing
 optional tooling (`rustfmt`, `cargo-llvm-cov`, `jq`) just produces a
 `SKIP` line for that check rather than blocking the commit.
 
+A `cargo llvm-cov` run that exits nonzero (a failing test, a build
+error) is not a skip. The coverage step fails, prints the exit status
+and the tail of the captured stderr, and blocks the commit.
+
 One-time setup per clone (hooks live in `.githooks/`, not `.git/hooks`,
 so this has to be opted into explicitly):
 

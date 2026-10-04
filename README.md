@@ -207,8 +207,9 @@ $ mlm note --date -2 "fixed a bug"
 Show a date's stints, notes, day total, and the totals for the week
 that date falls in. `DATE` accepts `YYYY-MM-DD` or `-N` for N days
 before today (e.g. `-1` = yesterday), and defaults to today. `DATE`
-must not be after today. `status` for a future date fails, and `mlm week
-WEEK_ID` shows a future week.
+must not be after today. `status` for a future date fails with `invalid
+DATE "2099-01-01": date is in the future; to view a future week, run mlm
+week WEEK_ID`, and `mlm week WEEK_ID` shows a future week.
 
 ```sh
 $ mlm status
@@ -269,7 +270,8 @@ lone start still open from yesterday prints a quiet hint, which marks no
      or: mlm stop  (still working: ends it now, across midnight)
 ```
 
-The `or:` line only shows when today has no punches yet. A `stop` typed
+The `or:` line only shows when no punch follows the open start on
+yesterday's date and today has no punches yet. A `stop` typed
 as today's first punch joins the start and clears the hint. Yesterday
 with two or more open starts prints the `[!]` line `2 open stints on
 Fri 2026-10-02 (yesterday)` instead. If an earlier week has a flagged
@@ -285,7 +287,8 @@ has exactly one open start and the next date's very first punch is the
 matching `end`. Anything messier — a second stray start or end that
 day — leaves both punches alone and refuses the join, whatever the
 dates' age: a `[!]` line on both dates explains why, and each date's
-own E7/E8/stale-start `[!]` line (whichever applies) carries the fix.
+own `[!]` line for its unclosed start or orphaned end (whichever
+applies) carries the fix.
 
 The estimated-EOD line only shows up when `DATE` is today (it needs
 "now" to mean anything). The week line prints for the current week

@@ -288,6 +288,8 @@ today (`-1` = yesterday, N a positive integer, `-0` rejected).
 
 Today's (or `DATE`'s, `YYYY-MM-DD`) view. `DATE` must not be after today
 (§6.1). `mlm week WEEK_ID` is the way to look at a future week (§7.2).
+The future-date error says so: `invalid DATE "2099-01-01": date is in the
+future; to view a future week, run mlm week WEEK_ID`.
 
 - that date's stints (derived), each as `start–end (duration)`, with
   an open stint shown as `start–now (duration, ongoing)`
@@ -593,7 +595,8 @@ would leave the user with no way to fix it.
   today (§3.4a), or `status`'s `DATE` argument (§3.5) resolving to one.
   The first three never write into the future, and `status` is no
   preview of a future date. `status DATE` uses the same message shape and
-  exit code as the `--date` case. `mlm week WEEK_ID` for a future week is
+  exit code as the `--date` case, and adds `; to view a future week, run
+  mlm week WEEK_ID` to it. `mlm week WEEK_ID` for a future week is
   not an error (§7.2).
 - Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
   shape, or a week number that isn't a valid ISO week for its year
@@ -841,7 +844,8 @@ carry-in is exactly zero.
     (`23:10-now  (10h 35m, ongoing - duration as of right now, not a
     running total)`); one dated two or more days back drops the
     duration figure entirely — at that age the number is noise, not
-    information — and renders as `09:00-now  (unclosed)` instead. That
+    information — and renders as `09:00-?  (unclosed)` instead, with `?`
+    in place of `now` so an old start does not read as running. That
     same date now also carries a `[!]` stale-open-start anomaly
     (§7.3), and, while it's within the 14-day lookback window,
     today's own `status` surfaces it too (the lookback bullet below).
@@ -866,7 +870,8 @@ carry-in is exactly zero.
   block and the lookback lines (line shape in §7.3). A `stop` typed today
   as today's first punch joins the start and clears the hint. There is no
   hint when today's page already shows a refused-join line naming
-  yesterday. The `or:` line prints only when today has no punches yet.
+  yesterday. The `or:` line prints only when no punch follows the open
+  start on yesterday's date and today has no punches yet.
   The hint is not an anomaly. It does not mark a `mlm week` row, does not
   count toward the footer, and never shows on `status DATE` for another
   date. `status -1` shows yesterday's open start as a stint line only.
@@ -1186,8 +1191,11 @@ marks a `week` row and never counts toward the footer:
      or: mlm stop  (still working: ends it now, across midnight)
 ```
 
-The `or:` line prints only when today has no punches yet, because only
-then does a `stop` now become today's first punch and join the start.
+The `or:` line prints only when no punch follows the open start on
+yesterday's date and today has no punches yet. A `stop` now joins the
+start only when it becomes today's first punch. A later punch yesterday
+means the start is probably a forgotten stop, and joining it would
+nest it over that later stint.
 
 The carry-in marker (§7.1, §7.2) is one `[!]` line, last on the page:
 
@@ -1439,9 +1447,10 @@ or less directly.
   still count the overlap twice. Stints that only touch at an endpoint
   and zero-length stints are not flagged.
 - **E22** - Start still open from yesterday (§7.1, §7.4): today's
-  `status` prints the `[i]` hint, with the `or:` line only when today has
-  no punches. A `stop` as today's first punch joins the start and the
-  hint is gone. A refused-join line naming yesterday suppresses the hint.
+  `status` prints the `[i]` hint, with the `or:` line only when no punch
+  follows the start on yesterday's date and today has no punches. A
+  `stop` as today's first punch joins the start and the hint is gone. A
+  refused-join line naming yesterday suppresses the hint.
   The hint never marks a `week` row and never shows on `status -1`.
 - **E23** - Carry-in marker (§7.1, §7.2): an anomaly in a week older
   than 14 days puts the marker line on `status` and on `mlm week`, with

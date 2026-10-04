@@ -475,20 +475,40 @@ mod tests {
     }
 
     #[test]
-    fn history_accounting_is_the_week_module_walk_over_the_ledger() {
+    fn accounting_gives_concrete_carry_worked_and_fulfillment_across_weeks() {
         let conn = test_db();
         span(&conn, d(2026, 2, 3), (9, 0), (17, 0));
+        span(&conn, d(2026, 2, 9), (9, 0), (11, 0));
+        span(&conn, d(2026, 2, 17), (9, 0), (12, 0));
+        conn.execute(
+            "INSERT INTO week_targets (week_id, target_minutes) VALUES ('2026-06', 600), ('2026-08', 300)",
+            [],
+        )
+        .unwrap();
         let h = load_history(
             &conn,
-            wk(2026, 7),
-            d(2026, 2, 12),
-            now_utc(2026, 2, 12, 18, 0),
+            wk(2026, 8),
+            d(2026, 2, 20),
+            now_utc(2026, 2, 20, 20, 0),
         )
         .expect("load");
+
+        let w6 = h.accounting(wk(2026, 6));
         assert_eq!(
-            h.accounting(wk(2026, 7)),
-            crate::week::week_accounting(wk(2026, 7), &h.ledger, &h.ledger)
+            (w6.target, w6.carry_in, w6.worked, w6.fulfillment),
+            (600, 0, 480, 480)
         );
+        let w7 = h.accounting(wk(2026, 7));
+        assert_eq!(
+            (w7.target, w7.carry_in, w7.worked, w7.fulfillment),
+            (2400, -120, 120, 0)
+        );
+        let w8 = h.accounting(wk(2026, 8));
+        assert_eq!(
+            (w8.target, w8.carry_in, w8.worked, w8.fulfillment),
+            (300, -2400, 180, -2220)
+        );
+        assert_eq!((w8.owed, w8.carry_out), (2520, -2520));
     }
 
     // ---- failures are hard errors ----
