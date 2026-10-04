@@ -11,8 +11,8 @@ read only the one you need.
 
 - **Next entry**: 103
 - **Last release**: `v0.3.6`
-- **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
-  `point-in-time-week`)
+- **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
+  `point-in-time-week` and `possible-issues-triage`)
 - **Active changeset**: none (`possible-issues-triage` merged to `main`,
   entry 102; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
