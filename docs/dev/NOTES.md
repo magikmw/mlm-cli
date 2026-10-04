@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 108
+- **Next entry**: 109
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
@@ -1499,6 +1499,24 @@ SPEC.md and PLAN.md:
     match the binary. T1 notes: some new tests were red only as compile
     errors; one CLI test written after the code. Worktrees and branches
     removed.
+
+108. **`overnight-visibility` phase 13/14 back and triaged.** Sonnet
+    final review (`plans/reports/overnight-visibility-final-review.md`):
+    ship; gates re-run, three mutations caught; Monday covered by unit
+    tests only (real clock was Sunday). Phase 14 (`returning`, 8
+    findings; report file again not written by the `cd-fresh-eyes`
+    agent, findings kept here): FE1 splice suffixes `spans to next day`
+    / `continues previous day's stint` unexplained; FE2 footer `run mlm
+    status to stop it` overpromises; FE3 `start` says `warning:` where
+    `status` says `[i]`; FE4 a 2-day-old start shows `[!]` with no
+    stint line and a generic footer; FE5 bare `stop` on it leaves an
+    orphaned end silently; FE6 `[i]` footer does not name its row; FE7
+    `est. EOD 00:00 (Tue)` reads oddly; FE8 glossary lacks the
+    overnight line. User approved: fix FE2+FE6 (both `[i]` footers
+    become `[i] open stint on <Ddd YYYY-MM-DD>[ (last week)]: mlm status
+    shows how to stop it`) and FE1+FE8 (glossary entries for the
+    overnight line and the splice suffixes). FE3, FE4, FE5, FE7
+    accepted.
 
 ## Open questions (still need answers)
 
