@@ -138,13 +138,25 @@ today's own stints (it started earlier):
   row.
 - Scripts that sum today's stint lines now see a line whose minutes
   are not in the Day total.
+- Today's stint list is no longer in clock order when the overnight
+  line prints (it comes first).
+- With today's own open stint as well, two `-now` lines print with
+  different tags.
+- The Day total shows no ongoing marker while the overnight line
+  prints, because the stint is not counted.
+- A past week viewed by `WEEK_ID` that contains yesterday changes
+  with today's data (the mark goes once the start is joined).
+- The `[!]` footer points to `mlm status DATE`, the `[i]` footer to
+  `mlm status`; a row with both markers prints both footers.
+- The Monday footer line prints only in the current week's view, not
+  in a past week viewed by `WEEK_ID`.
 
 ## 8. Testing
 
 - §4: hint case with no punches today and with punches today; joined
   (no line); refused join (no line); two open starts yesterday (no
   line, the E7 lookback covers it); duration formatting.
-- §5: row marker, footer text, `[!]` precedence on a shared row,
+- §5: row marker, footer text, the `  [!] [i]` shared row,
   footer order with both footers and the carry marker; Monday case (current week footer line names Sunday, last week's Sunday row marked, no line on other weeks).
 - `has_any`, the `[!]` footer and the carry marker ignore `[i]`.
 - Glossary golden updated.

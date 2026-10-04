@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 105
+- **Next entry**: 106
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
@@ -1464,6 +1464,21 @@ SPEC.md and PLAN.md:
     tests added. U1-U4, U7, U8 recorded in spec §7. Phase 14 runs, tier
     `returning`. Provisional task count 2 (code, docs): collapsed
     phases 5-7, phase 10 skipped.
+
+105. **`overnight-visibility` plan reviewed and folded**
+    (`docs/dev/plans/overnight-visibility-plan.md`, collapsed form, two
+    parallel tasks: T1 code, T2 docs). Plan decisions: the overnight
+    line is its own optional field on the status view, rendered first;
+    week rows gain a flag and the view one optional date for the Monday
+    footer; one pure trigger decision in `src/lookback.rs`. Plan review
+    (`plans/reports/overnight-visibility-plan-review.md`, 9 findings +
+    G1-G8) folded: F1 NOTES removed from the docs task; F2 glossary
+    sentence pinned as a literal so the tasks run in parallel; F3 the
+    trigger derives refused-join itself and the hint calls it; F4 week
+    row criteria for joined/refused/two-open/age-2; F5 three
+    old-rule tests named for rewrite; F6 fixture sites named; F7 spec
+    §8 precedence wording fixed; F8 Monday needs Sunday from the
+    buckets; F9 ASCII sweep. G1-G7 added to spec §7; G8 already there.
 
 ## Open questions (still need answers)
 
