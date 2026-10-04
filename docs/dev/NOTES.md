@@ -9,13 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 110
-- **Last release**: `v0.3.6`
-- **`main`**: `9ad14eb` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
-  `point-in-time-week`, `possible-issues-triage` and
-  `overnight-visibility`)
-- **Active changeset**: none (`overnight-visibility` merged to `main`,
-  entry 109; release not prepared)
+- **Next entry**: 111
+- **Last release**: `v0.4.0`
+- **`main`**: `962ac9f` (`v0.4.0`)
+- **Active changeset**: none
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1529,6 +1526,19 @@ SPEC.md and PLAN.md:
     task plans; stale-doc grep of README, SPEC, AGENTS.md, `src/` and
     `tests/` clean. SPEC §1.2a and README Possible issues read "None
     currently." Release not prepared; awaiting the user's call.
+
+110. **`v0.4.0` released.** Ships `open-punch-visibility`, `live-eod`,
+    `point-in-time-week`, `possible-issues-triage` and
+    `overnight-visibility`. `prep_release.sh 0.4.0`; changelog
+    hand-curated (Features / Changed / Bug Fixes; `Changed` is not a
+    `cliff.toml` group). Release smoke run on the release build green.
+    `release.sh` pushed `acaf24e` but CI failed on Windows only: the
+    `short_help_goldens` test compared exact `-h` output and Windows
+    prints `mlm.exe` in usage lines. Fix `962ac9f` normalizes `mlm.exe`
+    in that test; CI green on all five targets; tag `v0.4.0` placed on
+    `962ac9f` and pushed by hand per the script's recovery note. Release
+    workflow green: artifacts, GitHub Release, crates.io publish,
+    signing.
 
 ## Open questions (still need answers)
 
