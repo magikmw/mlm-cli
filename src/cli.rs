@@ -1,6 +1,51 @@
 //! Argument parsing (clap).
 
-use clap::{Args, Parser, Subcommand};
+use std::ffi::OsString;
+
+use clap::error::{ContextKind, ContextValue};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+
+/// The `status`/`week` long-help glossary (SPEC §4.2).
+pub const GLOSSARY: &str = "\
+Glossary:
+  worked
+      Time in closed stints this week. In the current week it also counts
+      the stint that is running now.
+  carry-in
+      The balance carried in from earlier weeks. A shortfall is negative
+      and a surplus is positive.
+  fulfillment
+      Worked plus carry-in. A week's target is measured against it.
+  left to / over
+      The week line's figure. `X left to F` means X more reaches F, and
+      `X over F` means fulfillment is X past F. Monday to Thursday F is
+      the slice of the target due by end of today (one fifth per weekday
+      so far), shown as `by end of <weekday>`. Friday to Sunday F is the
+      full target, shown as `<target> target`.
+  est. EOD
+      With a stint open today, the clock time at which that stint closes
+      today's gap. It reads `done for today` instead when what is due by
+      end of today is already covered.
+  (incl. ongoing), (+ ongoing)
+      `(incl. ongoing)` means today's open stint is counted in the total.
+      `(+ ongoing)` marks an earlier date's open stint, which counts for
+      nothing until it is stopped (`(+ unclosed)` once it is two or more
+      days old).
+  Total behind, Total ahead
+      The headline of a closed or not-yet-started week. `Total behind`
+      is a shortfall against the target and `Total ahead` a surplus,
+      with carry-in included.
+  overlapping stints
+      Two stints whose times cross, such as 09:00-12:00 and 10:00-11:00.
+      The overlap counts twice in the totals until you delete a punch.
+  orphaned end
+      An end punch with no start before it. It adds no minutes. Add a
+      start before it, or delete it.
+  [!], [i]
+      `[!]` flags an anomaly, such as an unclosed start, an orphaned end
+      or overlapping stints. In `mlm week` it marks the date's row. `[i]`
+      is a hint, not an anomaly, such as a start still open from
+      yesterday. It never marks a row.";
 
 #[derive(Parser, Debug)]
 #[command(name = "mlm", version, about = "Quick time tracking from the CLI")]
@@ -197,18 +242,149 @@ pub enum WeekAction {
 /// token. `allow_hyphen_values` is load-bearing for E9: without it,
 /// `week target -5h` is parsed as an unknown flag instead of reaching
 /// the DURATION parser.
+///
+/// The positional is hidden from the generated help, which cannot show an
+/// optional positional before a required one. `before_help` carries a
+/// hand-written Arguments section instead, and `parse` rewrites the
+/// `<ARGS>` name out of usage errors.
 #[derive(Args, Debug)]
+#[command(
+    override_usage = "mlm week target [OPTIONS] [WEEK_ID] <DURATION>",
+    help_template = "{about-with-newline}\n{usage-heading} {usage}\n\n{before-help}{all-args}",
+    before_help = "\
+Arguments:
+  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
+  <DURATION>  Target to set: 20h, 33h30m or 45m (human format, never raw minutes)"
+)]
 pub struct WeekTargetArgs {
-    /// [WEEK_ID] DURATION — e.g. `2026-07 33h30m`, or just `33h30m` for
-    /// the current week. DURATION uses the human format (20h, 33h30m,
-    /// 45m), never raw minutes, and is always the last token.
     #[arg(
         value_name = "ARGS",
         num_args = 1..=2,
         required = true,
-        allow_hyphen_values = true
+        allow_hyphen_values = true,
+        hide = true
     )]
     pub args: Vec<String>,
+}
+
+/// The parse tree with the help surface applied.
+pub fn command() -> clap::Command {
+    Cli::command()
+        .mut_subcommand("status", with_glossary)
+        .mut_subcommand("week", with_glossary)
+}
+
+fn with_glossary(cmd: clap::Command) -> clap::Command {
+    cmd.after_long_help(GLOSSARY)
+}
+
+/// Why `parse` failed and what `main` should do about it.
+#[derive(Debug)]
+pub enum ParseFailure {
+    /// Clap's own error: help, version, or a usage error (exit 2).
+    Clap(clap::Error),
+    /// `week WEEK_ID target DURATION`: the full `error: ...` line (exit 2).
+    SwappedWeekTarget(String),
+}
+
+impl ParseFailure {
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Clap(err) => err.exit_code(),
+            Self::SwappedWeekTarget(_) => 2,
+        }
+    }
+
+    /// Prints the failure, then returns the exit code.
+    pub fn report(&self) -> i32 {
+        match self {
+            Self::Clap(err) => {
+                let _ = err.print();
+            }
+            Self::SwappedWeekTarget(message) => eprintln!("{message}"),
+        }
+        self.exit_code()
+    }
+}
+
+/// `Cli` from raw arguments (argv[0] included).
+pub fn parse(args: &[OsString]) -> Result<Cli, ParseFailure> {
+    command()
+        .try_get_matches_from(args)
+        .and_then(|matches| Cli::from_arg_matches(&matches))
+        .map_err(|err| classify(args, err))
+}
+
+fn classify(args: &[OsString], mut err: clap::Error) -> ParseFailure {
+    // Help and version keep clap's own exit-0 path.
+    if !err.use_stderr() {
+        return ParseFailure::Clap(err);
+    }
+    let text: Option<Vec<String>> = args.iter().map(|a| a.to_str().map(str::to_owned)).collect();
+    let today = chrono::Local::now().date_naive();
+    if let Some(message) = text.and_then(|a| swapped_week_target(&a, today)) {
+        return ParseFailure::SwappedWeekTarget(message);
+    }
+    rename_args_context(&mut err);
+    ParseFailure::Clap(err)
+}
+
+const ARGS_NAME: &str = "<ARGS>";
+
+/// Replaces the hidden `<ARGS>` name in usage errors with the names the
+/// user sees in the help.
+fn rename_args_context(err: &mut clap::Error) {
+    let renamed = match err.get(ContextKind::InvalidArg) {
+        // Missing-argument list: only DURATION can be missing.
+        Some(ContextValue::Strings(names)) if names.iter().any(|n| n.starts_with(ARGS_NAME)) => {
+            Some(ContextValue::Strings(vec!["<DURATION>".to_string()]))
+        }
+        // Too many values.
+        Some(ContextValue::String(name)) if name.starts_with(ARGS_NAME) => {
+            Some(ContextValue::String("[WEEK_ID] <DURATION>".to_string()))
+        }
+        _ => None,
+    };
+    if let Some(value) = renamed {
+        err.insert(ContextKind::InvalidArg, value);
+    }
+}
+
+/// Detects `week WEEK_ID target DURATION` by token shape over the raw
+/// arguments (argv[0] included), ignoring `-v`/`--verbose` anywhere. Fires
+/// only when the week token is a valid WEEK_ID (a bare number resolves
+/// against `today`'s ISO year) and the duration token is well-shaped.
+pub fn swapped_week_target(args: &[String], today: chrono::NaiveDate) -> Option<String> {
+    let tokens: Vec<&str> = args
+        .iter()
+        .skip(1)
+        .map(String::as_str)
+        .filter(|t| !matches!(*t, "-v" | "--verbose"))
+        .collect();
+    match tokens.as_slice() {
+        ["week" | "w", week, "target", duration]
+            if is_week_token(week, today) && is_duration_token(duration) =>
+        {
+            Some(format!(
+                "error: put WEEK_ID after target: mlm week target {week} {duration}"
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// True when the token parses as a WEEK_ID.
+fn is_week_token(token: &str, today: chrono::NaiveDate) -> bool {
+    crate::date::parse_week_id(token, today).is_ok()
+}
+
+/// True when the token has the DURATION shape. A negative value counts
+/// (`-5h` reaches the duration parser, E9). `--help`, `-h` and `-V` do not.
+fn is_duration_token(token: &str) -> bool {
+    !matches!(
+        crate::time::parse_duration(token),
+        Err(crate::time::DurationParseError::InvalidFormat(_))
+    )
 }
 
 impl WeekTargetArgs {
@@ -542,5 +718,166 @@ mod tests {
     fn delete_id_past_u32_max_is_rejected_by_clap() {
         let err = parse(&["mlm", "delete", "note", "4294967296"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    // --- help surface, argument-order interception (T5) ------------------
+
+    fn os(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
+
+    fn strs(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn swapped(args: &[&str]) -> Option<String> {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 4).unwrap();
+        swapped_week_target(&strs(args), today)
+    }
+
+    #[test]
+    fn swapped_needs_a_valid_week_id_and_duration() {
+        for args in [
+            &["mlm", "week", "foo$(id)", "target", "20h"],
+            &["mlm", "week", "foo", "target", "20h"],
+            &["mlm", "week", "2026-99", "target", "20h"],
+            &["mlm", "week", "2026-41", "target", "soon"],
+            &["mlm", "week", "2026-41", "target", "-x"],
+        ] {
+            assert_eq!(swapped(args), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn invalid_week_token_gets_clap_error_not_the_custom_message() {
+        for week in ["foo$(id)", "2026-99"] {
+            let failure = super::parse(&os(&["mlm", "week", week, "target", "20h"])).unwrap_err();
+            assert!(
+                matches!(failure, ParseFailure::Clap(_)),
+                "{week}: {failure:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_passes_debug_assert() {
+        command().debug_assert();
+    }
+
+    #[test]
+    fn glossary_is_ascii_and_ends_cleanly() {
+        assert!(GLOSSARY.is_ascii());
+        assert!(!GLOSSARY.ends_with('\n'));
+    }
+
+    #[test]
+    fn swapped_matches_expected_shapes() {
+        let want = Some("error: put WEEK_ID after target: mlm week target 2026-41 20h".to_string());
+        assert_eq!(swapped(&["mlm", "week", "2026-41", "target", "20h"]), want);
+        assert_eq!(swapped(&["mlm", "w", "2026-41", "target", "20h"]), want);
+        assert_eq!(
+            swapped(&["mlm", "-v", "week", "2026-41", "target", "20h"]),
+            want
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "--verbose", "2026-41", "target", "20h"]),
+            want
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "2026-41", "-v", "target", "20h"]),
+            want
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "2026-41", "target", "--verbose", "20h"]),
+            want
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "2026-41", "target", "20h", "-v"]),
+            want
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "2026-7", "target", "20h"]),
+            Some("error: put WEEK_ID after target: mlm week target 2026-7 20h".to_string())
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "7", "target", "-5h"]),
+            Some("error: put WEEK_ID after target: mlm week target 7 -5h".to_string())
+        );
+    }
+
+    #[test]
+    fn swapped_rejects_other_shapes() {
+        let none: [&[&str]; 13] = [
+            &["mlm", "week", "7", "foo"],
+            &["mlm", "week", "2026-41", "target"],
+            &["mlm", "week", "2026-41", "target", "20h", "extra"],
+            &["mlm", "week", "target", "2026-41", "20h"],
+            &["mlm", "week", "2026-41"],
+            &["mlm", "week", "target", "target", "20h"],
+            &["mlm", "status", "7", "target", "20h"],
+            &["mlm", "week", "-x", "target", "20h"],
+            &["mlm", "week", "7", "target", "--help"],
+            &["mlm", "week", "7", "target", "-h"],
+            &["mlm", "week", "7", "target", "-V"],
+            &[],
+            &["mlm"],
+        ];
+        for args in none {
+            assert_eq!(swapped(args), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn parse_reports_swapped_order() {
+        let failure = super::parse(&os(&["mlm", "week", "2026-41", "target", "20h"])).unwrap_err();
+        match &failure {
+            ParseFailure::SwappedWeekTarget(m) => {
+                assert_eq!(
+                    m,
+                    "error: put WEEK_ID after target: mlm week target 2026-41 20h"
+                )
+            }
+            other => panic!("expected SwappedWeekTarget, got {other:?}"),
+        }
+        assert_eq!(failure.exit_code(), 2);
+        assert!(super::parse(&os(&["mlm", "week", "target", "20h"])).is_ok());
+    }
+
+    #[test]
+    fn parse_failure_exit_codes() {
+        let help = super::parse(&os(&["mlm", "--help"])).unwrap_err();
+        assert_eq!(help.exit_code(), 0);
+        let usage = super::parse(&os(&["mlm", "week", "7", "foo"])).unwrap_err();
+        assert_eq!(usage.exit_code(), 2);
+    }
+
+    fn clap_text(failure: ParseFailure) -> (clap::error::ErrorKind, String) {
+        match failure {
+            ParseFailure::Clap(e) => (e.kind(), e.render().to_string()),
+            other => panic!("expected Clap, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_duration_error_hides_args_name() {
+        let (kind, text) = clap_text(super::parse(&os(&["mlm", "week", "target"])).unwrap_err());
+        assert_eq!(kind, clap::error::ErrorKind::MissingRequiredArgument);
+        assert!(text.contains("<DURATION>"), "{text}");
+        assert!(!text.contains("<ARGS>"), "{text}");
+    }
+
+    #[test]
+    fn too_many_values_error_hides_args_name() {
+        let (kind, text) =
+            clap_text(super::parse(&os(&["mlm", "week", "target", "1", "2", "3"])).unwrap_err());
+        assert_eq!(kind, clap::error::ErrorKind::TooManyValues);
+        assert!(!text.contains("<ARGS>"), "{text}");
+    }
+
+    #[test]
+    fn unrelated_errors_pass_through_untouched() {
+        let (kind, text) = clap_text(super::parse(&os(&["mlm", "week", "7", "foo"])).unwrap_err());
+        assert_eq!(kind, clap::error::ErrorKind::ArgumentConflict);
+        assert!(text.contains("Usage:"), "{text}");
     }
 }

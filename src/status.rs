@@ -18,29 +18,33 @@
 //!   [`week_line`] helper below, which is directly tested (see
 //!   `week_line_matches_status_week_line`).
 //! - `stint::DayStints` exposes its own `has_anomaly()`/`anomalies()`,
-//!   computed by a formula that duplicates `render::DateAnomalies` but
+//!   computed by a formula that duplicates `anomalies::DateAnomalies` but
 //!   is not bound to it by any test. This module never calls those two
-//!   methods; [`anomaly_facts_for_date`] builds a `render::DateAnomalies`
-//!   directly from `DayStints`'s raw `open`/`orphaned_ends` fields
-//!   instead, so anomaly rendering goes through `render::DateAnomalies`
-//!   exclusively.
+//!   methods; `anomalies::build_facts` builds a `DateAnomalies` directly
+//!   from `DayStints`'s raw `open`/`orphaned_ends` fields instead, so
+//!   anomaly rendering goes through `DateAnomalies` exclusively.
+//!
+//! Storage reads for the week line come from `history::load_history`,
+//! the same loader `mlm week` uses, so both commands account a week
+//! identically and a failed read is an error.
 
 use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, Utc};
 use rusqlite::Connection;
-use std::collections::{BTreeMap, BTreeSet};
 
+use crate::anomalies::{self, DateAnomalies};
+use crate::carry_scan;
 use crate::date::{self, WeekId};
-use crate::render::{self, DateAnomalies};
+use crate::history;
+use crate::lookback;
+use crate::render::{self, CarryMarker, local_time};
 use crate::stint::{self, DayStints};
-use crate::storage::{self, Punch};
+use crate::storage;
 use crate::time::format_minutes;
-use crate::week::{self, WeekAccounting, WeekLedger};
-use crate::week_target;
+use crate::week::{self, WeekAccounting};
 
-/// One dated finding from the §7.1/§7.4 14-day lookback scan. Defined in
-/// `render.rs`; re-exported here so callers of [`lookback`] can name its
-/// return type without importing `render` directly.
-pub use crate::render::{LookbackFinding, LookbackKind};
+/// The lookback scan lives in `lookback.rs`. These re-exports keep the
+/// old `status::lookback` paths valid for `commands.rs`.
+pub use crate::lookback::{LookbackFinding, LookbackKind, lookback};
 
 // ---------------------------------------------------------------------------
 // StatusView and its component types
@@ -91,7 +95,7 @@ pub enum EodState {
     /// minutes)`, which equals now plus the gap. The `EodDay` says which day
     /// it lands on and drives the suffix (SPEC §7.1).
     At(NaiveTime, EodDay),
-    /// `target already met` — quota already met or exceeded (gap <= 0).
+    /// `done for today` — quota already met or exceeded (gap <= 0).
     TargetAlreadyMet,
 }
 
@@ -203,7 +207,7 @@ fn day_total_line(view: &StatusView) -> String {
         Some(EodState::At(t, day)) => {
             s.push_str(&format!(", est. EOD {}{}", t.format("%H:%M"), day.suffix()))
         }
-        Some(EodState::TargetAlreadyMet) => s.push_str(", target already met"),
+        Some(EodState::TargetAlreadyMet) => s.push_str(", done for today"),
         None => {}
     }
     s
@@ -213,6 +217,9 @@ fn day_total_line(view: &StatusView) -> String {
 fn stint_line(line: &StintLine) -> String {
     let range = match line.end {
         StintEnd::At(end) => format!("{}-{}", line.start.format("%H:%M"), end.format("%H:%M")),
+        StintEnd::Now if line.open_stint_age == Some(OpenStintAge::TwoOrMoreDaysBack) => {
+            format!("{}-?", line.start.format("%H:%M"))
+        }
         StintEnd::Now => format!("{}-now", line.start.format("%H:%M")),
     };
     match (line.end, line.open_stint_age) {
@@ -296,159 +303,6 @@ fn week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
     render::status_week_line(acct, today)
 }
 
-/// `at_utc`'s local wall-clock time, factoring out the
-/// `.with_timezone(&Local).time()` pattern repeated across this module's
-/// stint/anomaly/lookback fact-building.
-fn local_time(at_utc: DateTime<Utc>) -> NaiveTime {
-    at_utc.with_timezone(&Local).time()
-}
-
-/// Every classification `resolve()` needs for one target date: the
-/// post-splice view (`day`) plus the three raw, pre-splice views
-/// (`prev_raw`/`day_raw`/`next_raw`) the refused-join predicate needs --
-/// it always classifies each date on its own, never against the
-/// `classify_at`-resolved (splice-aware) view.
-struct DateContext {
-    day: DayStints,
-    prev_raw: DayStints,
-    day_raw: DayStints,
-    next_raw: DayStints,
-}
-
-fn classify_date_context(
-    prev_punches: &[Punch],
-    punches: &[Punch],
-    next_punches: &[Punch],
-    now_utc: DateTime<Utc>,
-) -> DateContext {
-    DateContext {
-        day: stint::classify_at(prev_punches, punches, next_punches, now_utc),
-        prev_raw: stint::classify(prev_punches, now_utc),
-        day_raw: stint::classify(punches, now_utc),
-        next_raw: stint::classify(next_punches, now_utc),
-    }
-}
-
-/// Builds `target_date`'s `render::DateAnomalies` from its `DateContext`
-/// plus `stint`'s stale-open-start/refused-join predicates.
-/// `stale_open_start` reads `ctx.day` (post-splice, an open start after
-/// splice resolution); `is_refused_join` reads the raw, pre-splice
-/// pair.
-fn anomaly_facts_for_date(
-    ctx: &DateContext,
-    target_date: NaiveDate,
-    today: NaiveDate,
-    punches: &[Punch],
-    next_punches: &[Punch],
-) -> DateAnomalies {
-    DateAnomalies {
-        date: target_date,
-        open_stint_count: ctx.day.open.len(),
-        latest_open_start: ctx
-            .day
-            .open
-            .iter()
-            .map(|o| local_time(o.start.at_utc))
-            .max(),
-        orphaned_end_times: ctx
-            .day
-            .orphaned_ends
-            .iter()
-            .map(|o| local_time(o.punch.at_utc))
-            .collect(),
-        stale_open_start: stint::stale_open_start(&ctx.day, target_date, today).map(|s| {
-            render::StaleOpenStart {
-                time: local_time(s.at),
-                age_days: s.age_days,
-            }
-        }),
-        refused_join_with_previous: stint::is_refused_join(&ctx.prev_raw, &ctx.day_raw, punches)
-            .then(|| target_date.pred_opt().unwrap()),
-        refused_join_with_next: stint::is_refused_join(&ctx.day_raw, &ctx.next_raw, next_punches)
-            .then(|| target_date.succ_opt().unwrap()),
-    }
-}
-
-/// Groups `punches` by their local `date`, for the lookback scan's
-/// per-date/per-neighbor lookups.
-fn group_punches_by_date(punches: &[Punch]) -> BTreeMap<NaiveDate, Vec<Punch>> {
-    let mut map: BTreeMap<NaiveDate, Vec<Punch>> = BTreeMap::new();
-    for p in punches {
-        map.entry(p.date).or_default().push(*p);
-    }
-    map
-}
-
-/// One window date's lookback finding, or `None` when that date has no
-/// open start after splice resolution (idle, or an orphaned end only --
-/// §1.2's known residual gap).
-fn lookback_finding_for_date(
-    date: NaiveDate,
-    age: i64,
-    by_date: &BTreeMap<NaiveDate, Vec<Punch>>,
-    now_utc: DateTime<Utc>,
-) -> Option<LookbackFinding> {
-    let empty = Vec::new();
-    let prev = by_date.get(&date.pred_opt().unwrap()).unwrap_or(&empty);
-    let cur = by_date.get(&date).unwrap_or(&empty);
-    let next = by_date.get(&date.succ_opt().unwrap()).unwrap_or(&empty);
-    if cur.is_empty() {
-        return None;
-    }
-    let day = stint::classify_at(prev, cur, next, now_utc);
-    let kind = match day.open.len() {
-        0 => return None,
-        1 => LookbackKind::SingleOpenStart {
-            time: local_time(day.open[0].start.at_utc),
-            punch_id: day.open[0].start.id,
-        },
-        n => LookbackKind::MultipleOpenStints { count: n },
-    };
-    Some(LookbackFinding {
-        date,
-        age_days: age,
-        kind,
-    })
-}
-
-/// Walks ages 2 through 14 relative to `today` (§2's lookback window),
-/// oldest date first, and returns one `LookbackFinding` per window date
-/// that has one or more open starts after splice resolution. A window
-/// date with zero open starts (idle, or an orphaned end only) produces no
-/// finding -- §1.2's orphan gap is deliberate, not a bug.
-///
-/// Pure aside from a single `punches_in_range` read spanning
-/// `[today - 15d, today - 1d]` (15 dates: the 13 window dates plus the
-/// one-day neighbor each end of the window needs for its own
-/// `classify_at`). `now_utc` is the caller's already-resolved clock
-/// instant (contract 6: never read from a system clock in here).
-///
-/// Called by `status::resolve` for today's own `status` (§7.1) and by
-/// `commands::start` after every successful write (§7.4) -- this is the
-/// one place the scan is implemented, so the two callers can never
-/// disagree about what counts as a stale window date.
-pub fn lookback(
-    conn: &Connection,
-    today: NaiveDate,
-    now_utc: DateTime<Utc>,
-) -> anyhow::Result<Vec<LookbackFinding>> {
-    let window_start = today - ChronoDuration::days(15); // (today - 14) - 1
-    let window_end = today - ChronoDuration::days(1); // (today - 2) + 1
-    let punches = storage::punches_in_range(conn, window_start, window_end)?;
-    let by_date = group_punches_by_date(&punches);
-
-    let mut findings = Vec::new();
-    for age in (2..=14).rev() {
-        // .rev() walks age 14 down to 2, i.e. the OLDEST window date
-        // (smallest calendar date) first -- oldest-first per §7.1.
-        let date = today - ChronoDuration::days(age);
-        if let Some(finding) = lookback_finding_for_date(date, age, &by_date, now_utc) {
-            findings.push(finding);
-        }
-    }
-    Ok(findings)
-}
-
 /// Builds stint rows from `DayStints`, sorted by start time ascending
 /// (plans/milestone-10-status-command.md §3.7). A stable sort preserves
 /// each side's own relative order (completed by end instant, open by
@@ -475,103 +329,6 @@ fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<Stint
     }
     rows.sort_by_key(|r| r.start);
     rows
-}
-
-/// Adds `live` to the current week's worked minutes, but only when the
-/// walk reaches the current week (`through` is that week or later). Live
-/// enters before carry is walked, so a later week's carry-in reflects it.
-/// A walk that ends before the current week gets no live.
-fn credit_live(
-    worked_by_week: &mut BTreeMap<WeekId, i64>,
-    today: NaiveDate,
-    through: WeekId,
-    live: i64,
-) {
-    let current = WeekId::from_date(today);
-    if live > 0 && current <= through {
-        *worked_by_week.entry(current).or_insert(0) += live;
-    }
-}
-
-/// Today's live minutes: the most recent open start dated today, classified
-/// with its neighbours so a splice with tomorrow's orphaned end applies,
-/// whichever `DATE` the page shows. Zero when nothing is open today.
-fn live_minutes_today(
-    conn: &Connection,
-    today: NaiveDate,
-    now_utc: DateTime<Utc>,
-) -> anyhow::Result<i64> {
-    let punches = storage::punches_for_date(conn, today)?;
-    let prev = storage::punches_for_date(conn, today.pred_opt().unwrap())?;
-    let next = storage::punches_for_date(conn, today.succ_opt().unwrap())?;
-    Ok(stint::classify_at(&prev, &punches, &next, now_utc).live_minutes())
-}
-
-/// Loads a `WeekLedger` covering exactly the weeks Milestone 6's walk
-/// would visit to account `through` (SPEC.md §2.4): from the earliest
-/// data week (or `through` itself, if there is no data at all) through
-/// `through`, inclusive. Stored minutes are completed stints only. `live`
-/// (today's running-stint minutes) is added to the current week via
-/// `credit_live`. `now_utc` is injected (contract 6); no clock is read
-/// here.
-fn build_ledger(
-    conn: &Connection,
-    through: WeekId,
-    today: NaiveDate,
-    live: i64,
-    now_utc: DateTime<Utc>,
-) -> anyhow::Result<WeekLedger> {
-    let earliest_date = storage::earliest_data_date(conn)?;
-    let start_week = match earliest_date.map(WeekId::from_date) {
-        Some(earliest) => earliest.min(through),
-        None => through,
-    };
-
-    let mut ledger = WeekLedger::new();
-
-    // Target overrides: only weeks in the walked span matter, since
-    // week::week_series never visits anything outside it.
-    for week in date::week_range(start_week, through) {
-        if let Some(minutes) = week_target::get_week_target(conn, &week)? {
-            ledger = ledger.with_target(week, minutes);
-        }
-    }
-
-    // Worked minutes and data-week markers, accumulated per week before
-    // being written into the ledger (WeekLedger::with_worked replaces
-    // rather than adds, so per-day contributions must be summed first).
-    let mut worked_by_week: BTreeMap<WeekId, i64> = BTreeMap::new();
-    let mut data_weeks: BTreeSet<WeekId> = BTreeSet::new();
-
-    let mut date = start_week.start();
-    let last_date = through.end();
-    while date <= last_date {
-        let day_punches = storage::punches_for_date(conn, date)?;
-        let day_notes = storage::notes_for_date(conn, date)?;
-        if !day_punches.is_empty() || !day_notes.is_empty() {
-            let week = WeekId::from_date(date);
-            data_weeks.insert(week);
-            if !day_punches.is_empty() {
-                let prev_punches = storage::punches_for_date(conn, date.pred_opt().unwrap())?;
-                let next_punches = storage::punches_for_date(conn, date.succ_opt().unwrap())?;
-                let classified =
-                    stint::classify_at(&prev_punches, &day_punches, &next_punches, now_utc);
-                *worked_by_week.entry(week).or_insert(0) += classified.completed_minutes();
-            }
-        }
-        date += ChronoDuration::days(1);
-    }
-
-    credit_live(&mut worked_by_week, today, through, live);
-
-    for week in data_weeks {
-        ledger = ledger.with_data_week(week);
-    }
-    for (week, minutes) in worked_by_week {
-        ledger = ledger.with_worked(week, minutes);
-    }
-
-    Ok(ledger)
 }
 
 /// The est. EOD state for an open stint. `gap_minutes` is the live-inclusive
@@ -603,12 +360,58 @@ fn today_eod(
         .map(|o| est_eod(o, gap_minutes + live, gap_minutes, today))
 }
 
+/// §4's three-way age of `target_date` relative to `today`.
+fn open_stint_age_for(target_date: NaiveDate, today: NaiveDate) -> OpenStintAge {
+    if target_date == today {
+        OpenStintAge::Today
+    } else if target_date == today - ChronoDuration::days(1) {
+        OpenStintAge::Yesterday
+    } else {
+        OpenStintAge::TwoOrMoreDaysBack
+    }
+}
+
+/// The header suffix naming the end punch that a splice consumed as
+/// `target_date`'s first punch, when there is one.
+fn receiving_suffix(
+    ctx: &anomalies::DateContext,
+    day_punches: &[storage::Punch],
+) -> Option<String> {
+    stint::splice_candidate(ctx.prev_raw.open.len(), &ctx.day_raw, day_punches).then(|| {
+        let at = local_time(ctx.day_raw.orphaned_ends[0].punch.at_utc);
+        format!("  ({} continues previous day's stint)", at.format("%H:%M"))
+    })
+}
+
+/// The anomaly section, in placement order (§3.1, §3.3): the date's own
+/// block, then today's lookback lines, then the carry marker line.
+fn compose_anomaly_lines(
+    facts: &DateAnomalies,
+    lookback_lines: Vec<String>,
+    marker: Option<&CarryMarker>,
+) -> Vec<String> {
+    let mut lines = facts.detail_lines();
+    lines.extend(lookback_lines);
+    lines.extend(marker.map(render::carry_marker_line));
+    lines
+}
+
+/// A future `status DATE` error also names the command for a future week.
+fn future_week_pointer(err: date::DateWeekError) -> anyhow::Error {
+    if matches!(err.cause, date::Cause::Future) {
+        anyhow::anyhow!("{err}; to view a future week, run mlm week WEEK_ID")
+    } else {
+        err.into()
+    }
+}
+
 /// Resolution flow (plans/milestone-10-status-command.md §2.2, exact
-/// order): parses `date_arg` against `now`'s local date, reads
-/// `target_date`'s punches/notes, classifies them, accounts
-/// `target_date`'s own week (not today's, §3.5/NOTES decision 26) with
-/// today's live minutes in the current week, and computes the
-/// daily-target/EOD hints only when `target_date` is today.
+/// order): parses `date_arg` against `now`'s local date and rejects a
+/// future date (§4.5), loads the history through `target_date`'s week,
+/// classifies `target_date`'s punches, accounts `target_date`'s own week
+/// (not today's, §3.5/NOTES decision 26) with today's live minutes in the
+/// current week, and computes the daily-target/EOD hints only when
+/// `target_date` is today.
 pub fn resolve(
     date_arg: Option<&str>,
     now: DateTime<Local>,
@@ -617,47 +420,39 @@ pub fn resolve(
     let today = now.date_naive();
     let target_date = match date_arg {
         None => today,
-        Some(s) => date::resolve_date(s, today)?,
+        Some(s) => date::resolve_future_checked_date(s, today).map_err(future_week_pointer)?,
     };
     let is_today = target_date == today;
-    let open_stint_age = if target_date == today {
-        OpenStintAge::Today
-    } else if target_date == today - ChronoDuration::days(1) {
-        OpenStintAge::Yesterday
-    } else {
-        OpenStintAge::TwoOrMoreDaysBack
-    };
-
-    let punches = storage::punches_for_date(conn, target_date)?;
-    let notes = storage::notes_for_date(conn, target_date)?;
-    let prev_punches = storage::punches_for_date(conn, target_date.pred_opt().unwrap())?;
-    let next_punches = storage::punches_for_date(conn, target_date.succ_opt().unwrap())?;
+    let open_stint_age = open_stint_age_for(target_date, today);
 
     let now_utc = now.with_timezone(&Utc);
-    let ctx = classify_date_context(&prev_punches, &punches, &next_punches, now_utc);
+    let target_week = WeekId::from_date(target_date);
+    let notes = storage::notes_for_date(conn, target_date)?;
+    let history = history::load_history(conn, target_week, today, now_utc)?;
+    let buckets = history.buckets.trio(target_date);
+    let ctx = anomalies::classify_context(&buckets, now_utc);
 
-    let receiving_end_time =
-        stint::splice_candidate(ctx.prev_raw.open.len(), &ctx.day_raw, &punches)
-            .then(|| local_time(ctx.day_raw.orphaned_ends[0].punch.at_utc));
-    let receiving_date_suffix = receiving_end_time
-        .map(|t| format!("  ({} continues previous day's stint)", t.format("%H:%M")));
-
-    let live = live_minutes_today(conn, today, now_utc)?;
+    let receiving_date_suffix = receiving_suffix(&ctx, buckets.day);
+    let live = history.live_minutes;
     let day_total_minutes = ctx.day.completed_minutes() + if is_today { live } else { 0 };
     let has_open_stint = ctx.day.is_ongoing();
 
-    let target_week = WeekId::from_date(target_date);
-    let ledger = build_ledger(conn, target_week, today, live, now_utc)?;
-    let acct = week::week_accounting(target_week, &ledger, &ledger);
+    let acct = history.accounting(target_week);
     let week_line_str = week_line(&acct, today);
 
-    let facts = anomaly_facts_for_date(&ctx, target_date, today, &punches, &next_punches);
-    let mut anomaly_lines = facts.detail_lines();
-    if is_today {
-        for finding in lookback(conn, today, now_utc)? {
-            anomaly_lines.extend(finding.detail_lines());
-        }
-    }
+    let facts = anomalies::build_facts(&ctx, &buckets, target_date, today, now_utc);
+    let lookback_lines = if is_today {
+        lookback::today_page_lines(
+            conn,
+            today,
+            now_utc,
+            facts.refused_join_with_previous.is_some(),
+        )?
+    } else {
+        Vec::new()
+    };
+    let marker = carry_scan::carry_marker(&history, target_week, today, now_utc);
+    let anomaly_lines = compose_anomaly_lines(&facts, lookback_lines, marker.as_ref());
 
     let eod = if is_today {
         today_eod(&acct, &ctx.day, live, today)
@@ -701,6 +496,8 @@ mod tests {
     use super::*;
     use crate::db;
     use crate::storage::PunchKind;
+    use crate::week_target;
+    use crate::week_view;
     use chrono::TimeZone;
 
     // -----------------------------------------------------------------
@@ -857,7 +654,7 @@ mod tests {
         assert!(!out.contains("required"), "{out}");
         assert!(!out.contains("ongoing"));
         assert!(!out.contains("est. EOD"));
-        assert!(!out.contains("target already met"));
+        assert!(!out.contains("done for today"));
         assert!(out.contains("  09:00-17:30  (08h 30m)"));
     }
 
@@ -1034,10 +831,11 @@ mod tests {
             open_stint_age: Some(OpenStintAge::TwoOrMoreDaysBack),
         }];
         let out = render(&view);
-        assert!(out.contains("  09:00-now    (unclosed)"), "{out}");
+        assert!(out.contains("  09:00-?      (unclosed)"), "{out}");
+        assert!(!out.contains("09:00-now"), "{out}");
         let stint_line_out = out
             .lines()
-            .find(|l| l.contains("09:00-now"))
+            .find(|l| l.contains("09:00-?"))
             .expect("stint line present");
         assert!(
             !stint_line_out.contains("43"),
@@ -1120,7 +918,7 @@ mod tests {
             view.eod = Some(EodState::TargetAlreadyMet);
             let out = render(&view);
             assert!(
-                out.contains("(incl. ongoing), target already met\n"),
+                out.contains("(incl. ongoing), done for today\n"),
                 "gap {gap}: {out}"
             );
             assert!(!out.contains("est. EOD"), "gap {gap}: {out}");
@@ -1137,7 +935,7 @@ mod tests {
         view.eod = None;
         let out = render(&view);
         assert!(!out.contains("est. EOD"));
-        assert!(!out.contains("target already met"));
+        assert!(!out.contains("done for today"));
         assert!(!out.contains("ongoing"));
         assert!(!out.contains("required"), "{out}");
         assert!(out.contains("Day total:     08h 00m\n"), "{out}");
@@ -1223,7 +1021,7 @@ mod tests {
         assert!(!out.contains("daily target"));
         assert!(!out.contains("required by end of"));
         assert!(!out.contains("est. EOD"));
-        assert!(!out.contains("target already met"));
+        assert!(!out.contains("done for today"));
         assert!(out.contains("Week 2026-02:"));
         assert!(!out.contains("fulfillment"));
     }
@@ -1241,7 +1039,7 @@ mod tests {
         assert!(!out.contains("daily target"));
         assert!(!out.contains("required by end of"));
         assert!(!out.contains("est. EOD"));
-        assert!(!out.contains("target already met"));
+        assert!(!out.contains("done for today"));
     }
 
     // T9 -- E7: three unmatched starts.
@@ -1702,16 +1500,27 @@ mod tests {
         assert_eq!(via_shorthand.header, "Mon 2026-01-05");
     }
 
+    // §4.5: a future DATE is rejected exactly like start/stop/note's.
     #[test]
-    fn resolve_future_absolute_date_still_succeeds_and_renders_empty() {
+    fn resolve_future_date_is_rejected() {
         let conn = test_db();
-        // now_thu_1800() is 2026-02-12; this stays permissive, unlike
-        // start/stop/note's future-date rejection.
-        let view = resolve(Some("2026-03-01"), now_thu_1800(), &conn).expect("resolve");
-        assert_eq!(view.header, date::format_date_with_weekday(d(2026, 3, 1)));
-        assert!(view.stints.is_empty());
-        assert!(view.notes.is_empty());
-        assert_eq!(view.day_total_minutes, 0);
+        // now_thu_1800() is 2026-02-12.
+        for future in ["2026-03-01", "2026-02-13"] {
+            let err = resolve(Some(future), now_thu_1800(), &conn).expect_err(future);
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "invalid DATE \"{future}\": date is in the future; to view a future week, run mlm week WEEK_ID"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_todays_date_string_is_accepted() {
+        let conn = test_db();
+        let view = resolve(Some("2026-02-12"), now_thu_1800(), &conn).expect("resolve");
+        assert_eq!(view.header, date::format_date_with_weekday(today()));
     }
 
     #[test]
@@ -1737,8 +1546,8 @@ mod tests {
 
     // -----------------------------------------------------------------
     // midnight-spanning splice (boundary-stint-pairing spec §4.3):
-    // `resolve`/`build_ledger` now fetch neighbor-date punches and call
-    // `stint::classify_at` instead of `stint::classify`.
+    // `resolve` and `history::load_history` bucket neighbor-date punches
+    // and call `stint::classify_at` instead of `stint::classify`.
     // -----------------------------------------------------------------
 
     #[test]
@@ -1913,7 +1722,7 @@ mod tests {
         assert!(view.week_line.contains(" over "), "{}", view.week_line);
         assert_eq!(view.eod, Some(EodState::TargetAlreadyMet));
         let out = render(&view);
-        assert!(out.contains(", target already met"), "{out}");
+        assert!(out.contains(", done for today"), "{out}");
     }
 
     // -----------------------------------------------------------------
@@ -2032,7 +1841,7 @@ mod tests {
             out.contains(
                 "(fulfillment 02h 00m = worked 00h 00m + carry-in 02h 00m / target 40h 00m)"
             ),
-            "carry-in breakdown should survive build_ledger -> week_accounting -> \
+            "carry-in breakdown should survive load_history -> week_accounting -> \
              week_line -> status_week_line: {out}"
         );
     }
@@ -2489,8 +2298,15 @@ mod tests {
             &conn,
         )
         .expect("resolve");
+        // The stale date sits in an earlier week, so the carry-in marker
+        // line is expected. Only lookback lines are ruled out.
+        let lookback: Vec<_> = view
+            .anomaly_lines
+            .iter()
+            .filter(|l| !l.starts_with("[!] carry-in includes anomalies"))
+            .collect();
         assert!(
-            view.anomaly_lines.is_empty(),
+            lookback.is_empty(),
             "no lookback for a non-today date: {:?}",
             view.anomaly_lines
         );
@@ -2535,7 +2351,7 @@ mod tests {
     }
 
     // §4.3/§7.1 boundary -- age 15 is stale on its own status DATE but
-    // absent from today's lookback (window is ages 2-14 only).
+    // absent from today's lookback (window is ages 1-14).
     #[test]
     fn resolve_age_fifteen_stale_on_own_date_but_absent_from_lookback() {
         let conn = test_db();
@@ -2686,67 +2502,6 @@ mod tests {
         );
     }
 
-    // Published interface: `lookback` itself, independent of `resolve()`
-    // wiring -- `commands::start` calls this directly.
-    #[test]
-    fn lookback_returns_findings_oldest_first() {
-        let conn = test_db();
-        storage::insert_punch(
-            &conn,
-            PunchKind::Start,
-            today() - ChronoDuration::days(10),
-            t(9, 0),
-            &Local,
-        )
-        .expect("insert");
-        storage::insert_punch(
-            &conn,
-            PunchKind::Start,
-            today() - ChronoDuration::days(4),
-            t(9, 0),
-            &Local,
-        )
-        .expect("insert");
-
-        let findings =
-            lookback(&conn, today(), now_thu_1800().with_timezone(&Utc)).expect("lookback");
-        assert_eq!(findings.len(), 2);
-        assert_eq!(findings[0].date, today() - ChronoDuration::days(10));
-        assert_eq!(findings[1].date, today() - ChronoDuration::days(4));
-        assert_eq!(findings[0].age_days, 10);
-        assert_eq!(findings[1].age_days, 4);
-    }
-
-    // F5: the lookback's lower age bound was only ever caught by a
-    // debug_assert!, never a real assertion. Age 1 (yesterday) must be
-    // excluded even though it has an open start.
-    #[test]
-    fn lookback_excludes_age_one_open_start() {
-        let conn = test_db();
-        storage::insert_punch(
-            &conn,
-            PunchKind::Start,
-            today() - ChronoDuration::days(1),
-            t(9, 0),
-            &Local,
-        )
-        .expect("insert");
-        storage::insert_punch(
-            &conn,
-            PunchKind::Start,
-            today() - ChronoDuration::days(4),
-            t(9, 0),
-            &Local,
-        )
-        .expect("insert");
-
-        let findings =
-            lookback(&conn, today(), now_thu_1800().with_timezone(&Utc)).expect("lookback");
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].date, today() - ChronoDuration::days(4));
-        assert!(!findings.iter().any(|f| f.age_days == 1), "{:?}", findings);
-    }
-
     // -----------------------------------------------------------------
     // live-eod: the open stint's live minutes count in the week line
     // and est. EOD projects from the open start.
@@ -2848,7 +2603,7 @@ mod tests {
             "{}",
             view.week_line
         );
-        assert!(out.contains(", target already met"), "{out}");
+        assert!(out.contains(", done for today"), "{out}");
         assert!(!out.contains("est. EOD"), "{out}");
     }
 
@@ -2868,7 +2623,7 @@ mod tests {
             "{}",
             view.week_line
         );
-        assert!(out.contains(", target already met"), "{out}");
+        assert!(out.contains(", done for today"), "{out}");
     }
 
     // T5 -- no open stint, no live credit and no est. EOD.
@@ -3020,7 +2775,7 @@ mod tests {
             "{}",
             view.week_line
         );
-        assert!(out.contains(", target already met"), "{out}");
+        assert!(out.contains(", done for today"), "{out}");
     }
 
     // F7 -- tomorrow's orphan end consumes today's open start (splice),
@@ -3289,9 +3044,11 @@ mod tests {
         let conn = test_db();
         seed_thursday_completed(&conn);
         punch(&conn, PunchKind::Start, today(), t(17, 45));
-        let view = resolve(Some("2026-02-16"), now_thu_1800(), &conn).expect("resolve");
+        let view =
+            week_view::build_week_view(&conn, wk(2026, 8), now_thu_1800()).expect("build view");
         // fulfillment 1755 + 15 live; owed = 2400 - (1770 - 2400) = 3030.
-        assert_eq!(view.week_line, "Week 2026-08:  Total behind: 50h 30m");
+        assert_eq!(view.headline, "Total behind: 50h 30m");
+        assert_eq!(view.carry_in_minutes, 1770 - 2400);
     }
 
     // Open starts dated before today earn no live credit.
@@ -3366,5 +3123,159 @@ Week 2026-40:  03h 20m left to 32h 00m by end of Thursday (fulfillment 28h 40m =
             view.week_line,
             "Week 2026-40:  01h 10m over 40h 00m target (fulfillment 41h 10m = worked 34h 15m + carry-in 06h 55m / target 40h 00m)"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // carry marker composition and rendering
+    // -----------------------------------------------------------------
+
+    const MARKER_LINE: &str = "[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)";
+
+    fn marker_two_weeks() -> render::CarryMarker {
+        render::CarryMarker {
+            weeks: 2,
+            oldest: wk(2026, 38),
+        }
+    }
+
+    fn e8_facts() -> DateAnomalies {
+        DateAnomalies {
+            orphaned_end_times: vec![t(18, 0)],
+            ..DateAnomalies::none(today())
+        }
+    }
+
+    #[test]
+    fn compose_anomaly_lines_marker_only() {
+        let lines = compose_anomaly_lines(
+            &DateAnomalies::none(today()),
+            Vec::new(),
+            Some(&marker_two_weeks()),
+        );
+        assert_eq!(lines, vec![MARKER_LINE.to_string()]);
+    }
+
+    #[test]
+    fn compose_anomaly_lines_orders_block_then_lookback_then_marker() {
+        let lookback = vec!["[!] lookback line".to_string()];
+        let lines = compose_anomaly_lines(&e8_facts(), lookback, Some(&marker_two_weeks()));
+        let block = e8_facts().detail_lines();
+        let mut want = block.clone();
+        want.push("[!] lookback line".to_string());
+        want.push(MARKER_LINE.to_string());
+        assert_eq!(lines, want);
+        assert_eq!(lines.len(), block.len() + 2);
+    }
+
+    #[test]
+    fn compose_anomaly_lines_without_marker_is_todays_lines() {
+        let lookback = vec!["[!] lookback line".to_string()];
+        let lines = compose_anomaly_lines(&e8_facts(), lookback, None);
+        let mut want = e8_facts().detail_lines();
+        want.push("[!] lookback line".to_string());
+        assert_eq!(lines, want);
+        assert!(compose_anomaly_lines(&DateAnomalies::none(today()), Vec::new(), None).is_empty());
+    }
+
+    #[test]
+    fn marker_renders_after_the_week_line_and_one_blank_line() {
+        let mut view = base_view();
+        view.anomaly_lines = vec![MARKER_LINE.to_string()];
+        let out = render(&view);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[3], view.week_line);
+        assert_eq!(lines[4], "");
+        assert_eq!(lines[5], MARKER_LINE);
+        assert_eq!(lines.len(), 6);
+    }
+
+    #[test]
+    fn resolve_has_no_marker_line_while_the_scan_is_a_stub() {
+        let conn = test_db();
+        let view = resolve(None, now_thu_1800(), &conn).expect("resolve");
+        assert!(view.anomaly_lines.is_empty());
+    }
+
+    // -----------------------------------------------------------------
+    // status and `mlm week` account every week identically
+    // -----------------------------------------------------------------
+
+    /// A note-only first week (2026-02), worked weeks with carry, a target
+    /// override, and a running Thursday in the current week (2026-07).
+    fn seed_ledger_fixture(conn: &Connection) {
+        storage::insert_note(
+            conn,
+            d(2026, 1, 5),
+            "kickoff",
+            now_thu_1800().with_timezone(&Utc),
+        )
+        .expect("insert note");
+        punch(conn, PunchKind::Start, d(2026, 1, 19), t(9, 0));
+        punch(conn, PunchKind::End, d(2026, 1, 19), t(17, 0));
+        conn.execute(
+            "INSERT INTO week_targets (week_id, target_minutes) VALUES ('2026-05', 1200)",
+            [],
+        )
+        .expect("insert target");
+        punch(conn, PunchKind::Start, d(2026, 2, 2), t(9, 0));
+        punch(conn, PunchKind::End, d(2026, 2, 2), t(12, 0));
+        seed_thursday_completed(conn);
+        punch(conn, PunchKind::Start, today(), t(17, 45));
+    }
+
+    #[test]
+    fn status_week_line_equals_week_view_headline_for_every_closed_week() {
+        let conn = test_db();
+        seed_ledger_fixture(&conn);
+        for week in [
+            wk(2026, 2),
+            wk(2026, 3),
+            wk(2026, 4),
+            wk(2026, 5),
+            wk(2026, 6),
+        ] {
+            let status = resolve(Some(&week.start().to_string()), now_thu_1800(), &conn)
+                .expect("resolve status");
+            let view = week_view::build_week_view(&conn, week, now_thu_1800()).expect("view");
+            assert_eq!(
+                status.week_line,
+                format!("Week {week}:  {}", view.headline),
+                "{week}"
+            );
+        }
+    }
+
+    #[test]
+    fn status_current_week_line_carries_the_week_view_figures() {
+        let conn = test_db();
+        seed_ledger_fixture(&conn);
+        let status = resolve(None, now_thu_1800(), &conn).expect("resolve status");
+        let view = week_view::build_week_view(&conn, wk(2026, 7), now_thu_1800()).expect("view");
+        assert!(
+            status.week_line.contains(&view.headline),
+            "{}",
+            status.week_line
+        );
+        assert_ne!(view.carry_in_minutes, 0);
+        let want = format!(
+            "(fulfillment {} = worked {} + carry-in {} / target {})",
+            format_minutes(view.fulfillment_minutes),
+            format_minutes(view.worked_minutes),
+            format_minutes(view.carry_in_minutes),
+            format_minutes(view.target_minutes)
+        );
+        assert!(status.week_line.ends_with(&want), "{}", status.week_line);
+    }
+
+    #[test]
+    fn history_accounting_matches_between_two_loads() {
+        let conn = test_db();
+        seed_ledger_fixture(&conn);
+        let now_utc = now_thu_1800().with_timezone(&Utc);
+        for week in [wk(2026, 2), wk(2026, 5), wk(2026, 7)] {
+            let first = history::load_history(&conn, week, today(), now_utc).expect("load");
+            let second = history::load_history(&conn, week, today(), now_utc).expect("load");
+            assert_eq!(first.accounting(week), second.accounting(week), "{week}");
+        }
     }
 }

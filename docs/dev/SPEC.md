@@ -61,132 +61,14 @@ Shipped, working-as-designed behavior that's rough or confusing, not
 committed to a fix. Kept separate from §1.2: a non-goal isn't built
 yet, a possible issue works but has a rough edge.
 
-- An unclosed start more than 14 days old shows only on its own date's
-  `status` and its own `week` row. Today's `status` and `mlm start`
-  stop mentioning it once it leaves that 14-day window.
-- Stint pairing (§4.3) is LIFO and accepts nested entry. A day like
-  `start 09:00, start 10:00, stop 11:00, stop 12:00` pairs into
-  09:00-12:00 *and* 10:00-11:00, double-counting the overlapping hour
-  in the day total, with no anomaly raised. The stale-open-start hint
-  ("a time after 09:00") can lead a user straight into this shape,
-  since it never rules out a stop that lands inside an already-closed
-  stint.
-- A lone open start dated yesterday is never flagged, on `status` or
-  `mlm start`, because an overnight session may still be legitimately
-  running (the 2-day stale threshold is intentional, §4.3). This means
-  a session still open from the previous evening gives no signal at
-  all on today's `status` — only querying yesterday's date directly
-  shows it.
-- An unresolved anomaly (a forgotten `stop`, a refused join, and so
-  on) in a past, closed week changes that week's own fulfillment
-  figure, which then carries into later weeks' `Carry-in`. A later
-  week's `status`/`week` view shows the skewed carry-in figure with no
-  `[!]` marker pointing back at the week that actually has the
-  problem.
-- `status DATE` silently accepts a future `DATE` — undocumented; only
-  `start`/`stop`/`note`'s future-date rejection is documented (§6.1).
-  When accepted, the week line's deadline phrase (`... by end of
-  <weekday>`) still names the real current weekday, not the queried
-  date, with nothing on the page saying so — a future-dated page reads
-  as if it's talking about itself, but the weekday it names belongs to
-  "now," not to `DATE`.
-- The zero boundary differs between framings. A current week at
-  exactly its due-by-today figure reads `00h 00m left to <required> ...`
-  (`<target> target` from Friday on), but the same week once closed
-  reads `Total ahead: 00h 00m`. The current-week zero case stays "left"
-  to match the `gap == 0` rule (§7.1).
-- Two `status` runs with no punch in between print different week-line
-  figures. When the running stint closes the gap, the week line flips
-  from `left to` to `over` and `est. EOD HH:MM` becomes `target already
-  met` mid-stint.
-- Jumps in the week line come from backdated punches, not from `stop`,
-  because live minutes already counted. A backdated `stop HH:MM`
-  raises the figure by the minutes it cuts off. A backdated `start
-  HH:MM` lowers it by the minutes it adds.
-- `est. EOD` means "when this open stint closes the gap". Once a stint
-  runs past it, `status` prints `target already met` and no clock time.
-  A break (`stop`, then `start`) moves it later by the break's length.
-- `est. EOD` is fixed per stint, so its day suffix (§7.1) shows from
-  the first `status` after the `start` and never flips while working.
-  A large remaining figure puts it days out, e.g. `est. EOD 06:20
-  (Mon)`, from the first `status` on.
-- A `start` typed for a time later than now makes `est. EOD` project
-  from that start (§7.1). It sits more than the week line's `left to`
-  figure ahead of the clock, while the week line does not count down.
-- Two or more open starts today show every open stint with its own
-  duration, but the week line and `est. EOD` credit only the most
-  recent one (§7.1). Fixing the E7 anomaly makes both jump.
-- With two open starts today, the `fix:` and `or:` lines suggest only a
-  `stop` after the later start. A `stop` between the two starts also
-  works: it pairs with the earlier start and leaves the later one open.
 - A stint started yesterday and still open after midnight is not on
   today's page, so it gets no live credit and no `est. EOD`. Its minutes
   leave the day total, `Worked`, `Fulfillment` and the week line until
   `stop`. At 00:00 the week line jumps, because `required` steps up a
   weekday while `live` drops to 0. When this happens past Sunday
-  midnight, the closed week's `Worked` drops by those minutes. This
-  shares a root with the invisible yesterday's open session above.
-- From Friday on, `required` equals the week's full target, so the week
-  line and `est. EOD` treat the whole week as due today. With little
-  worked, `est. EOD` can land days away, e.g. `est. EOD 06:00 (Mon)`.
-- The week line changes form at Thursday-to-Friday midnight, from
-  `left to 32h 00m by end of Thursday` to `left to 40h 00m target`.
-- Monday through Thursday, the week line reads `X over 32h 00m by end of
-  Thursday` once today's slice is met, while the week's target may
-  still be far off. The `ahead of target` wording is gone for the
-  current week.
-- The current week no longer prints the whole-week remainder anywhere.
-  It is `target - fulfillment`, which the parenthetical lets a reader
-  compute. Monday through Thursday, `mlm week`'s `Target: 40h 00m` and
-  its headline's `left to 32h 00m` name different amounts.
-- `status`'s Day total and `mlm week`'s output change minute by minute
-  while a stint runs.
-- `status DATE` for an earlier date in the current week shows a week
-  line that counts today's live minutes, beside a day total for `DATE`
-  that has none. The week line describes now, not `DATE`, so the day
-  total stays fixed while the week line moves. `mlm week` moves only
-  today's row.
-- `(incl. ongoing)` on today's page means the running stint is counted.
-  `(+ ongoing)` on an earlier date's page means it is not.
-- A `start` typed for a time later than now shows `(incl. ongoing)` with
-  nothing added.
-- `est. EOD` sits on the Day total line, a line above the week line it
-  is computed from. Monday through Thursday, `target already met` refers
-  to today's slice, not the target the week line's parenthetical names.
-  At `gap == 0` the week line reads `00h 00m left to ...` while `est.
-  EOD` reads `target already met`.
-- A future week's `Carry-in` changes minute by minute while a stint runs
-  in the current week (§2.4).
-- A zero-target week reads `... left to 00h 00m by end of <weekday>` or
-  `... over 00h 00m ...`.
-- With a target override that is not a multiple of 5 minutes, Friday
-  through Sunday `required` is the exact target, so it sits up to 4
-  minutes above five times the daily target.
-- After `stop`, the Day total line shows no due-today figure, because
-  `est. EOD` shows only while a stint is open. The week line carries
-  that figure instead.
-- A storage read failure in `mlm week` shows as no data. It also hides
-  live minutes from `Worked`, `Fulfillment` and the headline.
-- `status DATE` for a future week reads `Total behind` for the whole
-  week's target, though that week has not started.
-- A week that started in debt reads more left than the target. With a
-  carry-in of `-28h 00m` and 17h 27m worked, the headline reads `50h 33m
-  left to 40h 00m target`. The left figure is `required − fulfillment`,
-  and fulfillment includes the debt. The parenthetical shows the
-  carry-in.
-- `mlm week target` prints nothing on success, so a typo such as `0h`
-  for `40h` goes unnoticed. Only the next `status` or `week` shows the
-  new target.
-- `mlm week 2026-41 target 20h` (the `WEEK_ID` before `target`) fails
-  with the usage of plain `week`, which does not show the right order,
-  `week target [WEEK_ID] DURATION`. `mlm week target --help` lists only
-  `<ARGS>...`, so the shape sits in the description text.
-- The `--help` pages define none of fulfillment, `est. EOD`, `incl.
-  ongoing` or the by-end-of-weekday rule. Only this spec and the README
-  explain them.
-- The first run against a new database logs a line to stderr, e.g.
-  `[2026-10-03T15:32:57Z INFO  rusqlite_migration] Database migrated to
-  version 1`, with a UTC timestamp. It appears once.
+  midnight, the closed week's `Worked` drops by those minutes. Today's
+  `status` prints an `[i]` hint for the open start that points to `stop`
+  (§7.1).
 
 ### 1.3 Terminology
 
@@ -304,12 +186,21 @@ the default target (40h = 2400 minutes).
   worked count the running stint, and a future week's `carry_in`
   reflects that live-inclusive fulfillment. Past weeks never contain
   live minutes, so their carry is unchanged. Nothing live-inclusive is
-  stored. `est. EOD` is computed from fulfillment without live and
+  stored. Live minutes come from now, so every figure that includes
+  them changes minute by minute while a stint runs: the day total,
+  `Worked`, `Fulfillment`, the week line, and a future week's
+  `Carry-in`. A plain `stop` at the current time does not move the week
+  line, because those minutes already counted. A backdated `stop HH:MM`
+  raises the `left to` figure by the minutes it cuts off, and a
+  backdated `start HH:MM` lowers it by the minutes it adds. A stint open
+  across midnight gets no live credit (§7.1). `est. EOD` is computed from fulfillment without live and
   stays display-only. An
   **orphaned `end`** (§4.3) contributes nothing to any total either —
   it has no paired `start` to derive a duration from, so it shows up
   only as its own flagged anomaly line, never as time in a day/week
-  sum.
+  sum. Every storage read behind this walk (the earliest data week, the
+  target overrides, the punches) is a hard error when it fails (§6.1).
+  No read falls back to a default target or to "no earlier weeks".
 - **Daily target**: `today's week target ÷ 5` (floor to the minute).
   Purely derived from the week's target — no override, no storage.
   Used only as the per-weekday increment for **required-by-day**
@@ -337,6 +228,10 @@ All commands operate on the local machine's current date/time unless
 a command explicitly takes a date/week argument. Typed times/dates are
 interpreted in local time and converted to UTC on write (§2.1); output
 converts back to local.
+
+The global `-v`/`--verbose` flag turns on debug log lines on stderr.
+Without it only warnings and errors are logged, so a run that creates
+and migrates a new database prints nothing.
 
 ### 3.1 Time input format
 
@@ -391,7 +286,10 @@ today (`-1` = yesterday, N a positive integer, `-0` rejected).
 
 ### 3.5 `mlm status [DATE]`
 
-Today's (or `DATE`'s, `YYYY-MM-DD`) view:
+Today's (or `DATE`'s, `YYYY-MM-DD`) view. `DATE` must not be after today
+(§6.1). `mlm week WEEK_ID` is the way to look at a future week (§7.2).
+The future-date error says so: `invalid DATE "2099-01-01": date is in the
+future; to view a future week, run mlm week WEEK_ID`.
 
 - that date's stints (derived), each as `start–end (duration)`, with
   an open stint shown as `start–now (duration, ongoing)`
@@ -408,7 +306,15 @@ Today's (or `DATE`'s, `YYYY-MM-DD`) view:
   — it depends on the running stint and "now," which are meaningless
   for any other date. The current week's week line prints whether or
   not `DATE` is today, and always describes now.
-- any pairing anomalies for that date (§4.3), if present
+- any pairing anomalies for that date (§4.3), if present, including
+  overlapping stints
+- for today only, lookback lines for open starts from earlier dates and
+  an `[i]` hint for a start still open from yesterday (§7.1)
+- a carry-in marker line when an earlier week has an anomaly (§7.1)
+
+`mlm status --help` and `mlm week --help` end with a short glossary of
+the terms the week line and the markers use. Short `-h` does not carry
+it, and its help line gains clap's `(see more with '--help')` suffix.
 
 ### 3.6 `mlm week [WEEK_ID]`
 
@@ -433,6 +339,31 @@ forms as §3.6) defaults to the current week when omitted. `DURATION`
 uses the human duration format (§4.2), not raw minutes — e.g. `20h`,
 `33h30m` — so setting a target has the same friction as everything
 else here: no mental-math input.
+
+On success it prints one line to stdout, with the week id it wrote to
+(the current week when omitted) and the stored target in the standard
+duration format (§4.2):
+
+```
+Week 2026-41 target: 20h 00m
+```
+
+`start`, `stop` and `note` stay silent (§7.4).
+
+`WEEK_ID` goes after `target`. `mlm week WEEK_ID target DURATION` fails
+with one line on stderr and exit `2`, the same code as parser errors:
+
+```
+error: put WEEK_ID after target: mlm week target 2026-41 20h
+```
+
+The line echoes the week id and duration as typed, always spells `mlm
+week target` even when the user typed the `w` alias, and prints no
+`Usage:` block. The success echo above uses the normalized week id, so
+`mlm week target 2026-7 33h30m` prints `Week 2026-07 target: 33h 30m`.
+`mlm week target --help` shows the usage `mlm week target [OPTIONS]
+[WEEK_ID] <DURATION>` and an Arguments section naming both arguments. No
+parser error for this subcommand mentions `<ARGS>`.
 
 ## 4. Time/duration semantics
 
@@ -511,8 +442,9 @@ Entry order never mattered, only time order.
 
 This also correctly handles legitimately nested entry (e.g. two
 `start`s before either `end`: the second `start` pairs with the
-*first* subsequent `end`, nearest first) without treating it as
-malformed.
+*first* subsequent `end`, nearest first) without treating the pairing as
+malformed. The nested stints overlap, though, and an overlap is flagged
+(below) because the overlapping minutes count twice.
 
 Edge cases, still just **detected and surfaced in that date's
 summary** (§3.5/§3.6 output), not silently fixed and not rejected at
@@ -539,6 +471,17 @@ insert time (no editing/validation — see §1.2):
   this is exactly why step 1's tie-break sorts `start` before `end`
   at a shared instant, regardless of entry order, so the pair always
   matches cleanly rather than depending on which was typed first.
+- **Overlapping stints**: two stints on one date overlap when each
+  starts before the other ends (`a.start < b.end` and `b.start <
+  a.end`) and both have nonzero length. Identical ranges and nests that
+  share one endpoint overlap. Stints that only touch at an endpoint do
+  not. The check covers the stints the date's page shows. These are
+  closed stints and, for today only, the most recent open stint taken up
+  to now. A past date's open stint counts zero minutes and is left out. A
+  spliced cross-midnight stint (§4.3.1) takes part on each date with the
+  part that falls on that date. Each overlapping pair is flagged (§7.3).
+  Pairing and totals do not change, so the overlapping minutes still
+  count twice in the day total.
 
 ### 4.3.1 Boundary splice (cross-midnight)
 
@@ -589,8 +532,7 @@ other (§7.3), so the rejection is no longer silent.
 A spliced stint is not indistinguishable from an ordinary same-date
 one: the earlier date's stint line gets a `, spans to next day` suffix
 (§7.1), and the receiving date's header gets a `(HH:MM continues
-previous day's stint)` suffix (§7.1) — added by the boundary-context-cues
-changeset, see `docs/dev/plans/reports/boundary-context-cues-*`.
+previous day's stint)` suffix (§7.1).
 
 ## 5. Week accounting — worked example
 
@@ -649,9 +591,13 @@ would leave the user with no way to fix it.
 - Malformed `DATE` (`YYYY-MM-DD`, or a `-N` shorthand where accepted):
   wrong shape, an invalid calendar date (`2026-02-30`), or a malformed
   `-N` (non-integer, `-0`).
-- `--date`/`-d` on `start`/`stop`/`note` resolving to a date later
-  than today (§3.4a) — these three never write into the future.
-  `status`'s `DATE` argument (§3.5) has no such restriction.
+- `--date`/`-d` on `start`/`stop`/`note` resolving to a date later than
+  today (§3.4a), or `status`'s `DATE` argument (§3.5) resolving to one.
+  The first three never write into the future, and `status` is no
+  preview of a future date. `status DATE` uses the same message shape and
+  exit code as the `--date` case, and adds `; to view a future week, run
+  mlm week WEEK_ID` to it. `mlm week WEEK_ID` for a future week is
+  not an error (§7.2).
 - Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
   shape, or a week number that isn't a valid ISO week for its year
   (most years have 52, some have 53 — `2027-53` is invalid if 2027
@@ -677,6 +623,14 @@ would leave the user with no way to fix it.
   expected and handled silently (`db.rs` already creates the
   directory and runs migrations from empty — see `src/db.rs` in the
   scaffold), not a failure case.
+- A storage read failure in `status` or `mlm week`, on any of the
+  reads they make (the earliest data week, the target overrides, the
+  punches behind the carry walk). The command prints `error:` and the
+  storage error text to stderr, prints nothing to stdout, and exits `1`.
+  `mlm week` never falls back to the default target or to "no earlier
+  weeks".
+- `mlm week WEEK_ID target DURATION`, the week id before `target`
+  (§3.7). It is rejected with the one-line message there and exit `2`.
 
 ### 6.2 Not errors
 
@@ -690,9 +644,11 @@ would leave the user with no way to fix it.
 
 ### 6.3 Exit codes
 
-`0` on success (including a status view that reports anomalies — the
-anomaly is data to look at, not a tool failure). Nonzero on any §6.1
-hard error.
+`0` on success (including a status view that reports anomalies, since
+the anomaly is data to look at and not a tool failure). Nonzero on any
+§6.1 hard error. A runtime error (a bad value, a storage failure) exits
+`1`. A usage error from the argument parser (an unknown flag, a missing
+argument, the `week WEEK_ID target DURATION` shape) exits `2`.
 
 ## 7. Output layout
 
@@ -788,9 +744,11 @@ carry-in is exactly zero.
   gap`, with `gap` the live-inclusive figure above. The open start is the
   most recent open start dated today. A start typed for a time later
   than now has `live` 0, so the week line equals the no-stint figure, and
-  `est. EOD` projects from that start's own time. Omitted entirely when
+  `est. EOD` projects from that start's own time. It therefore sits
+  further ahead of the clock than the week line's `left to` figure, and
+  the week line does not count down. Omitted entirely when
   there's no open stint (nothing to project from) or replaced with
-  `target already met` when the gap is already zero or negative. When
+  `done for today` when the gap is already zero or negative. When
   the projected time lands on a later calendar date than today, the line
   gains a day suffix after the clock time, so the time can't be misread
   as landing before midnight tonight. The suffix depends on how many
@@ -802,6 +760,22 @@ carry-in is exactly zero.
     (Mon)`
   - 7 or more days later: ` (<weekday abbrev> <YYYY-MM-DD>)`, e.g.
     `est. EOD 06:20 (Mon 2026-10-12)`
+
+  `est. EOD` is fixed per stint, so its day suffix shows from the first
+  `status` after the `start` and does not change while the stint runs. A
+  break (`stop`, then `start`) moves it later by the break's length. From
+  Friday on `required` is the full target, so with little worked it can
+  land days out, e.g. `est. EOD 06:00 (Mon)`. It sits on the Day total
+  line, one line above the week line it is computed from. Monday through
+  Thursday, `done for today` means today's slice is covered, not the
+  target the week line's parenthetical names. At `gap == 0` the week
+  line still reads `00h 00m left to ...` beside `done for today`, and
+  `done for today` can show next to `(incl. ongoing)` while a stint
+  runs, or with little or no time worked when carry-in already covers
+  what is due. Two `status` runs with no punch between them can print
+  different week-line figures, because live minutes grow with the clock.
+  When the running stint closes the gap, the line flips from `left to`
+  to `over` and `est. EOD` becomes `done for today`.
 - Week line reports the week containing `DATE` (§3.5), and its framing
   follows the same current-vs-not split as `mlm week` (§7.2). For the
   actual current week the format is `Week <id>:  <headline>
@@ -819,15 +793,16 @@ carry-in is exactly zero.
   equals the target (§2.4), so the line names the target alone. A
   zero-target week follows the same rule, e.g. `00h 00m left to 00h
   00m by end of Monday` with nothing worked, or `02h 00m over 00h 00m
-  by end of Monday` after two hours. A past or future week gets the
-  plain `Total behind`/`Total ahead` form when `DATE`'s week isn't the
-  current one. When the current week's `carry_in` is non-zero, the
+  by end of Monday` after two hours. A past week gets the plain `Total
+  behind`/`Total ahead` form when `DATE`'s week isn't the current one. A
+  future week is viewable only through `mlm week WEEK_ID` (§7.2),
+  because `status DATE` rejects a future date (§6.1). When the current week's `carry_in` is non-zero, the
   `(fulfillment .../target ...)` parenthetical expands to
   `(fulfillment F = worked W + carry-in C / target T)`, each figure
   signed independently per §4.2 (a carry-in deficit can drive
   `fulfillment` itself negative — that's expected, not an error) — when
   `carry_in` is zero, the shorter one-term form is used. `F` and `W` are
-  the live-inclusive figures. The past/future `Total behind`/`Total
+  the live-inclusive figures. The past-week `Total behind`/`Total
   ahead` form never gets this parenthetical, zero or non-zero carry-in
   alike. On a Friday with fulfillment 41h 10m including live, the line
   reads:
@@ -835,6 +810,24 @@ carry-in is exactly zero.
   ```
   Week 2026-40:  01h 10m over 40h 00m target (fulfillment 41h 10m = worked 34h 15m + carry-in 06h 55m / target 40h 00m)
   ```
+
+  The week line changes form at Thursday-to-Friday midnight, from `left
+  to 32h 00m by end of Thursday` to `left to 40h 00m target`. Monday
+  through Thursday, `over` means today's slice is met while the week's
+  target may still be far off. The current week prints no whole-week
+  remainder. It is `target - fulfillment`, which the parenthetical lets
+  a reader compute, so Monday through Thursday `mlm week`'s `Target:`
+  and the headline's `left to` figure name different amounts. A week
+  that starts in debt can read more left than the target. With a
+  carry-in of `-28h 00m` and 17h 27m worked on a Friday, the headline
+  reads `50h 33m left to 40h 00m target`, because `gap` is `required -
+  fulfillment` and fulfillment includes the debt. The same zero reads
+  differently by framing. A current week at `gap == 0` reads `00h 00m
+  left to ...`, and the same week once closed reads `Total ahead: 00h
+  00m` (§7.2). For an earlier date in the current week, the week line
+  counts today's live minutes beside a day total for `DATE` that has
+  none, so the day total stays fixed while the week line moves. `mlm
+  week` moves only today's row.
 - Stint lines: `HH:MM-HH:MM  (duration)`, ongoing stint's end is the
   literal word `now`. Tabular duration format (§4.2). Section omitted
   entirely when the date has zero stints (a note-only day, or a fully
@@ -851,22 +844,52 @@ carry-in is exactly zero.
     (`23:10-now  (10h 35m, ongoing - duration as of right now, not a
     running total)`); one dated two or more days back drops the
     duration figure entirely — at that age the number is noise, not
-    information — and renders as `09:00-now  (unclosed)` instead. That
+    information — and renders as `09:00-?  (unclosed)` instead, with `?`
+    in place of `now` so an old start does not read as running. That
     same date now also carries a `[!]` stale-open-start anomaly
-    (§7.3), and, while it's within the 2-to-14-day lookback window,
+    (§7.3), and, while it's within the 14-day lookback window,
     today's own `status` surfaces it too (the lookback bullet below).
-    See §1.2a for what's still not covered once a date passes the
-    14-day window.
 - Notes render only if any exist for the date (section omitted
   otherwise, not shown empty).
 - Anomalies (§4.3), if any, print between the two lead lines and the
   stint list — see §7.3 for the line shapes, including the
   stale-open-start and refused-join kinds.
 - For today only (`DATE` omitted, or today's own date given
-  explicitly), the anomaly block also lists every date 2 to 14 days
-  old that still has an open start, oldest first, each as its own
-  `[!]` line with `fix:`/`or:` hints (§7.3). `status DATE` for any
-  other date runs no lookback.
+  explicitly), the anomaly block also lists dates that still have open
+  starts, oldest first, each as its own `[!]` line with `fix:`/`or:`
+  hints (§7.3). A date 2 to 14 days old with one open start gives the
+  unclosed-start line. Yesterday with two or more open starts gives the
+  open-stints line with `(yesterday)`. A start open for more than 14
+  days drops out of today's `status` and out of `mlm start`'s warnings.
+  It stays on its own date's `status` and its own `week` row, and the
+  carry-in marker below flags its week. `status DATE` for any other date
+  runs no lookback and no hint.
+- Yesterday hint, today's page only. When yesterday has exactly one
+  open start and it stays unjoined once today's punches are taken into
+  account (§4.3.1), `status` prints an `[i]` hint after the anomaly
+  block and the lookback lines (line shape in §7.3). A `stop` typed today
+  as today's first punch joins the start and clears the hint. There is no
+  hint when today's page already shows a refused-join line naming
+  yesterday. The `or:` line prints only when no punch follows the open
+  start on yesterday's date and today has no punches yet.
+  The hint is not an anomaly. It does not mark a `mlm week` row, does not
+  count toward the footer, and never shows on `status DATE` for another
+  date. `status -1` shows yesterday's open start as a stint line only.
+- Carry-in marker, any `DATE`. The shown week's carry-in comes from
+  every earlier week, from the earliest week with any punch up to the
+  week before the shown one. When at least one date in those weeks would
+  carry `[!]` on a `mlm week` row (E7, stale start, E8, overlap, refused
+  join), `status` prints one marker line after the anomaly block, the
+  lookback lines and the hint (§7.3). The 14-day lookback window does not
+  limit it. It uses the same per-date check as the row marker, so the two
+  never disagree. It looks only at weeks before the shown week, so the
+  anomalous week's own page shows `[!]` rows and no marker, and a week
+  with no earlier data or no earlier anomaly prints nothing. It counts
+  every anomaly kind, including an orphaned end that adds no minutes, so
+  it can name a week whose figures are right. It stays on every later
+  week until the old anomaly is fixed, and it applies to stored history,
+  so an old anomaly shows it on the first run with no new punch.
+- `status DATE` with `DATE` after today is a hard error (§6.1).
 
 `mlm status 2026-01-05` (a past date, different week, "today" is
 still `2026-10-01`) — no est.-EOD figure, and the week
@@ -934,6 +957,10 @@ Target:        40h 00m
 — same signed summary formatting, §4.2, just without a weekday tied
 to it.)
 
+A future week has not started, so with no carry-in its headline reads
+`Total behind` for the whole target. `mlm week WEEK_ID` is the way to
+view a future week, because `status DATE` rejects a future date (§6.1).
+
 - Header names the week id and its Mon-Sun date span.
 - Headline for the current week is the same text `status`'s week line
   shows (§7.1), just leading its own output here instead of being
@@ -974,7 +1001,7 @@ to it.)
   fulfillment, target — the headline figure isn't repeated down here
   since the headline already states it plainly.
 - Any date in the row list with an anomaly (§4.3, plus the
-  stale-open-start and refused-join anomalies) gets a marker (§7.3)
+  stale-open-start, overlap and refused-join anomalies) gets a marker (§7.3)
   appended to its row rather than a separate block, since the week
   view is already one-line-per-date.
 - When at least one row carries `[!]`, one footer line follows the
@@ -984,13 +1011,39 @@ to it.)
 [!] needs a look: run mlm status DATE for details and fixes
 ```
 
-  No footer when no row is marked. `week` runs no lookback of any
-  kind — the row marker and this one footer line are the only new
-  things here.
+  No footer when no row is marked. `week` runs no lookback and no
+  yesterday hint. The row marker, the footer and the carry-in marker
+  below are its only anomaly output.
+- Carry-in marker. When an earlier week has an anomaly (the same
+  condition as in §7.1), the Carry-in figure gets a trailing marker and
+  the line `status` prints for the same week sits above the Carry-in
+  block. The layout is the day rows, a blank line, the anomaly footer if
+  any row is marked, the marker line directly under it (no blank line
+  between), one blank line, then the Carry-in block. With no marked row
+  the marker line takes the footer's place:
+
+```
+  Sun 2026-10-11   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
+
+Carry-in:      -80h 00m  [!]
+```
+
+  With one week the line reads `from 1 earlier week, 2026-38 (see mlm
+  week 2026-38)`. Nothing prints for a week with no earlier data or no
+  earlier anomaly. It prints for any shown week, future and current
+  included, and never counts the shown week's own anomalies.
+- Every storage read `mlm week` makes is a hard error, as in `status`
+  (§6.1). The storage error goes to stderr as `error: ...`, stdout stays
+  empty, and the exit code is `1`. `mlm week` never falls back to the
+  default 40h target or to "no earlier weeks".
 
 ### 7.3 Anomaly rendering
 
-Plain-ASCII marker, no color/unicode dependency: prefix `[!] `. Most
+Plain-ASCII marker, no color/unicode dependency: prefix `[!] `. `[i] `
+marks a hint that is not an anomaly. Most
 `status` anomaly lines also carry one or two indented `fix:`/`or:`
 lines naming a command to run — there's no automatic repair, the user
 runs the named command themselves. The refused-join line is the one
@@ -1000,10 +1053,11 @@ anomaly's own date (`YYYY-MM-DD`), and `HH:MM` inside a `fix:`/`or:`
 line is a literal placeholder the user replaces with a real time.
 
 Lines for one date print in this fixed order: multiple open stints
-(E7), stale open start, orphaned ends (E8, ascending by instant), a
-refused join with the previous date then the next date, and, for
-today only, one lookback line per date 2 to 14 days old that still
-has an open start (oldest first, §7.1).
+(E7), stale open start, orphaned ends (E8, ascending by instant),
+overlapping stints (one per pair), a refused join with the previous date
+then the next date, and, for today only, one lookback line per earlier
+date with open starts (oldest first, §7.1), then the yesterday hint. The
+carry-in marker line comes last (§7.1).
 
 Two fix-command details shape the wording throughout: `mlm delete
 punch --date D` only lists and numbers that date's punches (§7.4) —
@@ -1012,6 +1066,19 @@ deleting takes a second run naming the number, so the hint says so.
 start becomes a new orphaned end, and with several open starts it
 closes the latest one before it, so the stop hint names the start
 time the new end must follow.
+
+A stop hint targets one open start `S`. Let `N` be the first punch on
+that date after `S`. A stop between `S` and `N` pairs with `S` and
+nothing else, and a stop after `N` pairs with a later start or nests `S`
+around later stints. With no punch after `S` the hint reads `(a time
+after S)`. With one it reads `(a time between S and N)`. The window
+includes `N`'s minute, because a stop at the same instant as a start
+pairs with `S` (§4.3, step 2). Punches at the same minute as `S` do not
+count as after `S`. An open start at `23:59` with nothing after it keeps
+`(a time after 23:59)`, which no `HH:MM` satisfies (a same-instant stop
+pairs zero-length, E14). The rule applies to the stale-start line, the
+E7 line, the lookback lines, the yesterday hint and `mlm start`'s
+warnings.
 
 E7, multiple open stints (`14:00` below is the latest open start on
 the date):
@@ -1022,6 +1089,18 @@ the date):
      or: mlm stop HH:MM --date D  (a time after 14:00 closes the 14:00 start)
 ```
 
+With a later punch after the 14:00 start, the stop hint names a window:
+
+```
+     or: mlm stop HH:MM --date D  (a time between 14:00 and 15:00 closes the 14:00 start)
+```
+
+The hint names only the latest open start, but a `stop` between two open
+starts also works. It pairs with the earlier start and leaves the later
+one open. The stint list shows every open stint with its own duration,
+while the week line and `est. EOD` credit only the most recent start
+(§7.1), so fixing the anomaly makes both jump.
+
 Stale open start (§4.3) — a lone open start on a date 2 or more
 calendar days old:
 
@@ -1031,6 +1110,12 @@ calendar days old:
      or: mlm delete punch --date D  (lists punches; rerun with the start's number)
 ```
 
+With a later punch the hint names a window:
+
+```
+    fix: mlm stop HH:MM --date D  (a time between 09:00 and 10:30)
+```
+
 E8, orphaned end (line text unchanged, fix lines new):
 
 ```
@@ -1038,6 +1123,21 @@ E8, orphaned end (line text unchanged, fix lines new):
     fix: mlm start HH:MM --date D  (a time before 18:00)
      or: mlm delete punch --date D  (lists punches; rerun with the end's number)
 ```
+
+Overlapping stints (§4.3), one line per overlapping pair:
+
+```
+[!] overlapping stints 09:00-12:00 and 10:00-11:00 (the overlap counts twice)
+    fix: mlm delete punch --date D  (lists punches; rerun with the number of the punch to remove)
+```
+
+An open stint prints as `09:00-now`. A spliced cross-midnight stint
+(§4.3.1) is labelled with its real start and end times, as in the stint
+list (e.g. `23:30-00:45`), on both dates. Pairs sort by the first
+stint's start, then the second's. The date's `week` row gets `[!]` and
+the date counts toward the footer. The overlap still counts twice in the
+day and week totals. The line flags the double count and does not fix
+it.
 
 Refused join (§4.3.1) — no `fix:` lines of its own, since the
 E7/E8/stale lines on the two dates already carry them; the reason
@@ -1059,11 +1159,48 @@ window date:
      or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the start's number)
 ```
 
+With a later punch on that date, the hint names a window (see the
+stop-hint rule above):
+
+```
+    fix: mlm stop HH:MM --date 2026-09-21  (a time between 09:00 and 10:30)
+```
+
 Two or more open starts on the window date:
 
 ```
 [!] 2 open stints on Mon 2026-09-21 (5 days ago)
     fix: see mlm status 2026-09-21
+```
+
+Yesterday with two or more open starts uses `(yesterday)` in place of
+`(N days ago)`:
+
+```
+[!] 2 open stints on Fri 2026-10-02 (yesterday)
+    fix: see mlm status 2026-10-02
+```
+
+Yesterday with exactly one unjoined open start gets an `[i]` hint
+instead of an anomaly line (§7.1). `[i]` is the quiet marker. It never
+marks a `week` row and never counts toward the footer:
+
+```
+[i] start on Fri 2026-10-02 at 18:02 still open (yesterday; not counted until stopped)
+    fix: mlm stop HH:MM --date 2026-10-02  (a time after 18:02)
+     or: mlm stop  (still working: ends it now, across midnight)
+```
+
+The `or:` line prints only when no punch follows the open start on
+yesterday's date and today has no punches yet. A `stop` now joins the
+start only when it becomes today's first punch. A later punch yesterday
+means the start is probably a forgotten stop, and joining it would
+nest it over that later stint.
+
+The carry-in marker (§7.1, §7.2) is one `[!]` line, last on the page:
+
+```
+[!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
 ```
 
 In `week`, appended inline to the affected date's row:
@@ -1078,14 +1215,15 @@ footer line follows the table (§7.2).
 
 ### 7.4 Write-command output
 
-`start`, `stop`, `note`, and `week target` print nothing on success —
-silent, Unix-conventional, exit `0` (§6.3) is the only signal. A hard
-error (§6.1) still prints its message to stderr as usual. `status` and
-`week` produce stdout output (§7.1, §7.2); `delete note`/`delete
-punch` are a narrow, deliberate exception to the write-command-silence
-rule above rather than a repeal of it — list mode prints that date's
-numbered entries (or `nothing to delete for <date>.` when there are
-none), and a successful delete prints a ready-to-run recreate command.
+`start`, `stop` and `note` print nothing on success. They are silent,
+Unix-conventional, and exit `0` (§6.3) is the only signal. A hard error
+(§6.1) still prints its message to stderr as usual. `status` and `week`
+produce stdout output (§7.1, §7.2). `week target` prints one line
+(§3.7). `delete note`/`delete punch` are a narrow, deliberate exception
+to the write-command-silence rule above rather than a repeal of it. List
+mode prints that date's numbered entries (or `nothing to delete for
+<date>.` when there are none), and a successful delete prints a
+ready-to-run recreate command.
 
 `start` gains one more narrow exception, on stderr only. After a
 successful write, it runs the same 14-day lookback `status` uses for
@@ -1111,6 +1249,26 @@ Two or more open starts on the date still warn in one line:
 ```
 warning: 2 open stints on Mon 2026-09-21 (5 days ago); see mlm status 2026-09-21
 ```
+
+A single unjoined open start dated yesterday warns too, with no `or:`
+line because today now has a punch (§7.1):
+
+```
+warning: start on Fri 2026-10-02 at 18:02 still open (yesterday)
+    fix: mlm stop HH:MM --date 2026-10-02  (a time after 18:02)
+```
+
+Yesterday with two or more open starts warns in the one-line form with
+`(yesterday)`:
+
+```
+warning: 2 open stints on Fri 2026-10-02 (yesterday); see mlm status 2026-10-02
+```
+
+`start` repeats the yesterday warning on every call while that start
+stays open. With a later punch on a warned date, the `fix:` time is a
+window, `(a time between S and N)` (§7.3). `start` prints no carry-in
+marker.
 
 The check is best-effort: if the lookback read fails after the write
 already committed, `start` still prints nothing extra and still exits
@@ -1140,7 +1298,8 @@ or less directly.
 - **F6** — Week view, no override: `week` shows target `40h 00m`
   from an absent `week_targets` row.
 - **F7** — Target override then read-back: `week target 2026-07
-  33h30m`, then `status`/`week` during that week reflect the new
+  33h30m` prints `Week 2026-07 target: 33h 30m`, then `status`/`week`
+  during that week reflect the new
   target in the fulfillment, `required` and closed-week `owed` math.
 - **F7b** — Target override of `0`: legal, that week's target is
   `00h 00m` and the week ends however far ahead its full worked total
@@ -1154,7 +1313,7 @@ or less directly.
   a skip straight from N to N+2.
 - **F9** — Estimated EOD, all three states: open stint with quota
   remaining (shows a clock time), open stint with quota already met
-  (shows `target already met`), no open stint (line omitted). Stability:
+  (shows `done for today`), no open stint (line omitted). Stability:
   with the same punches, two `status` runs at different `now`s (e.g. 30
   minutes apart) print the same `est. EOD` while the week line's figure
   drops by the minutes elapsed.
@@ -1162,12 +1321,12 @@ or less directly.
   carry-in big enough that `required − fulfillment` is already
   negative on day 1 despite day total being small/zero; confirm the
   week line (and est. EOD, if an open stint) reads off *fulfillment*
-  and switches to the "X over `<required>`" wording (or `target
-  already met` for est. EOD) independently of day total, while the
+  and switches to the "X over `<required>`" wording (or `done
+  for today` for est. EOD) independently of day total, while the
   plain "Day total" figure right next to it is unaffected. Also cover
   the over-by-live case: an open stint whose live minutes exceed
   `required − fulfillment` flips the week line to the "X over" wording
-  and est. EOD to `target already met` with no punch change.
+  and est. EOD to `done for today` with no punch change.
   Also cover a Friday-through-Sunday `status`: `required` is the full
   target and the week line reads `X left to <target> target` or `X
   over <target> target`. Include a target override that isn't a
@@ -1186,6 +1345,8 @@ or less directly.
   dates: each displays in the local offset that applied on its own
   date (§2.1) — a naive "single current offset" implementation should
   fail this.
+- **F13** - First run on a fresh database prints nothing on stderr. With
+  `--verbose` the migration line and debug lines appear (§3).
 
 ### 8.2 Error / edge paths (§6 direct mapping)
 
@@ -1209,7 +1370,9 @@ or less directly.
   §4.3): punches all still stored; `status` lists each as its own
   open/ongoing stint and flags the multi-open anomaly, now with
   `fix:`/`or:` lines naming the delete/stop commands to resolve it
-  (§7.3).
+  (§7.3). The `or:` hint names a window when a punch follows the latest
+  open start (§7.3), and the anomaly block and `status` list
+  overlapping nested stints as their own anomaly (E21).
 - **E8** — Orphaned `end` (empty-stack case, §4.3): the punch is
   stored but produces no stint-list line of its own — it only
   surfaces as an anomaly line naming its timestamp, now with `fix:`/
@@ -1218,7 +1381,8 @@ or less directly.
 - **E9** — `week target` with a negative `DURATION` → hard error;
   zero is not an error (F7b).
 - **E10** — `week target` missing the `DURATION` argument entirely →
-  clap-level missing-argument error.
+  parser missing-argument error whose usage names `[WEEK_ID]
+  <DURATION>` and never `<ARGS>`, exit `2`.
 - **E11** — `status` for a date with zero punches *and* zero notes:
   both the stint-list and Notes sections omitted (F4's rule applied
   to both blocks at once).
@@ -1235,7 +1399,7 @@ or less directly.
   date (§4.3.1) when the shape is unambiguous (one open `start` that
   date, one orphaned `end` — the next date's first punch — on the
   next). The later date shows nothing for it: no stint, no anomaly, no
-  footnote (§1.2a notes this as a known rough edge, not a bug). Outside
+  footnote (§4.3.1). Outside
   that exact shape — e.g. two dangling starts on the earlier date —
   the join is refused: both dates flag a `[!]` line naming each other
   (§7.3/E17), at any age, alongside whatever E7/E8 anomaly the shape
@@ -1245,7 +1409,9 @@ or less directly.
   flagged as a stale-open-start anomaly, distinct from the ordinary
   open-stint case at age 0-1, with `fix:`/`or:` lines pointing at
   `stop`/`delete punch` (§7.3). A date with two or more open starts
-  still gets only the E7 line, never an extra stale line.
+  still gets only the E7 line, never an extra stale line. With a later
+  punch after the start, the `fix:` time is a window, `(a time between
+  09:00 and 10:30)` (§7.3).
 - **E17** — A refused join (§4.3.1): adjacent dates where the earlier
   has an open start and the later an orphaned end, but not in the
   exact 1:1, first-punch splice shape. Both dates flag a `[!]` line
@@ -1253,11 +1419,13 @@ or less directly.
   since the E7/E8/stale lines on those dates already carry them. A
   clean splice (E15) produces no refused join.
 - **E18** — Today's lookback (§7.1): a plain `status` for today
-  (`DATE` omitted, or given explicitly) additionally lists every date
-  2 to 14 days old that still has an open start, oldest first, each
-  as its own `[!]` line with `fix:` lines. `status DATE` for any other
-  date runs no lookback; a date whose open start is 15 or more days
-  old falls outside the window and isn't listed (§1.2a).
+  (`DATE` omitted, or given explicitly) additionally lists dates 2 to
+  14 days old that still have an open start, and yesterday when it has
+  two or more open starts, oldest first, each as its own `[!]` line
+  with `fix:` lines. `status DATE` for any other date runs no lookback.
+  A date whose open start is 15 or more days old falls outside the
+  window and isn't listed (§7.1), though the carry-in marker still
+  flags its week (E23).
 - **E19** — `mlm start`'s stale-start warning (§7.4): a successful
   `start`, today or backdated, prints one warning per stale date found
   by the same 14-day lookback to stderr, oldest first; stdout stays
@@ -1265,5 +1433,35 @@ or less directly.
   only when its single open start is the exact punch just inserted —
   two or more open starts there, or a single older open start left
   behind by the new punch pairing off an existing orphaned end, still
-  warn.
+  warn. A single unjoined open start dated yesterday warns too, with no
+  `or:` line (§7.4). `start` prints no carry-in marker.
+- **E20** - `mlm week` read failure (§6.1, §7.2): an unreadable
+  `week_targets` table, `notes` table, or punch range makes `mlm week`
+  and `mlm week WEEK_ID` print `error: ...` to stderr, nothing to
+  stdout, and exit `1`. `status` does the same. Successful output is
+  unchanged.
+- **E21** - Overlapping stints (§4.3, §7.3): `start 09:00`, `start
+  10:00`, `stop 11:00`, `stop 12:00` pairs into 09:00-12:00 and
+  10:00-11:00. The date's `status` shows the overlap line, its `week`
+  row gets `[!]` and the footer prints once. The day and week totals
+  still count the overlap twice. Stints that only touch at an endpoint
+  and zero-length stints are not flagged.
+- **E22** - Start still open from yesterday (§7.1, §7.4): today's
+  `status` prints the `[i]` hint, with the `or:` line only when no punch
+  follows the start on yesterday's date and today has no punches. A
+  `stop` as today's first punch joins the start and the hint is gone. A
+  refused-join line naming yesterday suppresses the hint.
+  The hint never marks a `week` row and never shows on `status -1`.
+- **E23** - Carry-in marker (§7.1, §7.2): an anomaly in a week older
+  than 14 days puts the marker line on `status` and on `mlm week`, with
+  `[!]` on the Carry-in figure. Several anomalous weeks give the plural
+  form naming the oldest. The marker never counts the shown week's own
+  anomalies and prints nothing when no earlier week has one.
+- **E24** - Argument order (§3.7, §6.1): `mlm week 2026-41 target 20h`
+  prints `error: put WEEK_ID after target: mlm week target 2026-41 20h`,
+  no `Usage:` block, exit `2`. `mlm week 7 foo` keeps the parser's own
+  error.
+- **E25** - Future `status DATE` (§6.1): `status` with a date after
+  today exits `1` with the future-date message. `mlm week` for a
+  future week still prints.
 

@@ -120,8 +120,8 @@ pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError> {
 /// Core `DATE` resolver (backdated-punches spec §2, §4): accepts the
 /// existing absolute `YYYY-MM-DD` grammar, or a relative `-N` shorthand
 /// (`-` + one or more ASCII digits, N >= 1, leading zeros tolerated)
-/// meaning N days before `today`. No future-date opinion — `status`
-/// calls this directly; `start`/`stop`/`note` go through
+/// meaning N days before `today`. No future-date opinion — every command
+/// that takes a `DATE` (`status`, `start`, `stop`, `note`) goes through
 /// `resolve_future_checked_date` instead, which adds that check.
 pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
     let err = |cause| DateWeekError::new(ArgKind::Date, s, cause);
@@ -156,8 +156,8 @@ pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekErro
 }
 
 /// Thin wrapper around [`resolve_date`] adding the future-date rejection
-/// `start`/`stop`/`note` need (backdated-punches spec §3). `status` uses
-/// `resolve_date` directly and keeps accepting future dates.
+/// every date-taking command needs: `start`, `stop`, `note` (backdated-punches
+/// spec §3) and `status`, which rejects a future date the same way.
 pub fn resolve_future_checked_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
     let date = resolve_date(s, today)?;
     if date > today {

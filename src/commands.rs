@@ -12,8 +12,7 @@ use rusqlite::Connection;
 
 use crate::cli::{DeleteEntryArgs, NoteArgs, PunchArgs};
 use crate::date::{format_date, resolve_future_checked_date};
-use crate::render;
-use crate::status;
+use crate::lookback::{self, LookbackEntry, LookbackKind};
 use crate::storage::{self, Note, Punch, PunchKind};
 use crate::time::{TimeParseError, parse_time};
 
@@ -43,9 +42,10 @@ pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> an
 }
 
 /// §7.4: after a successful `start` write, warn on stderr about every
-/// stale open start the shared lookback (`status::lookback`) can see.
-/// Best-effort — a read failure here is swallowed, never surfaced as
-/// an error and never turns a successful write into a failed command.
+/// open start the shared lookback (`lookback::lookback`) can see,
+/// yesterday included. Best-effort — a read failure here is swallowed,
+/// never surfaced as an error and never turns a successful write into a
+/// failed command.
 fn warn_stale_starts<W: std::io::Write>(
     conn: &Connection,
     today: chrono::NaiveDate,
@@ -53,15 +53,15 @@ fn warn_stale_starts<W: std::io::Write>(
     written_punch_id: i64,
     out: &mut W,
 ) {
-    let Ok(findings) = status::lookback(conn, today, now_utc) else {
+    let Ok(entries) = lookback::lookback(conn, today, now_utc) else {
         return;
     };
-    emit_warnings(findings, written_punch_id, out);
+    emit_warnings(entries, written_punch_id, out);
 }
 
 /// Pure line-emitting half of `warn_stale_starts`, split out so tests
-/// can feed a findings list directly instead of seeding a live DB.
-/// A finding is suppressed only when it's a `SingleOpenStart` whose
+/// can feed an entries list directly instead of seeding a live DB.
+/// An entry is suppressed only when it's a `SingleOpenStart` whose
 /// punch id equals the one this command just inserted -- that's the
 /// only case where the lookback is seeing the write we just made
 /// rather than a pre-existing problem. A `MultipleOpenStints` finding
@@ -70,17 +70,17 @@ fn warn_stale_starts<W: std::io::Write>(
 /// older (the new start paired off with an existing orphaned end,
 /// leaving that older start open).
 fn emit_warnings<W: std::io::Write>(
-    findings: Vec<render::LookbackFinding>,
+    entries: Vec<LookbackEntry>,
     written_punch_id: i64,
     out: &mut W,
 ) {
-    for finding in findings {
-        if let render::LookbackKind::SingleOpenStart { punch_id, .. } = finding.kind
+    for entry in entries {
+        if let LookbackKind::SingleOpenStart { punch_id, .. } = entry.finding.kind
             && punch_id == written_punch_id
         {
             continue;
         }
-        let _ = writeln!(out, "{}", finding.stderr_line());
+        let _ = writeln!(out, "{}", entry.stderr_line());
     }
 }
 
@@ -359,6 +359,7 @@ mod tests {
     use super::*;
     use crate::cli::Cli;
     use crate::db;
+    use crate::lookback::{LineFacts, LookbackEntry, LookbackFinding};
     use crate::storage::{Note, Punch, StorageError, notes_for_date, punches_for_date};
     use chrono::{Local, NaiveDate, NaiveTime, TimeZone};
     use clap::Parser;
@@ -1751,16 +1752,128 @@ mod tests {
 
     // --- §7.4 start stale-start warning --------------------------------
 
-    fn finding(
-        date: NaiveDate,
-        age_days: i64,
-        kind: crate::render::LookbackKind,
-    ) -> crate::render::LookbackFinding {
-        crate::render::LookbackFinding {
-            date,
-            age_days,
-            kind,
+    fn finding(date: NaiveDate, age_days: i64, kind: LookbackKind) -> LookbackEntry {
+        LookbackEntry {
+            finding: LookbackFinding {
+                date,
+                age_days,
+                kind,
+            },
+            facts: LineFacts::default(),
         }
+    }
+
+    // Yesterday relative to `today()`/`fixed_now()` (Thu 2026-02-12).
+    const YESTERDAY: &str = "2026-02-11";
+
+    fn warnings_after(conn: &Connection, written_id: i64) -> String {
+        let mut out = Vec::new();
+        warn_stale_starts(
+            conn,
+            today(),
+            fixed_now().with_timezone(&Utc),
+            written_id,
+            &mut out,
+        );
+        String::from_utf8(out).expect("utf8")
+    }
+
+    #[test]
+    fn start_warns_about_yesterdays_open_start_without_an_or_line() {
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["18:02", "--date", YESTERDAY]),
+        )
+        .expect("yesterday start");
+        let (_, written_id) =
+            punch(&mut conn, fixed_now(), PunchKind::Start, &punch_args(&[])).expect("punch");
+
+        assert_eq!(
+            warnings_after(&conn, written_id),
+            "warning: start on Wed 2026-02-11 at 18:02 still open (yesterday)\n    fix: mlm stop HH:MM --date 2026-02-11  (a time after 18:02)\n"
+        );
+    }
+
+    #[test]
+    fn start_warns_about_two_open_starts_yesterday_in_one_line() {
+        let mut conn = test_db();
+        for time in ["09:00", "10:00"] {
+            punch(
+                &mut conn,
+                fixed_now(),
+                PunchKind::Start,
+                &punch_args(&[time, "--date", YESTERDAY]),
+            )
+            .expect("yesterday start");
+        }
+        let (_, written_id) =
+            punch(&mut conn, fixed_now(), PunchKind::Start, &punch_args(&[])).expect("punch");
+
+        assert_eq!(
+            warnings_after(&conn, written_id),
+            "warning: 2 open stints on Wed 2026-02-11 (yesterday); see mlm status 2026-02-11\n"
+        );
+    }
+
+    #[test]
+    fn backdated_start_into_empty_yesterday_is_exempt_until_a_second_one() {
+        let mut conn = test_db();
+        let (_, first) = punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["09:00", "--date", "-1"]),
+        )
+        .expect("first");
+        assert_eq!(warnings_after(&conn, first), "");
+
+        let (_, second) = punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["10:00", "--date", "-1"]),
+        )
+        .expect("second");
+        assert_eq!(
+            warnings_after(&conn, second),
+            "warning: 2 open stints on Wed 2026-02-11 (yesterday); see mlm status 2026-02-11\n"
+        );
+    }
+
+    #[test]
+    fn older_open_start_on_yesterday_still_warns_when_written_id_differs() {
+        let f = finding(
+            d(2026, 2, 11),
+            1,
+            LookbackKind::SingleOpenStart {
+                time: t(18, 0),
+                punch_id: 7,
+            },
+        );
+        let mut out = Vec::new();
+        emit_warnings(vec![f], 42, &mut out);
+        assert_eq!(
+            String::from_utf8(out).expect("utf8").trim_end(),
+            f.stderr_line()
+        );
+    }
+
+    #[test]
+    fn age_one_single_open_start_matching_written_id_prints_nothing() {
+        let f = finding(
+            d(2026, 2, 11),
+            1,
+            LookbackKind::SingleOpenStart {
+                time: t(9, 0),
+                punch_id: 42,
+            },
+        );
+        let mut out = Vec::new();
+        emit_warnings(vec![f], 42, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]
@@ -1768,7 +1881,7 @@ mod tests {
         let f_young = finding(
             d(2026, 2, 7),
             5,
-            crate::render::LookbackKind::SingleOpenStart {
+            LookbackKind::SingleOpenStart {
                 time: t(9, 0),
                 punch_id: 101,
             },
@@ -1776,7 +1889,7 @@ mod tests {
         let f_old = finding(
             d(2026, 2, 2),
             10,
-            crate::render::LookbackKind::SingleOpenStart {
+            LookbackKind::SingleOpenStart {
                 time: t(8, 30),
                 punch_id: 102,
             },
@@ -1805,7 +1918,7 @@ mod tests {
         let f = finding(
             written_date,
             5,
-            crate::render::LookbackKind::SingleOpenStart {
+            LookbackKind::SingleOpenStart {
                 time: t(9, 0),
                 punch_id: 42,
             },
@@ -1824,7 +1937,7 @@ mod tests {
         let f = finding(
             written_date,
             5,
-            crate::render::LookbackKind::SingleOpenStart {
+            LookbackKind::SingleOpenStart {
                 time: t(18, 0),
                 punch_id: 7, // an older punch, not the one just written
             },
@@ -1841,7 +1954,7 @@ mod tests {
         let f = finding(
             written_date,
             5,
-            crate::render::LookbackKind::MultipleOpenStints { count: 2 },
+            LookbackKind::MultipleOpenStints { count: 2 },
         );
         let mut out = Vec::new();
         emit_warnings(vec![f], 42, &mut out);

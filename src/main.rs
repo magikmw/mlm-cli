@@ -1,6 +1,7 @@
+use std::ffi::OsString;
+
 use chrono::{DateTime, Local, Timelike};
-use clap::Parser;
-use mlm::cli::{Cli, Command, DeleteTarget, WeekAction};
+use mlm::cli::{self, Cli, Command, DeleteTarget, WeekAction};
 use mlm::{commands, db, status, week_target, week_view};
 
 fn main() {
@@ -11,15 +12,21 @@ fn main() {
 /// returns `()`: a `Result`-returning `main` would print errors via
 /// `Debug` rather than `Display`, so the error path is explicit here.
 fn run() -> i32 {
-    // clap handles --help/--version/missing-arg itself and exits(2) on error.
-    let cli = Cli::parse();
+    // Help, version and usage errors go through `ParseFailure::report`
+    // (exit 0 for help/version, 2 for usage errors).
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let cli = match cli::parse(&args) {
+        Ok(cli) => cli,
+        Err(failure) => return failure.report(),
+    };
 
-    // PLAN.md contract 12: --verbose raises the log level; env_logger is
-    // initialized here, once, before anything else runs.
+    // --verbose raises the log level to Debug; the default is Warn
+    // (SPEC §4.1). env_logger is initialized here, once, before anything
+    // else runs.
     let level = if cli.verbose {
         log::LevelFilter::Debug
     } else {
-        log::LevelFilter::Info
+        log::LevelFilter::Warn
     };
     env_logger::Builder::new().filter_level(level).init();
 

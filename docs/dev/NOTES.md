@@ -9,12 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 96
+- **Next entry**: 103
 - **Last release**: `v0.3.6`
 - **`main`**: `5556284` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod` and
   `point-in-time-week`)
-- **Active changeset**: none (`point-in-time-week` merged to `main`,
-  entry 95; release not prepared)
+- **Active changeset**: none (`possible-issues-triage` merged to `main`,
+  entry 102; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1269,6 +1269,171 @@ SPEC.md and PLAN.md:
     Stale-doc grep of README, SPEC, AGENTS.md and `src/` (including
     `--help` text in `src/cli.rs`) found no leftover old-rule claim.
     Release not prepared; awaiting the user's call.
+
+96. **`possible-issues-triage` changeset started.** User asked for a
+    PO-style triage of SPEC §1.2a (32 items) by impact and agreed with
+    the result. Tier 1 (fix; wrong data or silent failure): (a) a
+    session left open from yesterday gives no signal on today's
+    `status`/`mlm start` and drops out at midnight (two items, one
+    root), fixed by a hint line rather than an anomaly so the 2-day
+    stale rule stays; (b) nested entry double-counts overlap with no
+    `[!]`, fixed by an overlap anomaly with LIFO pairing unchanged;
+    (c) `mlm week` shows a storage read failure as no data
+    (`unwrap_or_default` in `src/week_view.rs`), fixed by propagating
+    the error; (d) `mlm week target` prints nothing on success, fixed
+    by echoing the stored target. Tier 2 (cheap polish): default log
+    level `Warn` so the migration line needs `--verbose`; a short term
+    glossary in `status --help`; a targeted error for `week WEEK_ID
+    target DURATION`; reword `target already met` on the Day total
+    line; reject a future `status DATE` like `start`/`stop`, which also
+    retires the future-date weekday and future-week `Total behind`
+    items. Tier 3 (accept): the live-model items (minute-by-minute
+    figures, backdate jumps, `est. EOD` semantics, framing wording,
+    `incl./+ ongoing`, debt-week left, two-open-starts credit, 14-day
+    window, earlier-date week line) move out of §1.2a into the
+    relevant spec sections as plain behavior statements. Deferred, kept
+    in §1.2a: a past week's anomaly skewing later carry-in with no
+    pointer. README's list trims to the items still open. User asked
+    that every item be re-validated against current code first, since
+    many were filed in recent changesets and never revisited. Phase 0
+    profile reused from entry 65. Baseline `main` at `be85617`; branch
+    `possible-issues-triage`.
+
+97. **`possible-issues-triage` spec reviewed and locked**
+    (`docs/dev/specs/2026-10-03-possible-issues-triage.md`). Validation
+    (`plans/reports/possible-issues-triage-validation-review.md`) found
+    34 items, not 32; 31 valid, I4/I5/I28 partly valid. Changes to
+    entry 96: I1 and I4 are fixed together by a carry-in `[!]` line
+    (user's call; I1 skews carry-in silently past the 14-day window);
+    I28 is hardening of three reads, not the main punch read; future
+    `mlm week` keeps `Total behind`, accepted as behavior. User approved
+    the draft's visible choices (`[i]` hint, overlap line, carry line,
+    `Week W target: D` echo, `done for today`, glossary in long help).
+    Adversarial review (`plans/reports/possible-issues-triage-spec-review.md`,
+    needs-rework, 11 findings + U1-U10) folded: F1 inverted the stop-hint
+    rule, so hints now name `between S and N` (first punch after the
+    target start) when one exists; F2 glossary now says surplus carries,
+    matching `week.rs` and SPEC §1.3; F3 overlap covers today's open
+    stint; F4 exit codes pinned to 1 (runtime) and 2 (usage), since
+    §6.3 has no named codes; F5 the age-1 hint reads today's punches;
+    F6/F7/F8 mechanisms left to the plan with constraints pinned; F9
+    adds a SPEC section map and a test list; F10 defines overlap
+    exactly; F11 suppresses the hint beside a refused join and records
+    `mlm start` and `23:59` as non-goals. U1-U10 recorded in spec §6.
+    Phase 14 runs, tier `first-run` (default log level and `--help`
+    change first-run output). Provisional task count 4-5: full ladder.
+
+98. **`possible-issues-triage` plan reviewed and folded**
+    (`docs/dev/plans/possible-issues-triage-plan.md`, six tasks: T1
+    foundation seams + §3.4/§4.4/§4.5; T2 overlap; T3 yesterday hint;
+    T4 carry scan; T5 CLI surface; T6 docs). Plan decisions: prefetched
+    ledger via one shared loader (traits stay infallible); token-shape
+    interception after a fallible clap parse; one per-date anomaly
+    module feeds rows, block and carry marker. Plan review
+    (`plans/reports/possible-issues-triage-plan-review.md`, 11 findings
+    + U1-U15) folded: F1 clap's usage override leaves `<ARGS>` in the
+    Arguments section and E10, so T5 hides the positional, writes the
+    Arguments section by hand and intercepts E10; F2 two future-`status`
+    tests named; F3 T1 gains `src/storage.rs` for one ranged override
+    read; F4 discriminator is token shape, help/version pass through;
+    F5 coordinator ruling: the clean-pair window includes N's minute
+    (a same-instant stop pops S first, SPEC §4.3 step 2), so it always
+    holds a legal minute; recorded in spec §3.2.2 as clarification, not
+    a behavior change; F6 phrases live in `src/render.rs`, frozen at T1
+    merge; F7 T1 may fix `src/commands.rs` import paths; F8 ranged-read
+    failure covered by a loader unit test; F9 T1 owns `src/date.rs`
+    comments, T6 owns AGENTS.md Layout; F10 loader keeps earliest-week
+    anchoring and live data-week marking; F11 T2 splits the grown
+    builder. U1-U3, U6, U7, U9, U10 added to spec §6; U4/U5 closed by
+    F5; U14 T6 wording clarified; the rest already declared or
+    timing-only.
+
+99. **`possible-issues-triage` task plans written, cross-checked and
+    folded.** Six task plans under `docs/dev/plans/`
+    (`possible-issues-triage-task-{1..6}-*.md`). T1, T5, T6 planned
+    first; T2-T4 against T1's published seams. Coordinator rulings:
+    `mlm week` carry marker sits in the footer slot above the Carry-in
+    block (contract 6); T5 handles `week target` errors by rewriting
+    clap's error context (covers E10 and too-many-values); short `-h`
+    may gain clap's `(see more with '--help')` suffix instead of a
+    replacement help flag (spec §4.2/§6 updated); T2 prints one `fix:`
+    per overlapping pair and puts the longer stint first on equal
+    starts; `mlm start` gets no refused-join suppression (a page rule).
+    Consistency review (`plans/reports/possible-issues-triage-consistency.md`,
+    8 findings) folded: F1 T2 labels spliced stints with real times;
+    F2 T6 checks literals by shape; F3/F4/F7 changeset plan wording
+    (T3 entry wrapper, loader derives live, `-h` suffix); F5 the merge
+    gate checks hint-then-marker order end to end; F6 T2-T4 may re-pin
+    an inverted assertion in a T1-owned file and must list it; F8 T6
+    rewrites SPEC §7.1's future-date `status` text. T2 and T6 plans
+    re-aligned by dispatch. T1 and T5 implementation dispatched.
+
+100. **`possible-issues-triage` all tasks merged; phase 13/14 out.**
+    Merged `--no-ff` into `possible-issues-triage`: T5 (`8d823a2`), T6
+    (`872d915`), T1 (`f8789ee`), T2, T3 (`fc44f4d`), T4 (`0897272`), then
+    an integration fix (`83e3506`) that re-pins T3's order test to end
+    with T4's carry marker (the F5 hint-then-marker check) and adds T4's
+    deferred overlap-only marker tests. T4 re-pinned one assertion in
+    T1-owned `src/status.rs` under the plan's exception; accepted. T2
+    dropped the receiving-side splice span (unreachable: the spliced end
+    is that date's first punch); accepted. Coverage-baseline conflicts
+    resolved to the higher value. Merge gate green: fmt, build, 804
+    tests, clippy, smoke runs; T6's doc literals checked against the
+    binary. Timing: `mlm week 9000-01` 0.3 s (was 59 s); 150-week seeded
+    DB `status`/`week` ~0.01 s release. Incident: a T4 smoke run without
+    `MLM_DB_PATH` wrote a punch and a note to the user's real DB; the
+    agent deleted both; user told. Discovered: `.githooks/pre-commit`
+    passes commits with failing tests, because a failed `cargo llvm-cov`
+    yields empty JSON and the coverage check prints SKIP; the T4 merge
+    went in red that way. User chose to fold the hook fix into the fix
+    pass. Phase 14 ran (`first-run`, 10 findings; the agent's report
+    file was not written, so the findings from its reply are kept here):
+    FE1 a 3-week-old unclosed start shows `160h left`, carry-in -120h,
+    empty weeks count -40h each, `[!]` names only the anomalous week;
+    FE2 carry-in over empty weeks differs between a fresh DB and one
+    with punches, future weeks say `Total behind`; FE3 glossary omits
+    Total behind/ahead, Day total, overlapping, orphaned end, `N days
+    old`, and nothing points from `-h` or top-level help to it; FE4 old
+    unclosed stints print `09:00-now (unclosed)` at 3 or 21 days; FE5
+    overlap `fix:` does not say which punch, today's page does not
+    mention an older overlap (the carry marker does, from the next
+    week); FE6 `stop` accepts times outside the advised window silently;
+    FE7 the `or: mlm stop` line vanishes once today has a start, with no
+    word that a bare `stop` would close the new stint; FE8 `est. EOD
+    17:08 (tomorrow)` on a first Sunday run surprises; FE9 the future
+    `status` error does not point to `mlm week`; FE10 the `week target`
+    echo has no date range, and README's Possible issues mentions E7/E8
+    codes users never see. User approved Opus for phase 13.
+
+101. **`possible-issues-triage` phase 13 back and triaged.** Opus
+    final review (`plans/reports/possible-issues-triage-final-review.md`):
+    ship-with-followups, 5 findings, all gates re-run green in a clone,
+    25 deliberate mutations all caught by tests. User approved the
+    triage plus FE4. Fix pass: F1 the yesterday hint's `or: mlm stop`
+    prints only when no punch follows the open start on yesterday and
+    today is empty (otherwise following it nests a later stint); F2 the
+    argument-order interception fires only when the tokens parse as a
+    week id and a duration (stops echoing arbitrary text into a
+    copyable command); F3 `week target --help` stray blank lines; F4
+    replace the tautological history test with concrete figures; hook
+    fails on a nonzero `cargo llvm-cov`; FE3 glossary adds `Total
+    behind`/`Total ahead`, overlapping stints, orphaned end; FE9 future
+    `status DATE` error points to `mlm week WEEK_ID`; FE10b README
+    Possible issues drops E7/E8 codes; FE4 old unclosed stint lines
+    print `09:00-?` (spec §4.6, coordinator wording). Accepted as-is:
+    FE1, FE2, FE5, FE6, FE7, FE8, FE10a. F5 (README period, archive
+    banners) at close.
+
+102. **`possible-issues-triage` fix pass merged; changeset merged to
+    `main`.** Fix pass (`docs/dev/plans/reports/possible-issues-triage-fixpass.md`)
+    closed F1-F4, the hook, FE3, FE9, FE10b and FE4. The pre-commit hook
+    now fails the coverage step when `cargo llvm-cov` exits nonzero.
+    Merge gate green: fmt, build, 808 tests, clippy, smoke runs; F1, F2,
+    FE4 and FE9 checked by hand. Close-out: archive banners on the spec,
+    changeset plan and six task plans; README period (F5); stale-doc
+    grep of README, SPEC, AGENTS.md and `src/` found one stale test
+    comment (lookback window ages), fixed. All task worktrees and
+    branches removed. Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 

@@ -82,8 +82,8 @@ pub struct WeekAccounting {
 }
 
 /// In-memory `WeekData` + `WeekTargets`. Used by this module's tests, and
-/// reusable by Milestones 9/10/11's tests and by the wave-3 adapter that
-/// loads one `GROUP BY` query's worth of rows into it.
+/// reusable by Milestones 9/10/11's tests. `history::load_history` is the
+/// loader that fills it from storage, and a failed read there is an error.
 #[derive(Debug, Default, Clone)]
 pub struct WeekLedger {
     /// Sparse: an absent week has worked 0 minutes.

@@ -4,10 +4,14 @@
 //! exactly what the binary already used, just made `pub` and moved out
 //! from under `main.rs`'s own `mod` list.
 
+pub mod anomalies;
+pub mod carry_scan;
 pub mod cli;
 pub mod commands;
 pub mod date;
 pub mod db;
+pub mod history;
+pub mod lookback;
 pub mod render;
 pub mod status;
 pub mod stint;
