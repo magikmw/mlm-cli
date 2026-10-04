@@ -179,7 +179,7 @@ fn yesterday_hint_lines(wdy: &str, d: &str, time: NaiveTime, facts: LineFacts) -
             render::stop_time_hint(time, facts.next)
         ),
     ];
-    if !facts.today_has_punches {
+    if facts.next.is_none() && !facts.today_has_punches {
         lines.push("     or: mlm stop  (still working: ends it now, across midnight)".to_string());
     }
     lines
@@ -474,6 +474,29 @@ mod tests {
                 "    fix: mlm stop HH:MM --date 2026-02-11  (a time between 18:02 and 19:00)",
             ]
         );
+    }
+
+    #[test]
+    fn yesterday_hint_lines_drop_or_line_when_a_later_punch_follows_the_start() {
+        let lines = single(1).detail_lines_with(facts(Some(t(19, 0)), false));
+        assert_eq!(
+            lines,
+            vec![
+                "[i] start on Wed 2026-02-11 at 18:02 still open (yesterday; not counted until stopped)",
+                "    fix: mlm stop HH:MM --date 2026-02-11  (a time between 18:02 and 19:00)",
+            ]
+        );
+    }
+
+    #[test]
+    fn page_drops_or_line_when_yesterday_has_a_later_closed_stint() {
+        let conn = test_db();
+        insert_start(&conn, 1, 9, 0);
+        insert_start(&conn, 1, 14, 0);
+        ins(&conn, PunchKind::End, 1, 15, 0);
+        let lines = today_page_lines(&conn, today(), now(), false).expect("lines");
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[1].contains("a time between 09:00 and 14:00"));
     }
 
     #[test]

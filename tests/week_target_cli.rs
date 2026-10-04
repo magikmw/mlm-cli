@@ -142,7 +142,7 @@ fn other_writers_stay_silent() {
 
 // ---------------------------------------------------------------- §4.2
 
-const GLOSSARY_TERMS: [&str; 13] = [
+const GLOSSARY_TERMS: [&str; 16] = [
     "worked",
     "carry-in",
     "fulfillment",
@@ -154,6 +154,9 @@ const GLOSSARY_TERMS: [&str; 13] = [
     "done for today",
     "(incl. ongoing)",
     "(+ ongoing)",
+    "Total behind, Total ahead",
+    "\n  overlapping stints\n",
+    "\n  orphaned end\n",
     "[!]",
     "[i]",
 ];
@@ -236,14 +239,20 @@ fn week_target_help_text() {
     let short = run(&["week", "target", "-h"]);
     assert_eq!(long.status.code(), Some(0));
     assert_eq!(out(&long), out(&short));
-    let s = out(&long);
-    assert!(s.contains("Usage: mlm week target [OPTIONS] [WEEK_ID] <DURATION>"));
-    assert!(s.contains("Arguments:\n  [WEEK_ID]"), "{s}");
-    assert!(s.contains("  <DURATION>"), "{s}");
-    assert!(s.contains("Options:"));
-    assert!(!s.contains("<ARGS>"), "{s}");
-    assert!(s.contains("Print help"));
-    assert!(!s.contains("see more with"));
+    let expected = "\
+Set an absolute target override for a week
+
+Usage: mlm week target [OPTIONS] [WEEK_ID] <DURATION>
+
+Arguments:
+  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
+  <DURATION>  Target to set: 20h, 33h30m or 45m (human format, never raw minutes)
+
+Options:
+  -v, --verbose  Enable debug-level logging
+  -h, --help     Print help
+";
+    assert_eq!(out(&long), expected);
 }
 
 #[test]
@@ -340,6 +349,8 @@ fn other_week_errors_keep_clap_text() {
         &["week", "2026-41", "target"],
         &["week", "2026-41", "target", "20h", "extra"],
         &["week", "7", "target", "--help"],
+        &["week", "foo$(id)", "target", "20h"],
+        &["week", "2026-99", "target", "20h"],
     ] {
         let o = run(args);
         assert_eq!(o.status.code(), Some(2), "{args:?}");

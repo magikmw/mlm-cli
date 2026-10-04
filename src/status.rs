@@ -217,6 +217,9 @@ fn day_total_line(view: &StatusView) -> String {
 fn stint_line(line: &StintLine) -> String {
     let range = match line.end {
         StintEnd::At(end) => format!("{}-{}", line.start.format("%H:%M"), end.format("%H:%M")),
+        StintEnd::Now if line.open_stint_age == Some(OpenStintAge::TwoOrMoreDaysBack) => {
+            format!("{}-?", line.start.format("%H:%M"))
+        }
         StintEnd::Now => format!("{}-now", line.start.format("%H:%M")),
     };
     match (line.end, line.open_stint_age) {
@@ -393,6 +396,15 @@ fn compose_anomaly_lines(
     lines
 }
 
+/// A future `status DATE` error also names the command for a future week.
+fn future_week_pointer(err: date::DateWeekError) -> anyhow::Error {
+    if matches!(err.cause, date::Cause::Future) {
+        anyhow::anyhow!("{err}; to view a future week, run mlm week WEEK_ID")
+    } else {
+        err.into()
+    }
+}
+
 /// Resolution flow (plans/milestone-10-status-command.md §2.2, exact
 /// order): parses `date_arg` against `now`'s local date and rejects a
 /// future date (§4.5), loads the history through `target_date`'s week,
@@ -408,7 +420,7 @@ pub fn resolve(
     let today = now.date_naive();
     let target_date = match date_arg {
         None => today,
-        Some(s) => date::resolve_future_checked_date(s, today)?,
+        Some(s) => date::resolve_future_checked_date(s, today).map_err(future_week_pointer)?,
     };
     let is_today = target_date == today;
     let open_stint_age = open_stint_age_for(target_date, today);
@@ -819,10 +831,11 @@ mod tests {
             open_stint_age: Some(OpenStintAge::TwoOrMoreDaysBack),
         }];
         let out = render(&view);
-        assert!(out.contains("  09:00-now    (unclosed)"), "{out}");
+        assert!(out.contains("  09:00-?      (unclosed)"), "{out}");
+        assert!(!out.contains("09:00-now"), "{out}");
         let stint_line_out = out
             .lines()
-            .find(|l| l.contains("09:00-now"))
+            .find(|l| l.contains("09:00-?"))
             .expect("stint line present");
         assert!(
             !stint_line_out.contains("43"),
@@ -1496,7 +1509,9 @@ mod tests {
             let err = resolve(Some(future), now_thu_1800(), &conn).expect_err(future);
             assert_eq!(
                 err.to_string(),
-                format!("invalid DATE \"{future}\": date is in the future")
+                format!(
+                    "invalid DATE \"{future}\": date is in the future; to view a future week, run mlm week WEEK_ID"
+                )
             );
         }
     }

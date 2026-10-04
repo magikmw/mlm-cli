@@ -31,6 +31,16 @@ Glossary:
       `(+ ongoing)` marks an earlier date's open stint, which counts for
       nothing until it is stopped (`(+ unclosed)` once it is two or more
       days old).
+  Total behind, Total ahead
+      The headline of a closed or not-yet-started week. `Total behind`
+      is a shortfall against the target and `Total ahead` a surplus,
+      with carry-in included.
+  overlapping stints
+      Two stints whose times cross, such as 09:00-12:00 and 10:00-11:00.
+      The overlap counts twice in the totals until you delete a punch.
+  orphaned end
+      An end punch with no start before it. It adds no minutes. Add a
+      start before it, or delete it.
   [!], [i]
       `[!]` flags an anomaly, such as an unclosed start, an orphaned end
       or overlapping stints. In `mlm week` it marks the date's row. `[i]`
@@ -240,7 +250,7 @@ pub enum WeekAction {
 #[derive(Args, Debug)]
 #[command(
     override_usage = "mlm week target [OPTIONS] [WEEK_ID] <DURATION>",
-    help_template = "{about-with-newline}\n{usage-heading} {usage}\n\n{before-help}\n\n{all-args}",
+    help_template = "{about-with-newline}\n{usage-heading} {usage}\n\n{before-help}{all-args}",
     before_help = "\
 Arguments:
   [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
@@ -311,7 +321,8 @@ fn classify(args: &[OsString], mut err: clap::Error) -> ParseFailure {
         return ParseFailure::Clap(err);
     }
     let text: Option<Vec<String>> = args.iter().map(|a| a.to_str().map(str::to_owned)).collect();
-    if let Some(message) = text.and_then(|a| swapped_week_target(&a)) {
+    let today = chrono::Local::now().date_naive();
+    if let Some(message) = text.and_then(|a| swapped_week_target(&a, today)) {
         return ParseFailure::SwappedWeekTarget(message);
     }
     rename_args_context(&mut err);
@@ -340,8 +351,10 @@ fn rename_args_context(err: &mut clap::Error) {
 }
 
 /// Detects `week WEEK_ID target DURATION` by token shape over the raw
-/// arguments (argv[0] included), ignoring `-v`/`--verbose` anywhere.
-pub fn swapped_week_target(args: &[String]) -> Option<String> {
+/// arguments (argv[0] included), ignoring `-v`/`--verbose` anywhere. Fires
+/// only when the week token is a valid WEEK_ID (a bare number resolves
+/// against `today`'s ISO year) and the duration token is well-shaped.
+pub fn swapped_week_target(args: &[String], today: chrono::NaiveDate) -> Option<String> {
     let tokens: Vec<&str> = args
         .iter()
         .skip(1)
@@ -350,7 +363,7 @@ pub fn swapped_week_target(args: &[String]) -> Option<String> {
         .collect();
     match tokens.as_slice() {
         ["week" | "w", week, "target", duration]
-            if is_week_token(week) && is_duration_token(duration) =>
+            if is_week_token(week, today) && is_duration_token(duration) =>
         {
             Some(format!(
                 "error: put WEEK_ID after target: mlm week target {week} {duration}"
@@ -360,18 +373,18 @@ pub fn swapped_week_target(args: &[String]) -> Option<String> {
     }
 }
 
-/// A week id is a plain token: not a flag, and not the subcommand name.
-fn is_week_token(token: &str) -> bool {
-    !token.starts_with('-') && token != "target"
+/// True when the token parses as a WEEK_ID.
+fn is_week_token(token: &str, today: chrono::NaiveDate) -> bool {
+    crate::date::parse_week_id(token, today).is_ok()
 }
 
-/// A duration may be negative (`-5h` reaches the duration parser, E9) but
-/// never `--help`, `-h` or `-V`.
+/// True when the token has the DURATION shape. A negative value counts
+/// (`-5h` reaches the duration parser, E9). `--help`, `-h` and `-V` do not.
 fn is_duration_token(token: &str) -> bool {
-    match token.strip_prefix('-') {
-        None => true,
-        Some(rest) => rest.starts_with(|c: char| c.is_ascii_digit()),
-    }
+    !matches!(
+        crate::time::parse_duration(token),
+        Err(crate::time::DurationParseError::InvalidFormat(_))
+    )
 }
 
 impl WeekTargetArgs {
@@ -718,7 +731,32 @@ mod tests {
     }
 
     fn swapped(args: &[&str]) -> Option<String> {
-        swapped_week_target(&strs(args))
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 4).unwrap();
+        swapped_week_target(&strs(args), today)
+    }
+
+    #[test]
+    fn swapped_needs_a_valid_week_id_and_duration() {
+        for args in [
+            &["mlm", "week", "foo$(id)", "target", "20h"],
+            &["mlm", "week", "foo", "target", "20h"],
+            &["mlm", "week", "2026-99", "target", "20h"],
+            &["mlm", "week", "2026-41", "target", "soon"],
+            &["mlm", "week", "2026-41", "target", "-x"],
+        ] {
+            assert_eq!(swapped(args), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn invalid_week_token_gets_clap_error_not_the_custom_message() {
+        for week in ["foo$(id)", "2026-99"] {
+            let failure = super::parse(&os(&["mlm", "week", week, "target", "20h"])).unwrap_err();
+            assert!(
+                matches!(failure, ParseFailure::Clap(_)),
+                "{week}: {failure:?}"
+            );
+        }
     }
 
     #[test]

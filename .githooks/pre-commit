@@ -98,12 +98,20 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
 elif ! command -v jq >/dev/null 2>&1; then
     echo "    SKIP (jq not found -- install jq to enable this check)"
 else
-    COV_JSON="$(cargo llvm-cov --summary-only --json --quiet 2>/dev/null)"
+    COV_ERR="$(mktemp)"
+    COV_JSON="$(cargo llvm-cov --summary-only --json --quiet 2>"$COV_ERR")"
+    COV_RC=$?
 
     LINES_COUNT="$(printf '%s' "$COV_JSON" | jq -r '.data[0].totals.lines.count // 0' 2>/dev/null)"
     LINES_PCT="$(printf '%s' "$COV_JSON" | jq -r '.data[0].totals.lines.percent // 0' 2>/dev/null)"
 
-    if [ -z "$LINES_COUNT" ] || [ "$LINES_COUNT" = "0" ] || [ "$LINES_COUNT" = "null" ]; then
+    if [ "$COV_RC" -ne 0 ]; then
+        echo "    FAIL: 'cargo llvm-cov' exited with status $COV_RC (a failing test or"
+        echo "    build error stops the coverage run). Last lines of its stderr:"
+        echo ""
+        tail -n 30 "$COV_ERR" | sed 's/^/    /'
+        STATUS=1
+    elif [ -z "$LINES_COUNT" ] || [ "$LINES_COUNT" = "0" ] || [ "$LINES_COUNT" = "null" ]; then
         echo "    SKIP (no instrumented lines yet -- nothing to measure)"
     else
         if [ ! -f "$BASELINE_FILE" ]; then
@@ -136,6 +144,7 @@ else
             esac
         fi
     fi
+    rm -f "$COV_ERR"
 fi
 
 echo ""

@@ -272,7 +272,9 @@ fn status_future_date_is_rejected() {
     let err = stderr(&output);
     assert_eq!(
         err.lines().last(),
-        Some("error: invalid DATE \"2099-01-01\": date is in the future"),
+        Some(
+            "error: invalid DATE \"2099-01-01\": date is in the future; to view a future week, run mlm week WEEK_ID"
+        ),
         "{err}"
     );
 }
