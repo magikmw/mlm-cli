@@ -9,11 +9,13 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 109
+- **Next entry**: 110
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
-  `point-in-time-week` and `possible-issues-triage`)
-- **Active changeset**: `overnight-visibility` (entry 103)
+  `point-in-time-week`, `possible-issues-triage` and
+  `overnight-visibility`)
+- **Active changeset**: none (`overnight-visibility` merged to `main`,
+  entry 109; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1517,6 +1519,16 @@ SPEC.md and PLAN.md:
     shows how to stop it`) and FE1+FE8 (glossary entries for the
     overnight line and the splice suffixes). FE3, FE4, FE5, FE7
     accepted.
+
+109. **`overnight-visibility` fix pass merged; changeset merged to
+    `main`.** Fix pass (`plans/reports/overnight-visibility-fixpass.md`)
+    closed FE2+FE6 (`[i]` footers name the stint's date) and FE1+FE8
+    (glossary entries for the overnight line and splice suffixes). Merge
+    gate green: fmt, build, 841 tests, clippy; footer and glossary
+    checked by hand. Close-out: archive banners on the spec, plan and
+    task plans; stale-doc grep of README, SPEC, AGENTS.md, `src/` and
+    `tests/` clean. SPEC §1.2a and README Possible issues read "None
+    currently." Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 

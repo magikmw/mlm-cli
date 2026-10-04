@@ -1,5 +1,7 @@
 # Overnight stint visibility — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `6edd67b` (`v0.3.6` plus the
 unreleased `open-punch-visibility`, `live-eod`, `point-in-time-week`
 and `possible-issues-triage` changesets).

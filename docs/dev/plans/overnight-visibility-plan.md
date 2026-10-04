@@ -1,5 +1,7 @@
 # Plan: overnight-visibility
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-04-overnight-visibility.md` (locked). Spec review: `docs/dev/plans/reports/overnight-visibility-spec-review.md`. Decision log: NOTES.md entries 103-104.
 
 **Altitude note**: scope of work only. No code, no pseudocode, no function, type or SQL names. Task plans choose the identifiers.

@@ -1,5 +1,7 @@
 # Task plan: overnight-visibility, Task 1 (code)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/overnight-visibility-plan.md` (Task 1, contracts 1-6).
 Spec: `docs/dev/specs/2026-10-04-overnight-visibility.md` (sections 3, 4, 5, 6, 8).
 
