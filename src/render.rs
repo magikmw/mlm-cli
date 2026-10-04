@@ -133,14 +133,17 @@ pub use crate::lookback::{LookbackFinding, LookbackKind};
 /// this task owns.
 pub const WEEK_ANOMALY_FOOTER: &str = "[!] needs a look: run mlm status DATE for details and fixes";
 
-/// Footer when a `mlm week` row shows `[i]`.
-pub const WEEK_OVERNIGHT_FOOTER: &str = "[i] open stint: run mlm status to stop it";
+/// Footer when a `mlm week` row shows `[i]`. `label` is the marked row's
+/// weekday and date, as in `Sat 2026-10-03`.
+pub fn week_overnight_footer(label: &str) -> String {
+    format!("[i] open stint on {label}: mlm status shows how to stop it")
+}
 
 /// Monday footer for the current week's view. `date` is the overnight
 /// stint's date.
 pub fn week_overnight_monday_footer(date: NaiveDate) -> String {
     format!(
-        "[i] open stint on {} (last week): run mlm status to stop it",
+        "[i] open stint on {} (last week): mlm status shows how to stop it",
         format_date_with_weekday(date)
     )
 }
@@ -657,19 +660,19 @@ mod tests {
         }
 
         assert!(WEEK_ANOMALY_FOOTER.is_ascii());
-        assert!(WEEK_OVERNIGHT_FOOTER.is_ascii());
+        assert!(week_overnight_footer("Sat 2026-10-03").is_ascii());
         assert!(week_overnight_monday_footer(d(2026, 10, 4)).is_ascii());
     }
 
     #[test]
     fn overnight_footers_have_exact_text() {
         assert_eq!(
-            WEEK_OVERNIGHT_FOOTER,
-            "[i] open stint: run mlm status to stop it"
+            week_overnight_footer("Sat 2026-10-03"),
+            "[i] open stint on Sat 2026-10-03: mlm status shows how to stop it"
         );
         assert_eq!(
             week_overnight_monday_footer(d(2026, 10, 4)),
-            "[i] open stint on Sun 2026-10-04 (last week): run mlm status to stop it"
+            "[i] open stint on Sun 2026-10-04 (last week): mlm status shows how to stop it"
         );
     }
 

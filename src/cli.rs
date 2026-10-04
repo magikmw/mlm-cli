@@ -41,6 +41,14 @@ Glossary:
   orphaned end
       An end punch with no start before it. It adds no minutes. Add a
       start before it, or delete it.
+  so far, started yesterday
+      A stint line ending `so far, started yesterday, not counted until
+      stopped` marks a start still open from yesterday, listed on
+      today's page but not counted until you stop it.
+  spans to next day, continues previous day's stint
+      A stint stopped after midnight is counted on the day it started.
+      `spans to next day` ends the start date's stint line, and
+      `continues previous day's stint` ends the next date's header.
   [!], [i]
       `[!]` flags an anomaly, such as an unclosed start, an orphaned end
       or overlapping stints. In `mlm week` it marks the date's row. `[i]`
@@ -772,6 +780,9 @@ mod tests {
         assert!(
             flat.contains("It marks yesterday's row in `mlm week` until that start is stopped.")
         );
+        assert!(flat.contains("so far, started yesterday, not counted until stopped"));
+        assert!(flat.contains("`spans to next day` ends the start date's stint line"));
+        assert!(flat.contains("`continues previous day's stint` ends the next date's header"));
         assert!(GLOSSARY.ends_with("stopped."));
         assert!(!GLOSSARY.ends_with('\n'));
     }
