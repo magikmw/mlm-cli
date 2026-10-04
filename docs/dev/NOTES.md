@@ -11,7 +11,7 @@ read only the one you need.
 
 - **Next entry**: 110
 - **Last release**: `v0.3.6`
-- **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
+- **`main`**: `9ad14eb` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week`, `possible-issues-triage` and
   `overnight-visibility`)
 - **Active changeset**: none (`overnight-visibility` merged to `main`,
