@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 106
+- **Next entry**: 107
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
   `point-in-time-week` and `possible-issues-triage`)
@@ -1479,6 +1479,17 @@ SPEC.md and PLAN.md:
     old-rule tests named for rewrite; F6 fixture sites named; F7 spec
     §8 precedence wording fixed; F8 Monday needs Sunday from the
     buckets; F9 ASCII sweep. G1-G7 added to spec §7; G8 already there.
+
+106. **`overnight-visibility` task plans written; implementation
+    dispatched.** T1 (`plans/overnight-visibility-task-1-code.md`) and
+    T2 (`plans/overnight-visibility-task-2-docs.md`). Coordinator calls:
+    T1 may make the mechanical edits to `src/lookback.rs` tests that the
+    dropped refused-join parameter forces; the suppression lives in the
+    shared `overnight_stint` decision and only `today_page_lines` filters
+    the hint with it, so `mlm start` keeps warning about yesterday's
+    open start; clock-dependent cases are unit tests with injected
+    `now`. T2 covers four SPEC passages the spec missed and adds edge
+    case E26 for `week`. Phase 10 skipped (two tasks).
 
 ## Open questions (still need answers)
 
