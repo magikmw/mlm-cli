@@ -142,7 +142,7 @@ fn other_writers_stay_silent() {
 
 // ---------------------------------------------------------------- §4.2
 
-const GLOSSARY_TERMS: [&str; 16] = [
+const GLOSSARY_TERMS: [&str; 18] = [
     "worked",
     "carry-in",
     "fulfillment",
@@ -157,6 +157,8 @@ const GLOSSARY_TERMS: [&str; 16] = [
     "Total behind, Total ahead",
     "\n  overlapping stints\n",
     "\n  orphaned end\n",
+    "\n  so far, started yesterday\n",
+    "\n  spans to next day, continues previous day's stint\n",
     "[!]",
     "[i]",
 ];
@@ -181,7 +183,17 @@ fn long_help_carries_glossary() {
         assert!(s.contains("shortfall is negative"), "{args:?}");
         assert!(s.contains("surplus is positive"), "{args:?}");
         assert!(!s.contains("target already met"), "{args:?}");
-        assert!(s.trim_end().ends_with("It never marks a row."), "{args:?}");
+        let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.ends_with("It marks yesterday's row in `mlm week` until that start is stopped."),
+            "{args:?}"
+        );
+        assert!(!flat.contains("It never marks a row."), "{args:?}");
+        assert!(
+            flat.contains("a start still open from yesterday, listed on today's page but not counted until you stop it"),
+            "{args:?}"
+        );
+        assert!(flat.contains("counted on the day it started"), "{args:?}");
     }
 }
 

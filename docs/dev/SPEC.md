@@ -61,14 +61,7 @@ Shipped, working-as-designed behavior that's rough or confusing, not
 committed to a fix. Kept separate from §1.2: a non-goal isn't built
 yet, a possible issue works but has a rough edge.
 
-- A stint started yesterday and still open after midnight is not on
-  today's page, so it gets no live credit and no `est. EOD`. Its minutes
-  leave the day total, `Worked`, `Fulfillment` and the week line until
-  `stop`. At 00:00 the week line jumps, because `required` steps up a
-  weekday while `live` drops to 0. When this happens past Sunday
-  midnight, the closed week's `Worked` drops by those minutes. Today's
-  `status` prints an `[i]` hint for the open start that points to `stop`
-  (§7.1).
+None currently.
 
 ### 1.3 Terminology
 
@@ -308,13 +301,22 @@ future; to view a future week, run mlm week WEEK_ID`.
   not `DATE` is today, and always describes now.
 - any pairing anomalies for that date (§4.3), if present, including
   overlapping stints
-- for today only, lookback lines for open starts from earlier dates and
-  an `[i]` hint for a start still open from yesterday (§7.1)
+- for today only, lookback lines for open starts from earlier dates, an
+  `[i]` hint for a start still open from yesterday, and a stint line for
+  that start ahead of today's own stints (§7.1)
 - a carry-in marker line when an earlier week has an anomaly (§7.1)
 
 `mlm status --help` and `mlm week --help` end with a short glossary of
 the terms the week line and the markers use. Short `-h` does not carry
 it, and its help line gains clap's `(see more with '--help')` suffix.
+Two entries precede the `[!], [i]` one. The first is `so far, started
+yesterday`, for the overnight stint line (§7.1): a start still open
+from yesterday, listed on today's page and not counted until stopped.
+The second is `spans to next day, continues previous day's stint`, for
+the §4.3.1 suffixes: a stint stopped after midnight is counted on the
+day it started, `spans to next day` ends the start date's stint line
+and `continues previous day's stint` ends the next date's header. The
+`[i]` entry, last, ends ``It marks yesterday's row in `mlm week` until that start is stopped.``
 
 ### 3.6 `mlm week [WEEK_ID]`
 
@@ -324,6 +326,9 @@ Current (or `WEEK_ID`) week's view:
   the point-in-time gap, the same line `status` shows. For any other
   week it is the plain total behind or ahead.
 - one line per date in the week with that date's total
+- yesterday's row ends with `[i]` while a start from yesterday is still
+  open and unjoined, with an `[i]` footer line, and on a Monday the
+  current week's view names Sunday's stint in that footer line (§7.2)
 - a trailing block, in this order: carry-in, worked, fulfillment,
   target (§7.2) — the headline figure appears only in the headline, not
   repeated here
@@ -830,9 +835,9 @@ carry-in is exactly zero.
   week` moves only today's row.
 - Stint lines: `HH:MM-HH:MM  (duration)`, ongoing stint's end is the
   literal word `now`. Tabular duration format (§4.2). Section omitted
-  entirely when the date has zero stints (a note-only day, or a fully
-  empty one) — same treatment as Notes below, no empty-list
-  placeholder either way.
+  entirely when the date has zero stints and no overnight stint line
+  (below) (a note-only day, or a fully empty one) — same treatment as
+  Notes below, no empty-list placeholder either way.
   - A **completed** stint whose end falls on a later calendar date
     than its start (a §4.3.1 splice) gets `, spans to next day` added
     inside the duration parenthetical, same slot the `, ongoing` suffix
@@ -872,9 +877,44 @@ carry-in is exactly zero.
   hint when today's page already shows a refused-join line naming
   yesterday. The `or:` line prints only when no punch follows the open
   start on yesterday's date and today has no punches yet.
-  The hint is not an anomaly. It does not mark a `mlm week` row, does not
-  count toward the footer, and never shows on `status DATE` for another
-  date. `status -1` shows yesterday's open start as a stint line only.
+  The hint is not an anomaly. It never feeds `[!]`, the `[!]` footer, the
+  carry-in marker or `has_any`, and it never shows on `status DATE` for
+  another date. `status -1` shows yesterday's open start as a stint line
+  only. The hint, the overnight stint line below and the `[i]` row mark
+  in `mlm week` (§7.2) all fire on the same condition, so they appear
+  and disappear together. Call that start the overnight stint.
+- Overnight stint line, today's page only. While the hint prints, the
+  stint list opens with one extra line for the overnight stint, ahead of
+  today's own stints:
+
+  ```
+    22:00-now    (15h 30m so far, started yesterday, not counted until stopped)
+  ```
+
+  The range uses the same column layout as other stint lines. The
+  duration is whole minutes from the start to now in the standard
+  formatter (§4.2), so it can pass 24h. The line is rendered on its own,
+  outside today's pairing and sorting, so the list is not in clock order
+  when it prints. It prints even when today has punches of its own, and
+  it is the only line in the list whose minutes are not in the Day total.
+  With no punches today the list holds just this line under `Day total:
+  00h 00m`. With an open stint of today's own, both `-now` lines print,
+  the overnight one first, and only today's own stint counts and carries
+  `(incl. ongoing)` and `est. EOD`. `status DATE` for any other date,
+  `status -1` included, keeps its own wording and prints no such line.
+  The line goes away together with the hint: when a `stop` joins the
+  start to today, when a refused-join line names yesterday, or when
+  yesterday has two or more open starts. When the start turns two days
+  old, the line and every `[i]` mark disappear and the `[!]` stale
+  lookback line and week row marker take over, though the stint is still
+  open.
+- Overnight stint accounting. The overnight stint gets no live credit
+  and no `est. EOD`. Its minutes stay out of the Day total, `Worked`,
+  `Fulfillment` and the week line until `stop`, and `stop` returns them to
+  yesterday. The Day total shows no `(incl. ongoing)` for it. At 00:00
+  the week line jumps, because `required` steps up a weekday and the
+  stint is not counted. Past Sunday midnight the closed week's `Worked`
+  leaves the stint out until `stop` (§7.2).
 - Carry-in marker, any `DATE`. The shown week's carry-in comes from
   every earlier week, from the earliest week with any punch up to the
   week before the shown one. When at least one date in those weeks would
@@ -890,6 +930,24 @@ carry-in is exactly zero.
   week until the old anomaly is fixed, and it applies to stored history,
   so an old anomaly shows it on the first run with no new punch.
 - `status DATE` with `DATE` after today is a hard error (§6.1).
+
+`mlm status` on Monday 2026-10-05 at 13:30, no punches today, with a
+start at 22:00 still open from Sunday and a zero carry-in (week 2026-41
+runs Monday to Sunday). The line is listed under the Day total and is
+not part of it:
+
+```
+Mon 2026-10-05
+
+Day total:     00h 00m
+Week 2026-41:  08h 00m left to 08h 00m by end of Monday (fulfillment 00h 00m / target 40h 00m)
+
+[i] start on Sun 2026-10-04 at 22:00 still open (yesterday; not counted until stopped)
+    fix: mlm stop HH:MM --date 2026-10-04  (a time after 22:00)
+     or: mlm stop  (still working: ends it now, across midnight)
+
+  22:00-now    (15h 30m so far, started yesterday, not counted until stopped)
+```
 
 `mlm status 2026-01-05` (a past date, different week, "today" is
 still `2026-10-01`) — no est.-EOD figure, and the week
@@ -1011,16 +1069,64 @@ view a future week, because `status DATE` rejects a future date (§6.1).
 [!] needs a look: run mlm status DATE for details and fixes
 ```
 
-  No footer when no row is marked. `week` runs no lookback and no
-  yesterday hint. The row marker, the footer and the carry-in marker
-  below are its only anomaly output.
+  No footer when no row is marked. `week` runs no lookback and prints no
+  hint block. Its anomaly output has four parts: the row marker, the
+  footer, the carry-in marker below, and the `[i]` row mark with its
+  footer (below).
+- Overnight stint mark. While today's `status` prints the `[i]` hint
+  (§7.1), the row for yesterday ends with `  [i]`, after the duration and
+  in the same column as `  [!]`. A row with both an anomaly and the
+  overnight stint ends `  [!] [i]`, and both footers print. The mark shows
+  in whichever shown week contains yesterday, the current week or a past
+  week requested by `WEEK_ID`. No other row is marked, and a future week
+  shows nothing. The mark follows the hint's own trigger, so it is absent
+  when the start is joined to today, when a refused-join line names
+  yesterday, when yesterday has two or more open starts, and when the
+  start is two days old. When any row shows `[i]`, one footer line
+  prints. It names the marked row's weekday and date, here a Sat:
+
+```
+[i] open stint on Sat 2026-10-03: mlm status shows how to stop it
+```
+
+  The Sunday row of last week's view, on a Monday:
+
+```
+  Sat 2026-10-03   00h 00m
+  Sun 2026-10-04   00h 00m  [i]
+
+[i] open stint on Sun 2026-10-04: mlm status shows how to stop it
+```
+
+  The `00h 00m` is correct because the overnight stint is not counted.
+  On a Monday, yesterday is last week's Sunday. The current week's view
+  (the week containing today) has no marked row, so the `[i]` footer slot
+  names the stint instead:
+
+```
+[i] open stint on Sun 2026-10-04 (last week): mlm status shows how to stop it
+```
+
+  The weekday and date are the stint's own, in the row display form. This
+  line prints only in the view of the week containing today and only when
+  the stint's date lies in the previous week, so a past week viewed by
+  `WEEK_ID` never prints it and marks the Sunday row of last week's view
+  instead. The plain footer and the Monday line never print together. Both
+  depend only on the overnight trigger, never on whether a row also shows
+  `[!]`. The Monday line still prints when last week's Sunday row carries
+  `[!]`. `[i]` never feeds `[!]`, the `[!]` footer, the carry-in marker,
+  `has_any` or any figure. A week with only an `[i]` row prints no `[!]`
+  footer. `Worked`, `Fulfillment`, `Target` and the headline are
+  unchanged by the mark, and past Sunday midnight the closed week's
+  `Worked` leaves the stint out until `stop` (§7.1).
 - Carry-in marker. When an earlier week has an anomaly (the same
   condition as in §7.1), the Carry-in figure gets a trailing marker and
   the line `status` prints for the same week sits above the Carry-in
-  block. The layout is the day rows, a blank line, the anomaly footer if
-  any row is marked, the marker line directly under it (no blank line
-  between), one blank line, then the Carry-in block. With no marked row
-  the marker line takes the footer's place:
+  block. The layout is the day rows, a blank line, the `[!]` footer if any
+  row is marked, the `[i]` footer or Monday line if it applies, the
+  marker line directly under the last footer printed (no blank line
+  between), one blank line, then the Carry-in block. With no footer line
+  the marker line takes the footers' place:
 
 ```
   Sun 2026-10-11   00h 00m
@@ -1034,7 +1140,9 @@ Carry-in:      -80h 00m  [!]
   With one week the line reads `from 1 earlier week, 2026-38 (see mlm
   week 2026-38)`. Nothing prints for a week with no earlier data or no
   earlier anomaly. It prints for any shown week, future and current
-  included, and never counts the shown week's own anomalies.
+  included, and never counts the shown week's own anomalies. The blank
+  line before the Carry-in block prints exactly when any footer or
+  marker line printed.
 - Every storage read `mlm week` makes is a hard error, as in `status`
   (§6.1). The storage error goes to stderr as `error: ...`, stdout stays
   empty, and the exit code is `1`. `mlm week` never falls back to the
@@ -1183,7 +1291,9 @@ Yesterday with two or more open starts uses `(yesterday)` in place of
 
 Yesterday with exactly one unjoined open start gets an `[i]` hint
 instead of an anomaly line (§7.1). `[i]` is the quiet marker. It never
-marks a `week` row and never counts toward the footer:
+feeds `[!]`, the `[!]` footer, the carry-in marker or `has_any`. It also
+marks yesterday's `week` row and adds the `[i]` footer there (§7.2),
+and today's stint list gets a line for the same start (§7.1):
 
 ```
 [i] start on Fri 2026-10-02 at 18:02 still open (yesterday; not counted until stopped)
@@ -1211,7 +1321,9 @@ In `week`, appended inline to the affected date's row:
 
 (detail deferred to that date's own `status` output rather than
 repeated in the week table). When at least one row carries `[!]`, one
-footer line follows the table (§7.2).
+footer line follows the table (§7.2). The overnight stint's row ends
+with `  [i]` in the same column, or `  [!] [i]` when it also carries an
+anomaly, and prints the `[i]` footer (§7.2).
 
 ### 7.4 Write-command output
 
@@ -1448,10 +1560,14 @@ or less directly.
   and zero-length stints are not flagged.
 - **E22** - Start still open from yesterday (§7.1, §7.4): today's
   `status` prints the `[i]` hint, with the `or:` line only when no punch
-  follows the start on yesterday's date and today has no punches. A
-  `stop` as today's first punch joins the start and the hint is gone. A
-  refused-join line naming yesterday suppresses the hint.
-  The hint never marks a `week` row and never shows on `status -1`.
+  follows the start on yesterday's date and today has no punches. The
+  stint list opens with `HH:MM-now (DURATION so far, started yesterday,
+  not counted until stopped)` ahead of today's own stints, and no figure
+  changes. A `stop` as today's first punch joins the start and the hint
+  and the line are gone. A refused-join line naming yesterday, or two
+  open starts yesterday, suppresses both. At age two the line and hint
+  go and the `[!]` stale lookback takes over. The hint never shows on
+  `status -1`, which keeps its own open-stint line.
 - **E23** - Carry-in marker (§7.1, §7.2): an anomaly in a week older
   than 14 days puts the marker line on `status` and on `mlm week`, with
   `[!]` on the Carry-in figure. Several anomalous weeks give the plural
@@ -1464,4 +1580,14 @@ or less directly.
 - **E25** - Future `status DATE` (§6.1): `status` with a date after
   today exits `1` with the future-date message. `mlm week` for a
   future week still prints.
+- **E26** - Overnight stint in `week` (§7.2): while the hint prints,
+  yesterday's row ends with `  [i]` and the `[i] open stint on DATE:
+  mlm status shows how to stop it` footer prints once, after the `[!]` footer and
+  before the carry-in marker line. A row with an anomaly too ends `  [!]
+  [i]` and both footers print. A row with only `[i]` prints no `[!]`
+  footer. On a Monday the current week's view has no marked row and
+  prints `[i] open stint on Sun DATE (last week): mlm status shows how
+  to stop it`, last week's view marks the Sunday row, and no other week prints
+  anything. No `[i]` mark or footer appears when the start is joined,
+  refused-join, doubled, or two days old.
 

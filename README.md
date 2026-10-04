@@ -43,15 +43,9 @@ Not implemented yet:
 ### Possible issues
 
 Shipped behavior that's rough or confusing in a way worth fixing
-later:
+later.
 
-- A stint started yesterday and still open after midnight is not on
-  today's page, so it gets no live credit and no `est. EOD`. Its minutes
-  leave the day total, `Worked`, `Fulfillment` and the week line until
-  `stop`, and the week line jumps at 00:00. When this happens past
-  Sunday midnight, the closed week's `Worked` drops by those minutes.
-  Today's `status` shows an `[i]` hint for the open start that points to
-  `stop`.
+None currently.
 
 ## Install
 
@@ -261,8 +255,8 @@ explicitly) also checks dates 2 to 14 days old and appends one such
 line for every date it finds with an unclosed start, oldest first, so a
 forgotten `stop` from last week still shows up today. Yesterday gets
 its own treatment, because an overnight session may still be running. A
-lone start still open from yesterday prints a quiet hint, which marks no
-`week` row:
+lone start still open from yesterday prints a quiet hint. It is not
+counted until you `stop` it, and it marks no anomaly:
 
 ```
 [i] start on Fri 2026-10-02 at 18:02 still open (yesterday; not counted until stopped)
@@ -274,8 +268,28 @@ The `or:` line only shows when no punch follows the open start on
 yesterday's date and today has no punches yet. A `stop` typed
 as today's first punch joins the start and clears the hint. Yesterday
 with two or more open starts prints the `[!]` line `2 open stints on
-Fri 2026-10-02 (yesterday)` instead. If an earlier week has a flagged
-date, the last line of the page names it:
+Fri 2026-10-02 (yesterday)` instead.
+
+The stint list also opens with a line for that start, ahead of today's
+own stints. The time is not in the day total, and the line goes away
+together with the hint:
+
+```
+$ mlm status
+Mon 2026-10-05
+
+Day total:     00h 00m
+Week 2026-41:  08h 00m left to 08h 00m by end of Monday (fulfillment 00h 00m / target 40h 00m)
+
+[i] start on Sun 2026-10-04 at 22:00 still open (yesterday; not counted until stopped)
+    fix: mlm stop HH:MM --date 2026-10-04  (a time after 22:00)
+     or: mlm stop  (still working: ends it now, across midnight)
+
+  22:00-now    (15h 30m so far, started yesterday, not counted until stopped)
+```
+
+If an earlier week has a flagged date, the last line of the page names
+it:
 
 ```
 [!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
@@ -315,8 +329,8 @@ day it falls on. It reads `(tomorrow)` one day out, `(Mon)` two to six
 days out, and `(Mon 2026-10-12)` a week or more out, so a large
 remaining figure can put it days away. `mlm week` for the current week
 shows the same headline and the same live-inclusive figures. A stint
-still open after midnight is not on the new day's page, so it gets no
-live credit until you `stop` it. `mlm status --help` and `mlm week
+still open after midnight is listed on the new day's page but not
+counted, so it gets no live credit and no `est. EOD` until you `stop` it. `mlm status --help` and `mlm week
 --help` end with a short glossary of these terms. A past date's status
 just shows that day's total and its week's numbers. Here `Week
 2026-37` is still the current week, so its line matches the one above:
@@ -397,15 +411,36 @@ a blank line:
 [!] needs a look: run mlm status DATE for details and fixes
 ```
 
-No footer line prints when nothing in the week is flagged.
+No `[!]` footer line prints when nothing in the week is flagged.
+
+While a start from yesterday is still open (the same case as the `[i]`
+hint in `status`), yesterday's row ends with `[i]`, and a second line
+follows the table. A row with an anomaly too ends `[!] [i]` and prints
+both footers, `[!]` first. The mark is a hint and counts as no anomaly,
+and no figure changes:
+
+```
+  Sat 2026-10-03   00h 00m
+  Sun 2026-10-04   00h 00m  [i]
+
+[i] open stint on Sun 2026-10-04: mlm status shows how to stop it
+```
+
+On a Monday, yesterday is last week's Sunday. The current week's view
+has no marked row, so its footer line names the stint instead, and last
+week's view marks the Sunday row. Other weeks print nothing:
+
+```
+[i] open stint on Sun 2026-10-04 (last week): mlm status shows how to stop it
+```
 
 An unfixed anomaly in a past week also throws off every later week's
 `Carry-in`, since carry-in is just the prior week's fulfillment against
 target. When any earlier week has a flagged date, the Carry-in figure
 gets a `[!]` and a line naming how many earlier weeks are affected and
 the oldest one sits above the Carry-in block. It goes directly under
-the footer line when a row is flagged, and takes the footer's place
-otherwise, with one blank line before the Carry-in block:
+the last footer line printed, and takes the footers' place when none
+printed, with one blank line before the Carry-in block:
 
 ```
 [!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)

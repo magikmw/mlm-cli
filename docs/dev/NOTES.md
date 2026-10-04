@@ -9,12 +9,13 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 103
+- **Next entry**: 110
 - **Last release**: `v0.3.6`
 - **`main`**: `f25603f` (`v0.3.6` + unreleased `open-punch-visibility`, `live-eod`,
-  `point-in-time-week` and `possible-issues-triage`)
-- **Active changeset**: none (`possible-issues-triage` merged to `main`,
-  entry 102; release not prepared)
+  `point-in-time-week`, `possible-issues-triage` and
+  `overnight-visibility`)
+- **Active changeset**: none (`overnight-visibility` merged to `main`,
+  entry 109; release not prepared)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1434,6 +1435,100 @@ SPEC.md and PLAN.md:
     grep of README, SPEC, AGENTS.md and `src/` found one stale test
     comment (lookback window ages), fixed. All task worktrees and
     branches removed. Release not prepared; awaiting the user's call.
+
+103. **`overnight-visibility` changeset started.** Last SPEC §1.2a
+    item: a stint open across midnight gets no live credit and, beyond
+    the `[i]` hint, no visibility. Options laid out: A live credit while
+    the stint would splice, B show it without counting, C accept. User
+    chose B (they do not work overnight; it happened once waiting on a
+    migration), and asked that `mlm week` mark yesterday's row too,
+    after seeing mockups. On Mondays the current week's view also
+    names Sunday's open stint in a footer line (user's call, from a
+    side-agent note). Reverses `possible-issues-triage`'s rule that
+    `[i]` never marks a row. If overnight users appear, revisit A.
+    Phase 0 profile reused from entry 65. Baseline `main` at `6edd67b`;
+    branch `overnight-visibility`. Spec
+    `docs/dev/specs/2026-10-04-overnight-visibility.md`.
+
+104. **`overnight-visibility` spec reviewed and locked.** Adversarial
+    review (`plans/reports/overnight-visibility-spec-review.md`, 9
+    findings + U1-U8) folded: F1 footers point to `mlm status` (today's
+    page carries the fix lines; `status DATE` for a past date has none);
+    F2/U5 a row with an anomaly and the overnight stint shows `[!] [i]`
+    and both footers, so `[!]` never hides it; F3 the line is rendered
+    apart from the date-sorted stint list, and `status -1` keeps its
+    wording; F4 stale SPEC passages and the `lookback.rs` test that
+    asserts the old rule are listed for update; F5 data model left to
+    the plan (reviewer confirmed `mlm week` can decide the trigger from
+    loaded buckets, no new reads); F6 §1.2a and README both read "None
+    currently."; F7 moved behavior adds no `est. EOD` and the
+    Sunday-midnight `Worked` gap; F8 spec drops option narration; F9
+    tests added. U1-U4, U7, U8 recorded in spec §7. Phase 14 runs, tier
+    `returning`. Provisional task count 2 (code, docs): collapsed
+    phases 5-7, phase 10 skipped.
+
+105. **`overnight-visibility` plan reviewed and folded**
+    (`docs/dev/plans/overnight-visibility-plan.md`, collapsed form, two
+    parallel tasks: T1 code, T2 docs). Plan decisions: the overnight
+    line is its own optional field on the status view, rendered first;
+    week rows gain a flag and the view one optional date for the Monday
+    footer; one pure trigger decision in `src/lookback.rs`. Plan review
+    (`plans/reports/overnight-visibility-plan-review.md`, 9 findings +
+    G1-G8) folded: F1 NOTES removed from the docs task; F2 glossary
+    sentence pinned as a literal so the tasks run in parallel; F3 the
+    trigger derives refused-join itself and the hint calls it; F4 week
+    row criteria for joined/refused/two-open/age-2; F5 three
+    old-rule tests named for rewrite; F6 fixture sites named; F7 spec
+    §8 precedence wording fixed; F8 Monday needs Sunday from the
+    buckets; F9 ASCII sweep. G1-G7 added to spec §7; G8 already there.
+
+106. **`overnight-visibility` task plans written; implementation
+    dispatched.** T1 (`plans/overnight-visibility-task-1-code.md`) and
+    T2 (`plans/overnight-visibility-task-2-docs.md`). Coordinator calls:
+    T1 may make the mechanical edits to `src/lookback.rs` tests that the
+    dropped refused-join parameter forces; the suppression lives in the
+    shared `overnight_stint` decision and only `today_page_lines` filters
+    the hint with it, so `mlm start` keeps warning about yesterday's
+    open start; clock-dependent cases are unit tests with injected
+    `now`. T2 covers four SPEC passages the spec missed and adds edge
+    case E26 for `week`. Phase 10 skipped (two tasks).
+
+107. **`overnight-visibility` tasks merged.** T2 docs (`78c172f`), T1
+    code (merge after it). Merge gate green: fmt, build, 841 tests,
+    clippy; hand repro (22:00 start yesterday plus today's own open
+    stint) shows the hint, the overnight line ahead of today's stint,
+    the Saturday `[i]` row and footer, unchanged figures. Doc literals
+    match the binary. T1 notes: some new tests were red only as compile
+    errors; one CLI test written after the code. Worktrees and branches
+    removed.
+
+108. **`overnight-visibility` phase 13/14 back and triaged.** Sonnet
+    final review (`plans/reports/overnight-visibility-final-review.md`):
+    ship; gates re-run, three mutations caught; Monday covered by unit
+    tests only (real clock was Sunday). Phase 14 (`returning`, 8
+    findings; report file again not written by the `cd-fresh-eyes`
+    agent, findings kept here): FE1 splice suffixes `spans to next day`
+    / `continues previous day's stint` unexplained; FE2 footer `run mlm
+    status to stop it` overpromises; FE3 `start` says `warning:` where
+    `status` says `[i]`; FE4 a 2-day-old start shows `[!]` with no
+    stint line and a generic footer; FE5 bare `stop` on it leaves an
+    orphaned end silently; FE6 `[i]` footer does not name its row; FE7
+    `est. EOD 00:00 (Tue)` reads oddly; FE8 glossary lacks the
+    overnight line. User approved: fix FE2+FE6 (both `[i]` footers
+    become `[i] open stint on <Ddd YYYY-MM-DD>[ (last week)]: mlm status
+    shows how to stop it`) and FE1+FE8 (glossary entries for the
+    overnight line and the splice suffixes). FE3, FE4, FE5, FE7
+    accepted.
+
+109. **`overnight-visibility` fix pass merged; changeset merged to
+    `main`.** Fix pass (`plans/reports/overnight-visibility-fixpass.md`)
+    closed FE2+FE6 (`[i]` footers name the stint's date) and FE1+FE8
+    (glossary entries for the overnight line and splice suffixes). Merge
+    gate green: fmt, build, 841 tests, clippy; footer and glossary
+    checked by hand. Close-out: archive banners on the spec, plan and
+    task plans; stale-doc grep of README, SPEC, AGENTS.md, `src/` and
+    `tests/` clean. SPEC §1.2a and README Possible issues read "None
+    currently." Release not prepared; awaiting the user's call.
 
 ## Open questions (still need answers)
 
