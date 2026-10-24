@@ -229,6 +229,7 @@ Arguments:
   [WEEK_ID]  Week to show: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
 
 Options:
+  -n, --notes    Show each date's notes under its row
   -v, --verbose  Enable debug-level logging
   -h, --help     Print help (see more with '--help')
 ";

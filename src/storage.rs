@@ -476,6 +476,35 @@ pub fn notes_for_date(conn: &Connection, date: NaiveDate) -> Result<Vec<Note>, S
     Ok(out)
 }
 
+/// All notes whose local `date` falls within `[from, to]` inclusive,
+/// ascending by date, then in insertion order (`created_at_utc ASC, id
+/// ASC`) within a date, the order `notes_for_date` uses. Empty `Vec` for
+/// a range with no rows, or when `from > to`.
+pub fn notes_in_range(
+    conn: &Connection,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<Note>, StorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, \"date\", body, created_at_utc FROM notes \
+         WHERE \"date\" BETWEEN ?1 AND ?2 \
+         ORDER BY \"date\" ASC, created_at_utc ASC, id ASC",
+    )?;
+    let rows = stmt.query_map(
+        (
+            from.format("%Y-%m-%d").to_string(),
+            to.format("%Y-%m-%d").to_string(),
+        ),
+        map_note_row,
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, date, body, created_at_utc) = row?;
+        out.push(note_from_row(id, date, body, created_at_utc)?);
+    }
+    Ok(out)
+}
+
 /// Delete the note with the given internal `id` and return the row as
 /// it was immediately before deletion (for the delete command's
 /// recreate-echo). `id` is the internal DB surrogate key (`Note::id`),
@@ -1514,6 +1543,105 @@ mod tests {
         insert_punch(&conn, PunchKind::Start, d(2026, 1, 10), t(9, 0), &TZ_UTC).expect("insert");
         let range = punches_in_range(&conn, d(2026, 2, 1), d(2026, 2, 28)).unwrap();
         assert!(range.is_empty());
+    }
+
+    // --- notes_in_range (week --notes) ------------------------------------
+
+    #[test]
+    fn notes_in_range_includes_both_edges_and_excludes_outside() {
+        let conn = test_db();
+        for (day, body) in [
+            (4, "before"),
+            (5, "from"),
+            (8, "mid"),
+            (11, "to"),
+            (12, "after"),
+        ] {
+            insert_note(&conn, d(2026, 1, day), body, utc(2026, 1, day, 9, 0, 0)).expect("insert");
+        }
+        let got = notes_in_range(&conn, d(2026, 1, 5), d(2026, 1, 11)).expect("read");
+        assert_eq!(
+            got.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
+            vec!["from", "mid", "to"]
+        );
+    }
+
+    #[test]
+    fn notes_in_range_orders_by_date_then_created_at_then_id() {
+        let conn = test_db();
+
+        // Inserted out of date order, later id with earlier created_at_utc.
+        insert_note(&conn, d(2026, 1, 6), "tue", utc(2026, 1, 6, 8, 0, 0)).expect("insert");
+        insert_note(&conn, d(2026, 1, 5), "mon late", utc(2026, 1, 5, 15, 0, 0)).expect("insert");
+        insert_note(&conn, d(2026, 1, 5), "mon early", utc(2026, 1, 5, 10, 0, 0)).expect("insert");
+        insert_note(&conn, d(2026, 1, 5), "mon tie a", utc(2026, 1, 5, 16, 0, 0)).expect("insert");
+        insert_note(&conn, d(2026, 1, 5), "mon tie b", utc(2026, 1, 5, 16, 0, 0)).expect("insert");
+        let got = notes_in_range(&conn, d(2026, 1, 5), d(2026, 1, 11)).expect("read");
+        assert_eq!(
+            got.iter()
+                .map(|n| (n.date, n.body.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (d(2026, 1, 5), "mon early"),
+                (d(2026, 1, 5), "mon late"),
+                (d(2026, 1, 5), "mon tie a"),
+                (d(2026, 1, 5), "mon tie b"),
+                (d(2026, 1, 6), "tue"),
+            ]
+        );
+    }
+
+    #[test]
+    fn notes_in_range_matches_notes_for_date_per_date() {
+        let conn = test_db();
+        insert_note(&conn, d(2026, 1, 5), "B", utc(2026, 1, 5, 12, 5, 0)).expect("insert");
+        insert_note(&conn, d(2026, 1, 5), "A", utc(2026, 1, 5, 12, 1, 0)).expect("insert");
+        let ranged = notes_in_range(&conn, d(2026, 1, 5), d(2026, 1, 5)).expect("read");
+        assert_eq!(ranged, notes_for_date(&conn, d(2026, 1, 5)).expect("read"));
+    }
+
+    #[test]
+    fn notes_in_range_is_empty_for_an_empty_or_inverted_range() {
+        let conn = test_db();
+        insert_note(&conn, d(2026, 1, 8), "x", utc(2026, 1, 8, 9, 0, 0)).expect("insert");
+        assert!(
+            notes_in_range(&conn, d(2026, 2, 1), d(2026, 2, 7))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            notes_in_range(&conn, d(2026, 1, 11), d(2026, 1, 5))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn notes_in_range_renamed_body_column_is_a_db_error() {
+        let conn = test_db();
+        conn.execute("ALTER TABLE notes RENAME COLUMN body TO body_gone", [])
+            .expect("rename column");
+        let err = notes_in_range(&conn, d(2026, 1, 5), d(2026, 1, 11));
+        assert!(matches!(err, Err(StorageError::Db(_))));
+        assert_eq!(earliest_data_date(&conn).unwrap(), None);
+    }
+
+    #[test]
+    fn notes_in_range_reports_a_corrupt_created_at() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO notes (\"date\", body, created_at_utc) VALUES ('2026-01-06', 'x', 'garbage')",
+            [],
+        )
+        .expect("raw insert");
+        let err = notes_in_range(&conn, d(2026, 1, 5), d(2026, 1, 11));
+        assert!(matches!(
+            err,
+            Err(StorageError::CorruptRow {
+                column: "created_at_utc",
+                ..
+            })
+        ));
     }
 
     // --- 7.8 delete-by-id --------------------------------------------------

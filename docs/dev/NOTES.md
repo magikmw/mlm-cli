@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 125
+- **Next entry**: 133
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: none. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `export-notes` (spec drafting, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1761,6 +1761,95 @@ SPEC.md and PLAN.md:
     held the release to gather more changesets into it, then had the
     branch merged to `main` (`--no-ff`). Gate on `main` green: fmt,
     build, 859 tests, clippy. Next changesets branch from `main`.
+
+125. **Brainstorm: `week-notes` and `export-notes`.** Two changesets,
+    in this order, each its own release. Phase 0 profile reused from
+    entry 65. Baseline `main` at `3bcff42`; branch `week-notes`.
+    `week-notes`: `mlm week --notes`/`-n` prints each date's notes
+    indented under its row (layout A of three mockups). Row markers
+    stay on the row, so a marked row reads marker first, notes below.
+    `export-notes`: `mlm export notes` (aliases `ex`, `n`), range by
+    one of `--date DATE` (accepts `-N`), `--week WEEK_ID`, `--month
+    YYYY-MM`, default the current week. Plain lines, one note each, as
+    `YYYY-MM-DD  body`. Stdout only, no `--output`. Empty range prints
+    nothing, exit `0`. JSON waits for a future `export all`.
+
+126. **`week-notes` spec locked.** The user approved the draft; one
+    review (`plans/reports/week-notes-spec-review.md`, 11 findings)
+    folded. F1 fixed a false claim: after `target`, `--notes` is a
+    token in target's own argument list, so it fails as target's own
+    errors and writes nothing; it is not a clap usage error. F2 the
+    example is now the current-week form. F3 the error test renames
+    `notes.body` so it fails only the new read. F4/F5 add the SPEC
+    §6.1/E20, `history.rs` and AGENTS.md doc targets and the missing
+    tests. U1/U2 (`-n` before `target`), U4 (long-body wrap) and U5
+    (footers pushed down) recorded as known issues. U3 wording now
+    says the layout differs from `status`. U6 (`mlm w n`) dropped,
+    since `n` was never the flag. Phase 14 runs at tier `returning`,
+    because an opt-in flag on an existing command changes nothing a
+    first-run user meets. Expected 2 tasks (code, docs), so phases
+    5-7 collapse and phase 10 is skipped.
+
+127. **`week-notes` plan folded.** Plan
+    (`plans/week-notes-plan.md`, 2 tasks: code+tests, docs) reviewed
+    once (`plans/reports/week-notes-plan-review.md`, 10 findings), all
+    folded. F1 pins the note read in the command entry point, so the
+    view builder's signature and its test callers in `status.rs` and
+    `lookback.rs` stay untouched. F2 the order test makes `id` and
+    `created_at_utc` order disagree. F3 clock-dependent cases move to
+    renderer unit tests. F4 allows mechanical pattern/fixture updates.
+    F5 adds the `week_view.rs` doc passages. F6 pins the read's return
+    as a flat list of the existing note type. F7 ASCII check moves to
+    the new test file. F8 pins README spelling `-n/--notes`. U1 (one
+    bad note row hides the `--notes` view) added to spec §1.2. U2 adds
+    a help-glossary entry for note lines, a wording-level change to
+    spec §8. Two tasks confirmed, so phase 10 stays skipped.
+
+128. **`week-notes` known issues dropped.** The user had all four
+    removed: long-body wrap, footers pushed down, `-n` before
+    `target`, one bad note row hiding the `--notes` view. Reviewer
+    over-reports, each either expected or consistent with existing
+    hard-error policy. Spec §1.2 is `None.`; SPEC §1.2a and README's
+    possible-issues list stay unchanged.
+
+129. **`week-notes` task plans written.** Task 1
+    (`plans/week-notes-task-1-code.md`) pins `notes_in_range`, the
+    six-space note prefix, and a shared glossary entry placed third
+    before `[!], [i]`; it also shows in `status --help`, worded for
+    both. Task 1 gains `tests/week_target_cli.rs`, whose `mlm week -h`
+    golden the flag line changes, a mechanical update. Task 2
+    (`plans/week-notes-task-2-docs.md`) adds §3.5 to its targets and
+    uses spec §5's example in full plus a README Features line. Task
+    2 realigned against Task 1 for the glossary text.
+
+130. **`week-notes` tasks merged.** Task 2 (docs, `f22a179`, no
+    report) and Task 1 (code, `54079d4`,
+    `plans/reports/week-notes-task-1-report.md`) merged `--no-ff`.
+    Task 1 deviations: the `week --help` long form puts the flag's
+    description on its own line (golden fixed to real output); test
+    helpers merged to satisfy the coverage ratchet. SPEC §3.6 says
+    `--help` "lists it as" the text, true in both layouts, so no doc
+    change. Merge gate green on `week-notes`: fmt, build, 891 tests,
+    clippy; smoke run of `week -n` on a seeded database matches the
+    spec layout. Task worktrees and branches removed.
+
+131. **`week-notes` reviewed and triaged; closed out.** Phase 14
+    (`returning`, `plans/reports/week-notes-fresh-eyes.md`, 10
+    findings) and phase 13 on Sonnet at the user's choice
+    (`plans/reports/week-notes-final-review.md`, ship-with-followups,
+    3 findings). All dropped with the user's agreement: fresh-eyes
+    hits are the dropped known issues, existing note normalization,
+    existing exit codes and headline wording. Final F1 (long-help
+    layout) needs no fix. F2 (raw control characters in note bodies,
+    `status` too) would be a new mechanism; the user skipped it. F3
+    (`WeekArgs` doc comment past 80 columns) folds into
+    `export-notes`, which edits `src/cli.rs`. No fix pass. Archive
+    banners on the spec, plan and task plans. Scratch clone and
+    sandbox removed.
+
+132. **`week-notes` merged to `main`, unreleased.** The user had it
+    merged `--no-ff` and moved on to `export-notes`, which branches
+    from `main`.
 
 ## Open questions (still need answers)
 

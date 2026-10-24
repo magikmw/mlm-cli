@@ -4,7 +4,8 @@
 //! read feed the week ledger and hand back the bucketed punches, so every
 //! consumer works from the same data. The loader visits only dates that
 //! have punches, so a far-future week id costs nothing extra. Any storage
-//! failure is an error, never a default.
+//! failure is an error, never a default. `mlm week --notes` makes one
+//! ranged note read of its own, outside this loader.
 
 use std::collections::BTreeMap;
 
