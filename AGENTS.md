@@ -39,13 +39,15 @@ real logic instead of re-deriving it — new top-level modules go in
 - `src/week.rs` — target/carry/fulfillment accounting (§2.4/§5)
 - `src/anomalies.rs` — per-date anomaly facts (E7, stale, E8, overlap,
   refused joins) built from raw punch buckets, and their rendered
-  lines. `status`, `week` rows and the carry scan all call it.
+  lines. `status`, `week` rows, the carry scan and `stop`'s
+  orphaned-end warning all call it.
 - `src/lookback.rs` — today's lookback scan (ages 1-14), the yesterday
   hint and `mlm start`'s stderr warnings
 - `src/history.rs` — the shared history loader. One earliest-date read,
   one ranged punch read and one ranged target read build the week
   ledger and the bucketed punches for `status` and `mlm week`. Any read
-  failure is an error.
+  failure is an error. `stop`'s orphaned-end warning also uses its
+  `PunchBuckets` view, over a three-date punch read of its own.
 - `src/carry_scan.rs` — the carry-in marker data (earlier weeks with an
   anomaly), computed over the loader's punches with no reads of its own
 - `src/render.rs` — shared rendering helpers used by both `status`/`week`,

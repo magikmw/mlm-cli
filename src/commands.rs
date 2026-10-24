@@ -10,8 +10,10 @@
 use chrono::{DateTime, Local, TimeZone, Utc};
 use rusqlite::Connection;
 
+use crate::anomalies;
 use crate::cli::{DeleteEntryArgs, NoteArgs, PunchArgs};
-use crate::date::{format_date, resolve_future_checked_date};
+use crate::date::{format_date, format_date_with_weekday, resolve_future_checked_date};
+use crate::history::PunchBuckets;
 use crate::lookback::{self, LookbackEntry, LookbackKind};
 use crate::storage::{self, Note, Punch, PunchKind};
 use crate::time::{TimeParseError, parse_time};
@@ -35,9 +37,18 @@ pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> a
 
 /// Record an end punch for today, optionally with an inline note
 /// (SPEC §3.3 — "same shape as start"), or against another day via
-/// `--date` (backdated-punches spec §4).
+/// `--date` (backdated-punches spec §4). After a successful write, warns
+/// on stderr about every orphaned end on the written date (§7.4) —
+/// best-effort, like `start`'s warning.
 pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
-    punch(conn, now, PunchKind::End, args)?;
+    let (date, _) = punch(conn, now, PunchKind::End, args)?;
+    warn_orphaned_ends(
+        conn,
+        date,
+        now.date_naive(),
+        now.with_timezone(&Utc),
+        &mut std::io::stderr(),
+    );
     Ok(())
 }
 
@@ -82,6 +93,53 @@ fn emit_warnings<W: std::io::Write>(
         }
         let _ = writeln!(out, "{}", entry.stderr_line());
     }
+}
+
+/// §7.4: after a successful `stop` write to `date`, warn once per orphaned
+/// end on `date`, classified with the splice as `date`'s status page does.
+/// A failed read prints nothing; a failed write to `out` is ignored.
+fn warn_orphaned_ends<W: std::io::Write>(
+    conn: &Connection,
+    date: chrono::NaiveDate,
+    today: chrono::NaiveDate,
+    now_utc: DateTime<Utc>,
+    out: &mut W,
+) {
+    let Ok(times) = orphaned_end_times(conn, date, today, now_utc) else {
+        return;
+    };
+    for line in orphan_warning_lines(date, &times) {
+        let _ = writeln!(out, "{line}");
+    }
+}
+
+/// `date`'s orphaned-end times, ascending, from one read of `date` and its
+/// two neighbours. Any read failure is an error, never an empty date.
+fn orphaned_end_times(
+    conn: &Connection,
+    date: chrono::NaiveDate,
+    today: chrono::NaiveDate,
+    now_utc: DateTime<Utc>,
+) -> Result<Vec<chrono::NaiveTime>, storage::StorageError> {
+    let from = date.pred_opt().unwrap_or(date);
+    let to = date.succ_opt().unwrap_or(date);
+    let buckets = PunchBuckets::from_punches(&storage::punches_in_range(conn, from, to)?);
+    Ok(anomalies::date_facts(&buckets.trio(date), date, today, now_utc).orphaned_end_times)
+}
+
+/// One three-line block per orphaned end: a header naming the date, then
+/// `status`'s two E8 hint lines.
+fn orphan_warning_lines(date: chrono::NaiveDate, times: &[chrono::NaiveTime]) -> Vec<String> {
+    let day = format_date_with_weekday(date);
+    let mut out = Vec::new();
+    for t in times {
+        out.push(format!(
+            "warning: orphaned end on {day} at {} (no matching start)",
+            t.format("%H:%M")
+        ));
+        out.extend(anomalies::orphan_hint_lines(date, *t));
+    }
+    out
 }
 
 /// Record a standalone work-log note (SPEC §3.4), against today or, with
@@ -2103,6 +2161,137 @@ mod tests {
             &mut out,
         );
         assert!(out.is_empty(), "{:?}", String::from_utf8_lossy(&out));
+    }
+
+    // --- §7.4 stop orphaned-end warning --------------------------------
+
+    fn stop_warnings(conn: &Connection, date: NaiveDate) -> String {
+        let mut out = Vec::new();
+        warn_orphaned_ends(
+            conn,
+            date,
+            today(),
+            fixed_now().with_timezone(&Utc),
+            &mut out,
+        );
+        String::from_utf8(out).expect("utf8")
+    }
+
+    #[test]
+    fn stop_warns_for_an_orphan_two_days_after_an_open_start() {
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["22:00", "--date", "2026-02-10"]),
+        )
+        .expect("start");
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::End,
+            &stop_args(&["14:16"]),
+        )
+        .expect("stop");
+        assert_eq!(
+            stop_warnings(&conn, today()),
+            "warning: orphaned end on Thu 2026-02-12 at 14:16 (no matching start)\n\
+             \x20   fix: mlm start HH:MM --date 2026-02-12  (a time before 14:16)\n\
+             \x20    or: mlm delete punch --date 2026-02-12  (lists punches; rerun with the end's number)\n"
+        );
+    }
+
+    #[test]
+    fn stop_is_silent_after_a_clean_pair() {
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["09:00"]),
+        )
+        .expect("start");
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::End,
+            &stop_args(&["17:00"]),
+        )
+        .expect("stop");
+        assert_eq!(stop_warnings(&conn, today()), "");
+    }
+
+    #[test]
+    fn stop_is_silent_when_the_end_splices_with_yesterday() {
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::Start,
+            &punch_args(&["22:00", "--date", YESTERDAY]),
+        )
+        .expect("start");
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::End,
+            &stop_args(&["01:00"]),
+        )
+        .expect("stop");
+        assert_eq!(stop_warnings(&conn, today()), "");
+    }
+
+    #[test]
+    fn orphan_warning_lines_one_block_per_time_in_order() {
+        let lines = orphan_warning_lines(d(2026, 2, 12), &[t(10, 0), t(16, 0)]);
+        assert_eq!(lines.len(), 6);
+        assert_eq!(
+            lines[0],
+            "warning: orphaned end on Thu 2026-02-12 at 10:00 (no matching start)"
+        );
+        assert_eq!(
+            lines[3],
+            "warning: orphaned end on Thu 2026-02-12 at 16:00 (no matching start)"
+        );
+    }
+
+    #[test]
+    fn stop_warning_read_failure_prints_nothing() {
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::End,
+            &stop_args(&["14:16"]),
+        )
+        .expect("stop");
+        conn.execute_batch("DROP TABLE punches")
+            .expect("drop table");
+        assert_eq!(stop_warnings(&conn, today()), "");
+    }
+
+    #[test]
+    fn stop_warning_ignores_a_failing_writer() {
+        // A zero-length slice fails every write with `WriteZero`.
+
+        let mut full: &mut [u8] = &mut [];
+        let mut conn = test_db();
+        punch(
+            &mut conn,
+            fixed_now(),
+            PunchKind::End,
+            &stop_args(&["14:16"]),
+        )
+        .expect("stop");
+        assert!(!stop_warnings(&conn, today()).is_empty());
+        warn_orphaned_ends(
+            &conn,
+            today(),
+            today(),
+            fixed_now().with_timezone(&Utc),
+            &mut full,
+        );
     }
 
     fn t(h: u32, m: u32) -> NaiveTime {

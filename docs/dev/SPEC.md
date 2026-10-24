@@ -61,7 +61,9 @@ Shipped, working-as-designed behavior that's rough or confusing, not
 committed to a fix. Kept separate from §1.2: a non-goal isn't built
 yet, a possible issue works but has a rough edge.
 
-None currently.
+- Entering a stop before its start warns once. `mlm stop 17:00` then
+  `mlm start 09:00` is legal on any date (§3.2), but the first command
+  prints an orphan warning (§7.4). The second command clears it.
 
 ### 1.3 Terminology
 
@@ -224,7 +226,8 @@ converts back to local.
 
 The global `-v`/`--verbose` flag turns on debug log lines on stderr.
 Without it only warnings and errors are logged, so a run that creates
-and migrates a new database prints nothing.
+and migrates a new database prints nothing. The one exception is a
+first `mlm stop`, which warns about its orphaned end (§7.4).
 
 ### 3.1 Time input format
 
@@ -255,7 +258,8 @@ Insert a `start` punch, for today unless `--date` says otherwise
 
 ### 3.3 `mlm stop [TIME] [NOTE] [--date DATE]`
 
-Same shape as `start`, inserts an `end` punch.
+Same shape as `start`, inserts an `end` punch. After the write it warns
+on stderr about each orphaned `end` on the date it wrote to (§7.4).
 
 ### 3.4 `mlm note NOTE [--date DATE]`
 
@@ -353,7 +357,8 @@ duration format (§4.2):
 Week 2026-41 target: 20h 00m
 ```
 
-`start`, `stop` and `note` stay silent (§7.4).
+`note` stays silent. `start` and `stop` print nothing to stdout, and
+print only warnings to stderr (§7.4).
 
 `WEEK_ID` goes after `target`. `mlm week WEEK_ID target DURATION` fails
 with one line on stderr and exit `2`, the same code as parser errors:
@@ -453,7 +458,9 @@ malformed. The nested stints overlap, though, and an overlap is flagged
 
 Edge cases, still just **detected and surfaced in that date's
 summary** (§3.5/§3.6 output), not silently fixed and not rejected at
-insert time (no editing/validation — see §1.2):
+insert time (no editing/validation — see §1.2). `start` and `stop`
+print stderr warnings at insert time (§7.4), and the punch is stored
+either way. The edge cases are:
 
 - **One unmatched trailing `start`** (stack has exactly one item once
   the date's punches are exhausted): the normal open/ongoing stint
@@ -587,7 +594,9 @@ command outright (nonzero exit, nothing written, message on stderr);
 **anomalies** (§4.3) are accepted, stored, and surfaced later in
 `status`/`week` output instead — because there's no in-place editing
 (§1.2), refusing to store a punch that merely produces a weird pairing
-would leave the user with no way to fix it.
+would leave the user with no way to fix it. `stop` also surfaces an
+orphaned `end` right away, as a stderr warning after the write (§7.4),
+and still exits `0`.
 
 ### 6.1 Hard errors (reject, no write)
 
@@ -642,8 +651,10 @@ would leave the user with no way to fix it.
 - A `status`/`week` target (date or week) with no punches/notes at
   all: valid, just renders as empty for that scope.
 - Any §4.3 pairing anomaly (extra open stints, an orphaned `end`): the
-  punch is still inserted; the anomaly shows up in that date's next
-  `status`/`week` output, not at insert time.
+  punch is still inserted, and the anomaly shows up in that date's next
+  `status`/`week` output. A `stop` to a date that holds an orphaned
+  `end` also warns on stderr right after the write (§7.4), and still
+  exits `0`.
 - A week with no `week_targets` row: valid, uses the default target
   (40h) rather than erroring for "unset".
 
@@ -1327,7 +1338,8 @@ anomaly, and prints the `[i]` footer (§7.2).
 
 ### 7.4 Write-command output
 
-`start`, `stop` and `note` print nothing on success. They are silent,
+`start`, `stop` and `note` print nothing on success, apart from the
+stderr warnings `start` and `stop` print (below). They are silent,
 Unix-conventional, and exit `0` (§6.3) is the only signal. A hard error
 (§6.1) still prints its message to stderr as usual. `status` and `week`
 produce stdout output (§7.1, §7.2). `week target` prints one line
@@ -1385,6 +1397,43 @@ marker.
 The check is best-effort: if the lookback read fails after the write
 already committed, `start` still prints nothing extra and still exits
 `0`.
+
+`stop` has its own narrow exception, also on stderr only. After a
+successful write to date `D`, it classifies `D` with the splice
+applied, exactly as `D`'s `status` page does (§4.3.1). It prints one
+warning block per orphaned end on `D`, ascending by instant, with no
+blank line between blocks. That includes an end the new punch
+displaced, and an orphan that was already on `D` before the write, so
+every `stop` to `D` reports the orphans `D` holds. An end that splices
+with the previous date's open start is not orphaned and draws no
+warning. `--date` changes `D`, not the rule. `stop` checks no other
+date and warns about nothing else, so an overlap or a second open start
+it creates waits for `status`. Stdout stays empty and the exit code
+stays `0`.
+
+The header names the date, which `status`'s E8 header leaves to its
+page. The two hint lines are `status`'s E8 lines (§7.3) word for word.
+With today Mon 2026-10-05, a start from two days back is still open and
+a bare `stop` lands on today at 14:16. The splice joins adjacent dates
+only, so today's end stays orphaned:
+
+```
+$ mlm start 22:00 --date -2
+$ mlm stop
+warning: orphaned end on Mon 2026-10-05 at 14:16 (no matching start)
+    fix: mlm start HH:MM --date 2026-10-05  (a time before 14:16)
+     or: mlm delete punch --date 2026-10-05  (lists punches; rerun with the end's number)
+```
+
+`status` shows the stale start that the end failed to close. Entering a
+stop before its start warns once (§1.2a).
+
+This check is best-effort too. If any read after the committed write
+fails, `stop` prints nothing at all and still exits `0`. A failed
+neighbor read never counts as an empty date, since that would turn a
+spliced end into a false orphan. A failed write to stderr is ignored
+and never changes the exit code. A hard error before the write (§6.1)
+is unchanged.
 
 ## 8. User flows (test basis)
 
@@ -1457,8 +1506,9 @@ or less directly.
   dates: each displays in the local offset that applied on its own
   date (§2.1) — a naive "single current offset" implementation should
   fail this.
-- **F13** - First run on a fresh database prints nothing on stderr. With
-  `--verbose` the migration line and debug lines appear (§3).
+- **F13** - First run on a fresh database prints nothing on stderr,
+  except that a first `mlm stop` warns about its orphaned end (§7.4,
+  E27). With `--verbose` the migration line and debug lines appear (§3).
 
 ### 8.2 Error / edge paths (§6 direct mapping)
 
@@ -1490,6 +1540,7 @@ or less directly.
   surfaces as an anomaly line naming its timestamp, now with `fix:`/
   `or:` lines naming the start/delete commands to resolve it (§7.3).
   Two or more orphaned ends on the same date each get their own line.
+  A `stop` to that date also warns about each one on stderr (E27).
 - **E9** — `week target` with a negative `DURATION` → hard error;
   zero is not an error (F7b).
 - **E10** — `week target` missing the `DURATION` argument entirely →
@@ -1590,4 +1641,15 @@ or less directly.
   to stop it`, last week's view marks the Sunday row, and no other week prints
   anything. No `[i]` mark or footer appears when the start is joined,
   refused-join, doubled, or two days old.
+- **E27** - `mlm stop`'s orphaned-end warning (§7.4): a successful
+  `stop`, today or backdated, classifies the date it wrote to with the
+  splice applied and prints one `warning: orphaned end on <Wdy
+  YYYY-MM-DD> at <HH:MM> (no matching start)` block per orphaned end
+  there, ascending, each with `status`'s E8 `fix:`/`or:` lines. Stdout
+  stays silent and exit stays `0`. The FE5 case (a start two or more
+  days old, then a bare `stop` today) warns. So does an end the new
+  punch displaced (`start 09:00`, `stop 17:00`, `stop 12:00` warns for
+  17:00) and an orphan already on the date. A clean pair and an end that
+  splices with the previous date's open start stay silent. A read
+  failure after the write prints nothing, and the punch is stored.
 

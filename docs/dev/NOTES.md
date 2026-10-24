@@ -9,11 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 111
+- **Next entry**: 124
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: none
+- **Active changeset**: `orphan-stop-warning` (merged and closed out on its branch; release awaits the user)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
+- **Triage rules**: "Triaging review findings" below; apply at every fold
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
 
@@ -42,6 +43,32 @@ At final spec review (before implementation starts): give §6 (error
 handling & validation) particular scrutiny by mapping out concrete
 user flows end-to-end — tests will be written directly against those
 flows/assumptions, so gaps there become gaps in test coverage.
+
+## Triaging review findings (process, not product)
+
+mlm reports what is in the data. The user audits their own punches in
+`status`. mlm does not guess intent or guard against mistakes the user
+can see there. Reviewers are told to over-report, so the coordinator
+filters at every fold. Set in entry 117, after `orphan-stop-warning`
+grew three new mechanisms and 13 known issues from findings on its own
+fixes.
+
+- Drop a finding that restates the feature. New output appearing where
+  there was none is the change, not a gap.
+- Drop a finding that matches behavior the project already accepts
+  elsewhere, such as `start` doing the same thing.
+- Drop a finding whose harm needs the user to misread their own day,
+  when `status` would show the result straight away.
+- A finding whose fix needs a new mechanism (a threshold, a trigger, a
+  hint rule) is the user's call. Default to dropping it or filing it as
+  a known issue. Never fold one in as a coordinator decision.
+- Findings about a fix's own edge cases mean the fix is too big. Cut
+  the fix back. Do not patch its edges.
+- A known issue is a rough edge a user hits in normal use and is
+  misled by. Everything else is dropped, with one line in the decision
+  log saying so.
+- One spec review round. A second round is needed only when the fold
+  added a mechanism, and that is itself a sign the fold went wrong.
 
 ## Current manual process (plain text file)
 
@@ -1539,6 +1566,196 @@ SPEC.md and PLAN.md:
     `962ac9f` and pushed by hand per the script's recovery note. Release
     workflow green: artifacts, GitHub Release, crates.io publish,
     signing.
+
+111. **`orphan-stop-warning` changeset started.** Takes FE5 from entry
+    108: a bare `mlm stop` against a start 2+ days old writes an
+    orphaned end on today and prints nothing. Brainstorm options were
+    A (`stop` warns on stderr, still writes), B (`stop` refuses the
+    write) and C (`stop` retargets the stale start's date). User chose
+    A. B reverses the no-validation rule (SPEC §1.2, §4.3) and blocks
+    typing the stop before the start. C would credit a multi-day
+    stint. The user also chose to warn on any orphaned end, not only
+    when a stale start exists, so a forgotten `start` or a mistyped
+    stop time warns too. The cost is one needless warning when
+    backfilling stop-then-start. Stale-start lines from the lookback
+    follow the orphan warning only when one fires.
+
+112. **`orphan-stop-warning` spec review folded.** Review
+    (`plans/reports/orphan-stop-warning-spec-review.md`, needs-rework,
+    13 findings). User chose to fix F7 and U3 in this changeset rather
+    than file them: the E8 `fix:` hint gains a `(a time between P and
+    T)` window in `status` and `stop`, and `stop` warns when its end
+    splices into a stint of 12h or more. The 12h threshold is the
+    coordinator's pick; a genuine 12h+ overnight session warns too
+    (known issue). Coordinator folds: F1 silent cases restated over the
+    date's state after the write; F2 `stop` also checks `D+1`, since a
+    backdated stop can break the next date's splice; U2 `stop`'s
+    lookback uses today's `status` filter, so a refused join never
+    yields a yesterday fix that loses overnight time; F5 all reads
+    first, then print; F3 testing section; F4 full doc list; F6 FE5
+    flow is E27 in §8.2. U1, U5, U6 and the repeat rule are known
+    issues; U4 is a non-goal. The spec grew two triggers and a window
+    rule, so it goes back for one more review round before locking.
+
+113. **`orphan-stop-warning` spec round 2 folded; spec locked.**
+    Review (`plans/reports/orphan-stop-warning-spec-round-2-review.md`,
+    needs-rework, 13 findings; the reviewer's write hook refused the
+    `-review-2.md` name, so the file is `-round-2-review.md`). All
+    folded. Coordinator design calls, within the user's "fix both
+    along the way": an orphan sharing its minute with another end gets
+    a delete-only E8 block, because no start pairs cleanly with a
+    duplicate (F1); the long-splice `fix:` stops the earlier date's
+    start first, with the stop-hint window, so the user's own end
+    survives as an orphan with its own fixes (F2, F9); the 12h check
+    covers any splice into `D` or `D+1`, so a backdated stop that
+    clears an E7 is caught (F5); the yesterday hint drops its `or: mlm
+    stop` line once the start is 12h old, so mlm never suggests a
+    command it then warns about (F6); `stop` prints refused-join lines
+    for `D` and `D+1`, so a broken splice says so (F7). F3, F4, F13
+    tighten the E8 window rule; F8, F10 and the empty window are known
+    issues; F11, F12 complete the doc and test lists. Phase 14 skipped
+    at the user's call (small, wording-level surface); phase 13 runs on
+    Opus, approved by the user up front. Provisional task count: 2
+    (`stop` warnings; E8 hint + yesterday hint), so phases 5-7
+    collapse and phase 10 is skipped unless phase 5 finds 3+ tasks.
+
+114. **`orphan-stop-warning` changeset plan written**
+    (`plans/orphan-stop-warning-plan.md`). Two parallel tasks: Task 1
+    all code and tests (new `src/stop_warnings.rs`; `src/anomalies.rs`
+    owns the one E8 hint-line and refused-join renderer), Task 2 docs
+    (SPEC.md, README.md, AGENTS.md). This replaces the coordinator's
+    feature split, because `stop` reuses the E8 renderer and splitting
+    by feature would only serialize. Planner findings folded: a refused
+    join between `D` and `D+1` prints once, as `D`'s line (spec §3.1);
+    "word for word" covers the E8 hint lines, not the header (spec
+    §4.1); a real-clock test of the yesterday `or:` line moves to an
+    injected clock (Task 1). Two tasks, so phase 10 is skipped.
+
+115. **`orphan-stop-warning` plan review folded**
+    (`plans/reports/orphan-stop-warning-plan-review.md`,
+    ship-with-followups, 11 findings + U1-U6). All folded into the plan
+    without changing locked behavior. F1: when `D` is today, `D`'s
+    trio still reads tomorrow, as `status` does, and only `D+1`'s own
+    checks are skipped. F2, F3: Task 2 also updates the standalone
+    yesterday `or:` condition sentences, the first-run-silence claims
+    (SPEC §3, F13, README) and SPEC §4.3's insert-time lead-in. F4-F7:
+    tests for the once-only `D`/`D+1` refused join, a partial read
+    failure, no carry marker, the 719/720 boundary, and named breaking
+    tests. F8: the minute-inclusion flag dropped from the facts; tested
+    as behaviour. F9-F11: status line and citations, retargeted
+    section refs, `src/main.rs` to Task 1. U1-U6 accepted as known
+    issues in spec §1.2 (12h+ genuine session re-warns with nothing to
+    fix; the 11h 59m boundary race; past 12h no non-warning way to end
+    a running session; FE5 against a 15+ day start names nothing;
+    duplicate rows in `delete punch`; the `--help` glossary), plus the
+    first-run stderr change.
+
+116. **`orphan-stop-warning` task plans written**
+    (`plans/orphan-stop-warning-task-1-code.md`, findings(3);
+    `plans/orphan-stop-warning-task-2-docs.md`, green). Task 1 finding
+    1: a start at the minute of `D`'s spliced first end E14-pairs with
+    it and breaks the splice, so spec §5 now excludes that minute too
+    (wording, no printed-text change). Finding 2: spec §8's "`D+1` not
+    read" bullet corrected to match the plan. Finding 3: unit tests use
+    Mon 2026-02-09 to dodge a southern-hemisphere DST shift; accepted.
+    Task 2 plan's §7.3 minute-rule text predates finding 1, so its
+    implementer gets the one-sentence correction as a dispatch note
+    instead of a re-align round. Task 2 deviations accepted: new SPEC
+    §7.4.1 for `stop`'s rules, no "FE5" label in SPEC, the yesterday
+    warning's form restated for `stop`, and the README `18:02` example
+    noting its under-12h assumption. Phase 10 skipped (two tasks).
+
+117. **`orphan-stop-warning` rescoped.** The user cut the changeset
+    back to its first idea: `stop` warns on stderr for each orphaned
+    end on the date it wrote to, with `status`'s E8 hint lines. The
+    principle is that mlm reports the data and the user audits it, so
+    mlm does not guard against mistakes `status` already shows. Removed
+    from scope: the long-splice warning and its 12h threshold, the
+    yesterday hint's 12h rule, the E8 fix window and duplicate-minute
+    form, the `D+1` check, refused-join lines, and the lookback lines
+    after the warning. Each was a coordinator fold of a review finding,
+    and together they grew 13 known issues. Of those, the user called
+    the repeat-on-every-`stop` a feature, and five others restated the
+    feature. One known issue remains, the stop-then-start backfill
+    warning. The entries 112-116 plans and the task plans are
+    superseded; the next planning pass overwrites them. New process
+    section "Triaging review findings" records the rules this exposed.
+
+118. **`orphan-stop-warning` rescoped spec reviewed and locked.**
+    Review (`plans/reports/orphan-stop-warning-rescope-review.md`,
+    ship-with-followups, F1-F6 + U1-U7), triaged under the new rules.
+    Folded: F1, F2 wording on what `start` and `stop` report; F3 any
+    read failure suppresses the whole warning, so a failed neighbor
+    read can't fake an orphan; F4 a malformed-row injection for the
+    read-failure test; F6 SPEC §6 lead-in and E8 on the doc list; U5
+    one non-goal line; U6 known issue widened to any stop-before-start.
+    Dropped: F5 (tests pinning non-features), U1 (the `start` hint is
+    right when today's start was forgotten, and `delete` covers FE5),
+    U2-U4 (the long-splice, `D+1` and refused-join mechanisms the user
+    cut in entry 117), U7 (no age phrase restates the design). Phase 14
+    skipped at the user's call; phase 13 on Opus, pre-approved.
+    Expected tasks: 1-2 (code, docs), so phases 5-7 collapse and 10 is
+    skipped.
+
+119. **`orphan-stop-warning` rescoped plan reviewed and folded**
+    (`plans/orphan-stop-warning-plan.md`; review
+    `plans/reports/orphan-stop-warning-rescope-plan-review.md`,
+    ship-with-followups, F1-F6 + U1-U5). Folded: F1 AGENTS.md's
+    `anomalies.rs` caller list goes to Task 2; F2 Task 2 cites spec
+    §3-§5; F3 stale note on the deleted task plans; F4 the
+    no-lookback criterion dropped (a non-feature); F5 out-of-order
+    inserts, pinned pre-existing-orphan times, ASCII coverage; F6 a
+    failed stderr write is ignored. Dropped under the triage rules:
+    U1-U3 (long splice, `D+1`, refused join, all cut in entry 117), U4
+    (dropped in entry 118), U5 (a malformed `D+1` row suppressing the
+    warning is corrupt-data territory and follows from reading like
+    `status`).
+
+120. **`orphan-stop-warning` task plans written**
+    (`plans/orphan-stop-warning-task-1-code.md`, green;
+    `plans/orphan-stop-warning-task-2-docs.md`, findings(4)). Task 2
+    notes settled as dispatch corrections: E27 goes at the end of
+    §8.2 to keep numeric order, not beside E19; rewording SPEC §3.7
+    and §6.2 so they are true for `start` too is accepted; Task 1
+    builds `stop`'s view with `history::PunchBuckets`, so Task 2 also
+    updates AGENTS.md's `src/history.rs` bullet; docs-vs-code drift is
+    checked at the merge gate against the built binary. Phase 10
+    skipped (two tasks).
+
+121. **`orphan-stop-warning` Tasks 1-2 merged.** Task 2 (docs,
+    `0878e0e`) and Task 1 (code, `fd593cd`) merged `--no-ff`. Both
+    implementers found their worktree off the wrong base and rebased
+    onto `8a529ea` first. Task 1 swapped the plan's test writer for a
+    zero-length slice, because the plan's never-run `flush` dropped
+    coverage; no signature changed, so no report. Merge gate green:
+    fmt, build, 858 tests, clippy. Hand-runs of the built binary: FE5,
+    displaced end and backdated stop print the block, which matches
+    README's example apart from the dates; clean pair and splice are
+    silent; stdout empty and exit 0 throughout. Task worktrees and
+    branches removed.
+
+122. **`orphan-stop-warning` final review triaged.** Ran on Opus,
+    approved by the user up front
+    (`plans/reports/orphan-stop-warning-final-review.md`,
+    ship-with-followups, 3 findings). Clone verified green, spec
+    example byte-for-byte, every behavior-changing mutation caught
+    except dropping the `D+1` read, which cannot change orphans
+    (accepted in entry 119). All three fixed in one fix pass, as
+    mechanical: F1 SPEC §4.3's "the one insert-time signal" sentence
+    names both warnings and re-introduces the edge-case list; F2
+    re-wrap README's stdout/stderr paragraph; F3 a CLI test for a bare
+    `mlm stop`. Phase 14 skipped at the user's call. Scratch clone
+    removed.
+
+123. **`orphan-stop-warning` fix pass merged; changeset closed out.**
+    Fix pass (`plans/reports/orphan-stop-warning-fixpass.md`, green)
+    closed F1-F3. F3's bare-`stop` test was seen failing with the
+    warning routed to a sink. Noted, not fixed: README's shell-alias
+    line predates this changeset and runs long. Merge gate green: fmt,
+    build, 859 tests, clippy. Close-out: archive banners on the spec,
+    plan and task plans; stale-pointer grep of README, SPEC, AGENTS.md,
+    `src/` and `tests/` clean. Fix-pass worktree and branch removed.
+    Not merged to `main`; release awaits the user's call.
 
 ## Open questions (still need answers)
 

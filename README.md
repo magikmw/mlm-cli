@@ -45,7 +45,10 @@ Not implemented yet:
 Shipped behavior that's rough or confusing in a way worth fixing
 later.
 
-None currently.
+- Entering a stop before its start warns once. `mlm stop 17:00` then
+  `mlm start 09:00` is fine on any date, but the first command prints
+  an orphaned-end warning (see `mlm stop` below). The second command
+  clears it.
 
 ## Install
 
@@ -112,14 +115,18 @@ week-level numbers on their own (handy for a past or future week too),
 and `week target` adjusts a week's target when it should be something
 other than the default 40h.
 
-Every `start`/`stop`/`note` call is silent on success, and nothing
+Every `start`/`stop`/`note` call prints nothing to stdout on success.
+On stderr, `start` warns about open starts it finds and `stop` warns
+about orphaned ends on the date it wrote to (see below). Nothing else
 prints unless something went wrong. That holds on the first run too,
-when the database is created. `week target` prints one line confirming
-the stored target. `status` and `week` are the commands that produce
-output. `delete note`/`delete punch` are a narrow exception too (see
-below). A `status` after punching in/out is still how you confirm things
-landed correctly. Add `-v`/`--verbose` to any command to see debug log
-lines on stderr, including the one-time migration line.
+when the database is created, except that a first `mlm stop` warns
+about its orphaned end, since no start exists yet for it to pair with.
+`week target` prints one line confirming the stored target. `status`
+and `week` are the commands that produce output.
+`delete note`/`delete punch` are a narrow exception too (see below). A
+`status` after punching in/out is still how you confirm things landed
+correctly. Add `-v`/`--verbose` to any command to see debug log lines
+on stderr, including the one-time migration line.
 
 Every command has a 1 character alias, except `delete` (`del`).
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
@@ -182,6 +189,28 @@ argument shape and TIME-required-when-backdated rule as `start`
 ```sh
 $ mlm stop 13:00
 ```
+
+After a successful write, `stop` checks the date it wrote to and prints
+a `warning:` block to stderr for each orphaned end there (an end with
+no start to pair with), earliest first. Stdout and the exit code are
+unaffected. That includes an end the new punch displaced and one that
+was already on the date. An end that joins the previous day's open
+start across midnight is not orphaned and draws no warning. The common
+case is a start left open two or more days ago, then a bare `stop`
+today. A join reaches across one midnight only, so today's end stays
+orphaned. With today Mon 2026-10-05:
+
+```sh
+$ mlm start 22:00 --date -2
+$ mlm stop
+warning: orphaned end on Mon 2026-10-05 at 14:16 (no matching start)
+    fix: mlm start HH:MM --date 2026-10-05  (a time before 14:16)
+     or: mlm delete punch --date 2026-10-05  (lists punches; rerun with the end's number)
+```
+
+`status` shows the old start that the end failed to close. If `stop`
+cannot read the database after the write, it skips the warning and
+still exits 0.
 
 ### `mlm note|n NOTE... [-d/--date DATE]`
 

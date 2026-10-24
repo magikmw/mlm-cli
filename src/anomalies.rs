@@ -270,17 +270,13 @@ impl DateAnomalies {
     }
 
     fn e8_lines(&self) -> Vec<String> {
-        let d = format_date(self.date);
         let mut out = Vec::new();
         for t in &self.orphaned_end_times {
-            let time = t.format("%H:%M");
-            out.push(format!("[!] orphaned end at {time} (no matching start)"));
             out.push(format!(
-                "    fix: mlm start HH:MM --date {d}  (a time before {time})"
+                "[!] orphaned end at {} (no matching start)",
+                t.format("%H:%M")
             ));
-            out.push(format!(
-                "     or: mlm delete punch --date {d}  (lists punches; rerun with the end's number)"
-            ));
+            out.extend(orphan_hint_lines(self.date, *t));
         }
         out
     }
@@ -310,6 +306,19 @@ fn refused_join_line(named: NaiveDate, earlier: NaiveDate, later: NaiveDate) -> 
         format_date_with_weekday(earlier),
         format_date_with_weekday(later),
     )
+}
+
+/// `status`'s two E8 hint lines for an orphaned end at `time` on `date`
+/// (§7.3). `mlm stop`'s warning prints the same two lines.
+pub fn orphan_hint_lines(date: NaiveDate, time: NaiveTime) -> [String; 2] {
+    let d = format_date(date);
+    let time = time.format("%H:%M");
+    [
+        format!("    fix: mlm start HH:MM --date {d}  (a time before {time})"),
+        format!(
+            "     or: mlm delete punch --date {d}  (lists punches; rerun with the end's number)"
+        ),
+    ]
 }
 
 /// Classifies the date's three buckets: the splice-aware day view and the
@@ -567,6 +576,18 @@ mod tests {
                 "    fix: mlm start HH:MM --date 2026-09-21  (a time before 18:00)".to_string(),
                 "     or: mlm delete punch --date 2026-09-21  (lists punches; rerun with the end's number)".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn orphan_hint_lines_are_the_e8_block_hint_lines() {
+        let a = DateAnomalies {
+            orphaned_end_times: vec![t(18, 0)],
+            ..DateAnomalies::none(d(2026, 9, 21))
+        };
+        assert_eq!(
+            a.detail_lines()[1..3],
+            orphan_hint_lines(d(2026, 9, 21), t(18, 0))
         );
     }
 
