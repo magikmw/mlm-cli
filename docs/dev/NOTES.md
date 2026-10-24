@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 111
+- **Next entry**: 112
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: none
+- **Active changeset**: `orphan-stop-warning` (spec draft, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1539,6 +1539,19 @@ SPEC.md and PLAN.md:
     `962ac9f` and pushed by hand per the script's recovery note. Release
     workflow green: artifacts, GitHub Release, crates.io publish,
     signing.
+
+111. **`orphan-stop-warning` changeset started.** Takes FE5 from entry
+    108: a bare `mlm stop` against a start 2+ days old writes an
+    orphaned end on today and prints nothing. Brainstorm options were
+    A (`stop` warns on stderr, still writes), B (`stop` refuses the
+    write) and C (`stop` retargets the stale start's date). User chose
+    A. B reverses the no-validation rule (SPEC §1.2, §4.3) and blocks
+    typing the stop before the start. C would credit a multi-day
+    stint. The user also chose to warn on any orphaned end, not only
+    when a stale start exists, so a forgotten `start` or a mistyped
+    stop time warns too. The cost is one needless warning when
+    backfilling stop-then-start. Stale-start lines from the lookback
+    follow the orphan warning only when one fires.
 
 ## Open questions (still need answers)
 
