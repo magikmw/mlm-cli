@@ -50,6 +50,9 @@ things known to be broken or confusing today. See §1.2a for that.
   is distinct from `status`'s `DATE` argument and `start`/`stop`/
   `note`'s `--date` flag, both of which already accept a `-N` shorthand
   — §3.4a, §3.5.)
+- Other `mlm export` formats, such as JSON or CSV, and an `--output`
+  file. `mlm export notes` prints plain text to stdout, and the user
+  redirects it (§3.8).
 
 Stints spanning midnight, and a same-instant `end`/`start` boundary
 between two real stints, were both non-goals through this point in the
@@ -390,6 +393,58 @@ week target` even when the user typed the `w` alias, and prints no
 [WEEK_ID] <DURATION>` and an Arguments section naming both arguments. No
 parser error for this subcommand mentions `<ARGS>`.
 
+### 3.8 `mlm export notes [--date DATE | --week WEEK_ID | --month MONTH]`
+
+Print the notes of one date, one ISO week or one calendar month to
+stdout as plain text, one line per note (§7.5), for pasting into a
+report or piping into another tool. `export` has the alias `ex` and
+`notes` the alias `n`, so `mlm ex n -w 43` works. `export` requires a
+subcommand, and `notes` is the only one.
+
+- no range flag: the current ISO week, Monday to Sunday
+- `--date`/`-d DATE`: one date, in the `DATE` forms of §3.4a
+  (`YYYY-MM-DD`, or `-N` for N days before today), with no future-date
+  check
+- `--week`/`-w WEEK_ID`: Monday to Sunday of one ISO week, in the
+  `WEEK_ID` forms of §3.6, with a bare `WW` in the current ISO year
+- `--month`/`-m MONTH`: the first to the last calendar day of one
+  month. `MONTH` is `YYYY-MM` (e.g. `2026-03`), `YYYY-M` (`2026-3`, the
+  same month) or a bare `M`/`MM` (e.g. `3`) in the current calendar
+  year. The calendar year is not the ISO year, so on 2025-12-30 `-m 1`
+  is `2025-01`. The year is exactly four digits, and any value from
+  `0000` to `9999` is accepted. February runs to the 28th or the 29th
+  by the calendar.
+
+At most one range flag is given. The range covers every date from its
+first to its last day, inclusive. A note belongs to its stored `date`,
+so punches play no part. The command makes one storage read, the
+ranged note read over the range, and touches no punch, total or
+target.
+
+All three flags accept values that start with `-`. So `-d -1` is
+yesterday, and `-w -1` and `-m -1` reach their own `WEEK_ID` and
+`MONTH` errors with exit `1` (§6.1) instead of a parser error. A flag
+followed by another flag takes that flag as its value, so `-m -d` fails
+as a bad `MONTH`.
+
+A future date, week or month is not an error. It has no notes, so the
+command prints nothing and exits `0` (§6.2).
+
+These are usage errors from the argument parser, with exit `2` (§6.3):
+
+- bare `mlm export`, whose output lists `notes`
+- two or more range flags
+- one range flag given twice
+- a range flag with no value as the last token
+
+`mlm --help` lists `export` as `Print stored data as plain text`, and
+`mlm export --help` lists `notes`. `mlm export notes --help` shows:
+
+- command: `Print notes for a date, week or month, one per line (defaults to the current week)`
+- `-d, --date <DATE>`: ``Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g. `-1` = yesterday)``
+- `-w, --week <WEEK_ID>`: `Week to export: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7)`
+- `-m, --month <MONTH>`: `Month to export: YYYY-MM (e.g. 2026-03) or a bare month number (e.g. 3)`
+
 ## 4. Time/duration semantics
 
 ### 4.1 Parsing and conversion
@@ -626,7 +681,9 @@ and still exits `0`.
   preview of a future date. `status DATE` uses the same message shape and
   exit code as the `--date` case, and adds `; to view a future week, run
   mlm week WEEK_ID` to it. `mlm week WEEK_ID` for a future week is
-  not an error (§7.2).
+  not an error (§7.2). `mlm export notes` checks no range against today,
+  so its `--date`, `--week` or `--month` may name a future range
+  (§3.8, §6.2).
 - Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
   shape, or a week number that isn't a valid ISO week for its year
   (most years have 52, some have 53 — `2027-53` is invalid if 2027
@@ -634,6 +691,17 @@ and still exits `0`.
   `1..=53` range test). An unpadded number is accepted and normalized
   (`2026-7` parses the same as `2026-07`), consistent with how
   `TIME`/`DURATION` input is lenient about padding elsewhere.
+- Malformed `MONTH` (§3.8). A value that is not `YYYY-MM`, `YYYY-M` or
+  a bare `M`/`MM` prints this:
+
+  `invalid MONTH "<input>": expected YYYY-MM or MM`
+
+  A month number of `0` or above `12` prints this:
+
+  `invalid MONTH "<input>": month must be 1-12`
+
+  `<input>` is the value as typed. The year is exactly four digits, and
+  any four-digit year is accepted.
 - Malformed `DURATION` (§3.7/§4.2): doesn't match the input grammar,
   or parses to a negative number of minutes. Zero is legal (a
   deliberate week off, see §2.3's `week_targets` note) — only
@@ -652,14 +720,15 @@ and still exits `0`.
   expected and handled silently (`db.rs` already creates the
   directory and runs migrations from empty — see `src/db.rs` in the
   scaffold), not a failure case.
-- A storage read failure in `status` or `mlm week`, on any of the
-  reads they make (the earliest data week, the target overrides, the
-  punches behind the carry walk, and for `mlm week --notes` the shown
-  week's notes). The command prints `error:` and the storage error text
-  to stderr, prints nothing to stdout, and exits `1`. `mlm week` never
+- A storage read failure in `status`, `mlm week` or `mlm export notes`,
+  on any of the reads they make (the earliest data week, the target
+  overrides, the punches behind the carry walk, for `mlm week --notes`
+  the shown week's notes, and for `mlm export notes` its one ranged
+  note read). The command prints `error:` and the storage error text to
+  stderr, prints nothing to stdout, and exits `1`. `mlm week` never
   falls back to the default target or to "no earlier weeks", and
-  `--notes` never falls back to an empty note list. Plain `mlm week`
-  makes no note read.
+  neither `--notes` nor `mlm export notes` falls back to an empty note
+  list. Plain `mlm week` makes no note read.
 - `mlm week WEEK_ID target DURATION`, the week id before `target`
   (§3.7). It is rejected with the one-line message there and exit `2`.
 
@@ -674,6 +743,11 @@ and still exits `0`.
   exits `0`.
 - A week with no `week_targets` row: valid, uses the default target
   (40h) rather than erroring for "unset".
+- `mlm export notes` over a range with no notes: prints nothing and
+  exits `0` (§7.5).
+- `mlm export notes` for a future date, week or month: not checked
+  against today (§3.8). It has no notes, so it prints nothing and exits
+  `0`.
 
 ### 6.3 Exit codes
 
@@ -1404,13 +1478,13 @@ anomaly, and prints the `[i]` footer (§7.2).
 `start`, `stop` and `note` print nothing on success, apart from the
 stderr warnings `start` and `stop` print (below). They are silent,
 Unix-conventional, and exit `0` (§6.3) is the only signal. A hard error
-(§6.1) still prints its message to stderr as usual. `status` and `week`
-produce stdout output (§7.1, §7.2). `week target` prints one line
-(§3.7). `delete note`/`delete punch` are a narrow, deliberate exception
-to the write-command-silence rule above rather than a repeal of it. List
-mode prints that date's numbered entries (or `nothing to delete for
-<date>.` when there are none), and a successful delete prints a
-ready-to-run recreate command.
+(§6.1) still prints its message to stderr as usual. `status`, `week`
+and `export notes` produce stdout output (§7.1, §7.2, §7.5). `week
+target` prints one line (§3.7). `delete note`/`delete punch` are a
+narrow, deliberate exception to the write-command-silence rule above
+rather than a repeal of it. List mode prints that date's numbered
+entries (or `nothing to delete for <date>.` when there are none), and a
+successful delete prints a ready-to-run recreate command.
 
 `start` gains one more narrow exception, on stderr only. After a
 successful write, it runs the same 14-day lookback `status` uses for
@@ -1498,6 +1572,26 @@ spliced end into a false orphan. A failed write to stderr is ignored
 and never changes the exit code. A hard error before the write (§6.1)
 is unchanged.
 
+### 7.5 `mlm export notes`
+
+One line per note: the date as `YYYY-MM-DD`, two spaces, then the body
+as stored. No header, no blank line, no summary. Lines run ascending by
+date, and within a date in insertion order (`created_at_utc ASC, id
+ASC`, §2.3), the order `status` (§7.1) and `mlm week --notes` (§7.2)
+use. A week with notes on three of its dates:
+
+```
+$ mlm export notes --week 2026-43
+2026-10-19  fixed migration runner bug
+2026-10-19  started punch pairing tests
+2026-10-21  code review for #41
+2026-10-24  refactored the parser
+```
+
+- An empty range prints nothing and exits `0`.
+- Note bodies pass through unchanged, non-ASCII included, as in
+  `status` (§2.3, §7). Every other byte is ASCII.
+
 ## 8. User flows (test basis)
 
 Concrete flows mapped end-to-end against the spec, per NOTES.md's
@@ -1579,6 +1673,16 @@ or less directly.
   line, and every figure, marker and footer matches plain `mlm week`.
   `mlm week -n WEEK_ID` and `mlm week WEEK_ID --notes` print the same.
   Plain `mlm week` prints no note lines.
+- **F15** - Export notes (§3.8, §7.5): two notes on 2026-10-19 in that
+  entry order, one on 2026-10-21 and one on 2026-10-24, then `mlm
+  export notes --week 2026-43` prints the four lines of §7.5's example.
+  `--date 2026-10-19` prints that date's two lines, and `--month
+  2026-10` prints all four. Notes dated the day before a range's first
+  day or the day after its last day never appear. No range flag prints
+  the current week's notes and none from the weeks either side. Two
+  notes on one date whose later `id` has the earlier `created_at_utc`
+  print in `created_at_utc` order. `mlm ex n -w 2026-43` prints the
+  same as the long form, and a non-ASCII body passes through unchanged.
 
 ### 8.2 Error / edge paths (§6 direct mapping)
 
@@ -1724,4 +1828,27 @@ or less directly.
   17:00) and an orphan already on the date. A clean pair and an end that
   splices with the previous date's open start stay silent. A read
   failure after the write prints nothing, and the punch is stored.
+- **E28** - `mlm export notes` ranges (§3.8, §6.2): `--month 2024-02`
+  covers the 1st to the 29th, `--month 2026-02` the 1st to the 28th,
+  and a December runs to the 31st. `--month 2026-3` equals `--month
+  2026-03`. A bare `WW` uses the current ISO year and a bare `M`/`MM`
+  the current calendar year, so on 2025-12-30 `-m 1` is `2025-01`.
+  `-d -1` is yesterday. A range with no notes, and a future date, week
+  or month, print nothing and exit `0`.
+- **E29** - `mlm export notes` value errors (§6.1): `-m 2026-003`,
+  `-m 26-03`, `-m 2026-` and `-m -1` fail with the shape message, e.g.
+  `-m abc` prints `error: invalid MONTH "abc": expected YYYY-MM or MM`.
+  `-m 0`, `-m 13` and `-m 2026-13` fail with the range message, e.g.
+  `-m 13` prints `error: invalid MONTH "13": month must be 1-12`. A bad
+  `DATE` and a bad `WEEK_ID`, `-w -1` included, print their existing
+  messages, and `-m -d` fails as a bad `MONTH`. Each exits `1` with
+  nothing on stdout.
+- **E30** - `mlm export notes` usage errors (§3.8, §6.3): bare `mlm
+  export` (its output lists `notes`), two range flags such as `-d
+  2026-10-19 -w 2026-43`, one flag given twice such as `-m 3 -m 4`, and
+  a range flag with no value as the last token each exit `2` from the
+  argument parser.
+- **E31** - `mlm export notes` read failure (§6.1): with the
+  `notes.body` column renamed, it prints `error: ...` to stderr,
+  nothing to stdout, and exits `1`.
 
