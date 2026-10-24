@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 133
+- **Next entry**: 134
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `export-notes` (spec drafting, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `export-notes` (spec locked, planning, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1850,6 +1850,22 @@ SPEC.md and PLAN.md:
 132. **`week-notes` merged to `main`, unreleased.** The user had it
     merged `--no-ff` and moved on to `export-notes`, which branches
     from `main`.
+
+133. **`export-notes` spec locked.** The user approved the draft
+    (decisions beyond entry 125: `-d`/`-w`/`-m`, bare month number,
+    future range prints nothing, the `MONTH` messages, the `WeekArgs`
+    comment re-wrap). One review
+    (`plans/reports/export-notes-spec-review.md`, 19 findings). Folded:
+    F1 `--date` shares input forms, not the future check; F2 all three
+    flags take hyphen values, repeated/missing-value rows added; F4
+    `YYYY-M` accepted, four-digit year; F5 the "exactly one line"
+    claim cut, since pre-v0.3.0 rows can hold newlines; F6/U7 help
+    value names and default-week wording pinned; F7/F8 tests and doc
+    targets added. Dropped: F3 broken pipe, since a month of notes
+    fits in the pipe buffer and `week` behaves the same; F9 the user
+    already took the re-wrap; U1-U6, U8-U10 per entry 128's
+    known-issue default. Phase 14 runs at `returning`: a new opt-in
+    command touches no first-run path. Expected 2 tasks (code, docs).
 
 ## Open questions (still need answers)
 
