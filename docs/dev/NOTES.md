@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 135
+- **Next entry**: 136
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
 - **Active changeset**: `export-notes` (spec locked, planning, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
@@ -1879,6 +1879,15 @@ SPEC.md and PLAN.md:
     `coverage-baseline.json`; U4 `--date` help keeps `status`'s
     backticks. Dropped U1-U3, U5, U6 per entry 128's default; U3
     matches WEEK_ID's own `expected YYYY-WW or WW` wording.
+
+135. **`export-notes` task plans written.** Task 1
+    (`plans/export-notes-task-1-code.md`, green) pins `ArgKind::Month`,
+    `parse_month`, `src/export.rs` and the full `export notes --help`
+    golden; clap behavior checked on a prototype. Task 2
+    (`plans/export-notes-task-2-docs.md`) adds SPEC §3.8 and §7.5 and
+    fixes three sentences the new command makes false (README's alias
+    rule, README's and SPEC §7.4's list of output commands). Both
+    quote the contract strings verbatim, so no realign.
 
 ## Open questions (still need answers)
 
