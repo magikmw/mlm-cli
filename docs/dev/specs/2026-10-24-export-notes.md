@@ -51,7 +51,8 @@ uses.
   a bare `WW` in the current ISO year, as `mlm week` does (SPEC §3.6).
 - `--month`/`-m MONTH`: one calendar month, first to last day. Accepts
   `YYYY-MM`, `YYYY-M` and a bare `M`/`MM` in the current calendar year,
-  the same pattern as `WEEK_ID`. The year is exactly four digits.
+  the same pattern as `WEEK_ID`. The year is exactly four digits, any
+  value.
 - All three flags accept values starting with `-`, so `-d -1` works
   and `-w -1` or `-m -1` reach the §6 messages instead of a clap
   error.
@@ -62,8 +63,8 @@ uses.
 
 - command: `Print notes for a date, week or month, one per line
   (defaults to the current week)`
-- `-d, --date <DATE>`: `Date to export: YYYY-MM-DD, or -N for N days
-  before today (e.g. -1 = yesterday)`
+- `-d, --date <DATE>`: ``Date to export: YYYY-MM-DD, or `-N` for N days
+  before today (e.g. `-1` = yesterday)``
 - `-w, --week <WEEK_ID>`: `Week to export: YYYY-WW (e.g. 2026-07) or a
   bare week number (e.g. 7)`
 - `-m, --month <MONTH>`: `Month to export: YYYY-MM (e.g. 2026-03) or a
@@ -106,7 +107,8 @@ marked clap.
 | bad `WEEK_ID` | existing `invalid WEEK_ID "..."` messages |
 | `MONTH` not `YYYY-MM`/`M`/`MM` | `invalid MONTH "...": expected YYYY-MM or MM` |
 | month number 0 or above 12 | `invalid MONTH "...": month must be 1-12` |
-| a range flag given twice, or with no value | clap usage error, exit `2` |
+| a range flag given twice, or with no value as the last token | clap usage error, exit `2` |
+| a range flag followed by another flag | that flag's own parse error, exit `1` (`-m -d` is a bad `MONTH`) |
 | failed note read | storage error, as other reads (SPEC §6.1) |
 | two range flags | clap usage error, exit `2` |
 | bare `mlm export` | clap usage error, exit `2` |
@@ -145,6 +147,8 @@ marked clap.
 ## Interaction with the project spec
 
 - §3 gains a new `mlm export notes` subsection.
+- §1.2 gains other export formats and `--output` as non-goals.
+- §6.2 gains the empty and future ranges as not errors.
 - §6.1 gains the `MONTH` errors and the export read, and its
   future-date rule names export as not checking.
 - §7 gains the export layout.

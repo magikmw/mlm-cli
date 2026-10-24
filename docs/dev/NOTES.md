@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 134
+- **Next entry**: 135
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
 - **Active changeset**: `export-notes` (spec locked, planning, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
@@ -1866,6 +1866,19 @@ SPEC.md and PLAN.md:
     already took the re-wrap; U1-U6, U8-U10 per entry 128's
     known-issue default. Phase 14 runs at `returning`: a new opt-in
     command touches no first-run path. Expected 2 tasks (code, docs).
+
+134. **`export-notes` plan folded.** Plan
+    (`plans/export-notes-plan.md`, 2 tasks: code+tests, docs) reviewed
+    once (`plans/reports/export-notes-plan-review.md`, 13 findings).
+    Folded: F1 a flag followed by another flag takes it as its value
+    and fails as an exit-1 parse error (spec §6 row added); F2 a
+    resolver test pins calendar year for bare `M`; F3 MONTH needs its
+    own out-of-range arm; F4 any four-digit MONTH year; F5 AGENTS.md
+    Current state and storage entry, SPEC §1.2 and §6.2 added to Task
+    2; F6 clock tests use `Utc::now()`; F7 Task 1 owns
+    `coverage-baseline.json`; U4 `--date` help keeps `status`'s
+    backticks. Dropped U1-U3, U5, U6 per entry 128's default; U3
+    matches WEEK_ID's own `expected YYYY-WW or WW` wording.
 
 ## Open questions (still need answers)
 
