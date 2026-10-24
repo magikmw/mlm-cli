@@ -34,7 +34,10 @@ real logic instead of re-deriving it — new top-level modules go in
 - `src/time.rs` — TIME/DURATION parsing and the one duration formatter
 - `src/date.rs` — DATE/WEEK_ID parsing, `WeekId`
 - `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read,
-  one ranged week-target-override read
+  one ranged week-target-override read, and one ranged note read
+  (`notes_in_range`, an inclusive date range in, a flat `Vec<Note>`
+  out, ascending by date, insertion order within a date) that
+  `week --notes` calls
 - `src/stint.rs` — LIFO stint-pairing algorithm (§4.3)
 - `src/week.rs` — target/carry/fulfillment accounting (§2.4/§5)
 - `src/anomalies.rs` — per-date anomaly facts (E7, stale, E8, overlap,
@@ -48,6 +51,8 @@ real logic instead of re-deriving it — new top-level modules go in
   ledger and the bucketed punches for `status` and `mlm week`. Any read
   failure is an error. `stop`'s orphaned-end warning also uses its
   `PunchBuckets` view, over a three-date punch read of its own.
+  `mlm week --notes` makes one ranged note read of its own, outside the
+  loader.
 - `src/carry_scan.rs` — the carry-in marker data (earlier weeks with an
   anomaly), computed over the loader's punches with no reads of its own
 - `src/render.rs` — shared rendering helpers used by both `status`/`week`,
