@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 124
+- **Next entry**: 125
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (merged and closed out on its branch; release awaits the user)
+- **Active changeset**: none. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1756,6 +1756,11 @@ SPEC.md and PLAN.md:
     plan and task plans; stale-pointer grep of README, SPEC, AGENTS.md,
     `src/` and `tests/` clean. Fix-pass worktree and branch removed.
     Not merged to `main`; release awaits the user's call.
+
+124. **`orphan-stop-warning` merged to `main`, unreleased.** The user
+    held the release to gather more changesets into it, then had the
+    branch merged to `main` (`--no-ff`). Gate on `main` green: fmt,
+    build, 859 tests, clippy. Next changesets branch from `main`.
 
 ## Open questions (still need answers)
 
