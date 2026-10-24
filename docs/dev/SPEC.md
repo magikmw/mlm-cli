@@ -313,16 +313,20 @@ future; to view a future week, run mlm week WEEK_ID`.
 `mlm status --help` and `mlm week --help` end with a short glossary of
 the terms the week line and the markers use. Short `-h` does not carry
 it, and its help line gains clap's `(see more with '--help')` suffix.
-Two entries precede the `[!], [i]` one. The first is `so far, started
+Three entries precede the `[!], [i]` one. The first is `so far, started
 yesterday`, for the overnight stint line (§7.1): a start still open
 from yesterday, listed on today's page and not counted until stopped.
 The second is `spans to next day, continues previous day's stint`, for
 the §4.3.1 suffixes: a stint stopped after midnight is counted on the
 day it started, `spans to next day` ends the start date's stint line
 and `continues previous day's stint` ends the next date's header. The
-`[i]` entry, last, ends ``It marks yesterday's row in `mlm week` until that start is stopped.``
+third is `- <note>`, for one of a date's notes in insertion order.
+`mlm status` lists them under `Notes:` (§7.1), and `mlm week --notes`
+lists them under the date's row (§7.2). Both commands share the
+glossary, so `mlm status --help` lists it too. The `[i]` entry, last,
+ends ``It marks yesterday's row in `mlm week` until that start is stopped.``
 
-### 3.6 `mlm week [WEEK_ID]`
+### 3.6 `mlm week [WEEK_ID] [--notes|-n]`
 
 Current (or `WEEK_ID`) week's view:
 
@@ -333,6 +337,8 @@ Current (or `WEEK_ID`) week's view:
 - yesterday's row ends with `[i]` while a start from yesterday is still
   open and unjoined, with an `[i]` footer line, and on a Monday the
   current week's view names Sunday's stint in that footer line (§7.2)
+- with `--notes`/`-n`, each date's notes on the lines directly under
+  its row (§7.2)
 - a trailing block, in this order: carry-in, worked, fulfillment,
   target (§7.2) — the headline figure appears only in the headline, not
   repeated here
@@ -340,6 +346,15 @@ Current (or `WEEK_ID`) week's view:
 `WEEK_ID` accepts either a full id (`YYYY-WW`, e.g. `2026-07`) or a
 bare week number (`WW`, e.g. `7`), which defaults the year to the
 current one.
+
+`--notes`/`-n` works with or without `WEEK_ID`, in either order (`mlm
+week -n 43`, `mlm week 43 -n`). `mlm week --help` lists it as `Show
+each date's notes under its row`. The flag belongs to the view only,
+so `week target` (§3.7) does not take it. After `target`, `--notes`
+and `-n` are ordinary tokens in target's own argument list. `mlm week
+target 40h --notes` fails as an invalid `WEEK_ID` or `DURATION` with
+exit `1`, and `mlm week target 43 40h --notes` is a usage error with
+exit `2`. Neither writes a target.
 
 ### 3.7 `mlm week target [WEEK_ID] DURATION`
 
@@ -639,10 +654,12 @@ and still exits `0`.
   scaffold), not a failure case.
 - A storage read failure in `status` or `mlm week`, on any of the
   reads they make (the earliest data week, the target overrides, the
-  punches behind the carry walk). The command prints `error:` and the
-  storage error text to stderr, prints nothing to stdout, and exits `1`.
-  `mlm week` never falls back to the default target or to "no earlier
-  weeks".
+  punches behind the carry walk, and for `mlm week --notes` the shown
+  week's notes). The command prints `error:` and the storage error text
+  to stderr, prints nothing to stdout, and exits `1`. `mlm week` never
+  falls back to the default target or to "no earlier weeks", and
+  `--notes` never falls back to an empty note list. Plain `mlm week`
+  makes no note read.
 - `mlm week WEEK_ID target DURATION`, the week id before `target`
   (§3.7). It is rejected with the one-line message there and exit `2`.
 
@@ -1154,6 +1171,52 @@ Carry-in:      -80h 00m  [!]
   included, and never counts the shown week's own anomalies. The blank
   line before the Carry-in block prints exactly when any footer or
   marker line printed.
+- Notes (`--notes`/`-n`, §3.6). Each of a date's notes prints on its
+  own line directly under that date's row, before the next row, as six
+  spaces, `- `, then the body as stored. No `Notes:` header and no blank
+  line surround a row's notes. A date shows the notes `status DATE`
+  lists, in the same insertion order (`created_at_utc ASC, id ASC`,
+  §2.3). Only the layout differs, since `status` prints a `Notes:`
+  header and two-space bullets (§7.1). A note belongs to its stored
+  `date`, so stint pairing and the §4.3.1 splice never move it. Row
+  markers stay at the end of the row, so a marked row reads marker
+  first, notes below. Blank lines, footers, the carry-in marker line and
+  the Carry-in block are unchanged. An illustrative current week, today
+  Sat 2026-10-24, one marked row, `mlm week --notes`:
+
+```
+Week 2026-43 (2026-10-19 - 2026-10-25)
+
+05h 16m over 40h 00m target
+
+  Mon 2026-10-19   08h 27m
+      - fixed migration runner bug
+      - started punch pairing tests
+  Tue 2026-10-20   07h 12m
+  Wed 2026-10-21   07h 24m  [!]
+      - code review for #41
+  Thu 2026-10-22   08h 52m
+  Fri 2026-10-23   08h 40m
+  Sat 2026-10-24   08h 13m
+  Sun 2026-10-25   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+
+Carry-in:      -03h 32m
+Worked:        48h 48m
+Fulfillment:   45h 16m
+Target:        40h 00m
+```
+
+  A note-only date keeps its `00h 00m` row, with its notes under it.
+  Notes never change a total, a marker, a footer, the headline or the
+  Carry-in block. A week with no notes prints exactly what plain `mlm
+  week` prints, and plain `mlm week` prints no note lines. Note bodies
+  pass through unchanged, non-ASCII included, as in `status` (§2.3,
+  §7). With the flag, `mlm week` makes one ranged note read over the
+  shown week's seven dates, Monday to Sunday, and a failed read is a
+  hard error like every other `week` read (next bullet, §6.1). Without
+  the flag it makes no note read.
 - Every storage read `mlm week` makes is a hard error, as in `status`
   (§6.1). The storage error goes to stderr as `error: ...`, stdout stays
   empty, and the exit code is `1`. `mlm week` never falls back to the
@@ -1509,6 +1572,13 @@ or less directly.
 - **F13** - First run on a fresh database prints nothing on stderr,
   except that a first `mlm stop` warns about its orphaned end (§7.4,
   E27). With `--verbose` the migration line and debug lines appear (§3).
+- **F14** - Week notes (§3.6, §7.2): `mlm note "fixed migration runner
+  bug"`, then `mlm note "started punch pairing tests"` on one date, then
+  `mlm week --notes` for its week prints both under that date's row, in
+  that order, each as six spaces, `- ` and the body. Other rows stay one
+  line, and every figure, marker and footer matches plain `mlm week`.
+  `mlm week -n WEEK_ID` and `mlm week WEEK_ID --notes` print the same.
+  Plain `mlm week` prints no note lines.
 
 ### 8.2 Error / edge paths (§6 direct mapping)
 
@@ -1602,7 +1672,9 @@ or less directly.
   `week_targets` table, `notes` table, or punch range makes `mlm week`
   and `mlm week WEEK_ID` print `error: ...` to stderr, nothing to
   stdout, and exit `1`. `status` does the same. Successful output is
-  unchanged.
+  unchanged. `mlm week --notes` also reads the shown week's notes, so a
+  renamed `notes.body` column fails it the same way. Plain `mlm week`
+  on the same database still prints, because it makes no note read.
 - **E21** - Overlapping stints (§4.3, §7.3): `start 09:00`, `start
   10:00`, `stop 11:00`, `stop 12:00` pairs into 09:00-12:00 and
   10:00-11:00. The date's `status` shows the overlap line, its `week`

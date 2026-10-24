@@ -14,7 +14,7 @@ date plus a short note of what you did, stored in SQLite.
   "how much is left today" estimate that counts the running stint while
   a stint is open
 - `week` — a week's per-day totals plus carry-in/fulfillment against
-  target
+  target, with each date's notes under its row on `-n/--notes`
 - `week target` — override a week's target hours and print the stored
   target back; any shortfall or surplus carries into the next week
 - `delete note`/`delete punch` — list a date's entries and delete one
@@ -406,7 +406,7 @@ Week 2026-35:  Total behind: 02h 10m
   09:10-17:00  (07h 50m)
 ```
 
-### `mlm week|w [WEEK_ID]`
+### `mlm week|w [WEEK_ID] [-n/--notes]`
 
 Show a week's per-day totals plus its carry-in/worked/fulfillment/
 target summary. `WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-37`)
@@ -482,6 +482,42 @@ mlm week 2026-38)`. The line also prints on `status` (see above). It
 stays until the old anomaly is fixed. If `mlm week` cannot read the
 database, it prints an `error:` line and exits 1 instead of showing
 default figures.
+
+Add `-n/--notes` to list each date's notes under its row. They are the
+notes `status` shows for that date, in the same order, each printed as
+six spaces, `- ` and the note. Rows without notes stay one line. Every
+total, marker, footer and the Carry-in block print as they do without
+the flag, and a week with no notes prints the same either way. The flag
+goes before or after `WEEK_ID` (`mlm week -n 43`, `mlm week 43 -n`),
+and `week target` does not take it. With today Sat 2026-10-24:
+
+```sh
+$ mlm week --notes
+Week 2026-43 (2026-10-19 - 2026-10-25)
+
+05h 16m over 40h 00m target
+
+  Mon 2026-10-19   08h 27m
+      - fixed migration runner bug
+      - started punch pairing tests
+  Tue 2026-10-20   07h 12m
+  Wed 2026-10-21   07h 24m  [!]
+      - code review for #41
+  Thu 2026-10-22   08h 52m
+  Fri 2026-10-23   08h 40m
+  Sat 2026-10-24   08h 13m
+  Sun 2026-10-25   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+
+Carry-in:      -03h 32m
+Worked:        48h 48m
+Fulfillment:   45h 16m
+Target:        40h 00m
+```
+
+If `mlm week -n/--notes` cannot read the week's notes, it prints an
+`error:` line and exits 1, and plain `mlm week` still works.
 
 ### `mlm week|w target [WEEK_ID] DURATION`
 
