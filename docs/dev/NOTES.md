@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 122
+- **Next entry**: 123
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (Tasks 1-2 merged, gate green; next phase 13 final review on Opus)
+- **Active changeset**: `orphan-stop-warning` (final review triaged; fix pass running)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1733,6 +1733,19 @@ SPEC.md and PLAN.md:
     README's example apart from the dates; clean pair and splice are
     silent; stdout empty and exit 0 throughout. Task worktrees and
     branches removed.
+
+122. **`orphan-stop-warning` final review triaged.** Ran on Opus,
+    approved by the user up front
+    (`plans/reports/orphan-stop-warning-final-review.md`,
+    ship-with-followups, 3 findings). Clone verified green, spec
+    example byte-for-byte, every behavior-changing mutation caught
+    except dropping the `D+1` read, which cannot change orphans
+    (accepted in entry 119). All three fixed in one fix pass, as
+    mechanical: F1 SPEC §4.3's "the one insert-time signal" sentence
+    names both warnings and re-introduces the edge-case list; F2
+    re-wrap README's stdout/stderr paragraph; F3 a CLI test for a bare
+    `mlm stop`. Phase 14 skipped at the user's call. Scratch clone
+    removed.
 
 ## Open questions (still need answers)
 
