@@ -17,6 +17,8 @@ date plus a short note of what you did, stored in SQLite.
   target, with each date's notes under its row on `-n/--notes`
 - `week target` — override a week's target hours and print the stored
   target back; any shortfall or surplus carries into the next week
+- `export notes` — print a date's, a week's or a month's notes as plain
+  text, one per line, ready for a report or another tool
 - `delete note`/`delete punch` — list a date's entries and delete one
   by number; prints a ready-to-run command to recreate what was
   deleted
@@ -121,14 +123,14 @@ about orphaned ends on the date it wrote to (see below). Nothing else
 prints unless something went wrong. That holds on the first run too,
 when the database is created, except that a first `mlm stop` warns
 about its orphaned end, since no start exists yet for it to pair with.
-`week target` prints one line confirming the stored target. `status`
-and `week` are the commands that produce output.
+`week target` prints one line confirming the stored target. `status`,
+`week` and `export notes` are the commands that produce output.
 `delete note`/`delete punch` are a narrow exception too (see below). A
 `status` after punching in/out is still how you confirm things landed
 correctly. Add `-v`/`--verbose` to any command to see debug log lines
 on stderr, including the one-time migration line.
 
-Every command has a 1 character alias, except `delete` (`del`).
+Every command has a 1 character alias, except `delete` (`del`) and `export` (`ex`).
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
 
 ### `mlm start|s [TIME] [NOTE...] [-d/--date DATE]`
@@ -582,6 +584,38 @@ Carry-in:      00h 00m
 Worked:        37h 50m
 Fulfillment:   37h 50m
 Target:        40h 00m
+```
+
+### `mlm export|ex notes|n [-d/--date DATE | -w/--week WEEK_ID | -m/--month MONTH]`
+
+Print a date's, a week's or a month's notes as plain text, one per
+line, ready to paste into a report or pipe into another tool. With no
+flag it prints the current week. Give at most one range:
+
+- `-d`/`--date DATE` — one date, `YYYY-MM-DD` or `-N` for N days
+  before today (e.g. `-1` = yesterday). A future date is allowed.
+- `-w`/`--week WEEK_ID` — one week, Monday to Sunday, in the same forms
+  as `week` (`2026-43`, or a bare `43` for the current year)
+- `-m`/`--month MONTH` — one calendar month, `YYYY-MM` (e.g. `2026-03`)
+  or a bare month number for the current year (e.g. `3`)
+
+Each line is the note's date, two spaces, then the note. Lines run by
+date, and within a date in the order you entered them:
+
+```sh
+$ mlm export notes --week 2026-43
+2026-10-19  fixed migration runner bug
+2026-10-19  started punch pairing tests
+2026-10-21  code review for #41
+2026-10-24  refactored the parser
+```
+
+A range with no notes prints nothing and exits 0. So does a future
+date, week or month. There is no header or summary line, so the output
+redirects straight into a file:
+
+```sh
+$ mlm export notes --month 2026-10 > october.txt
 ```
 
 ### `mlm delete|del note|n [ID] [-d/--date DATE]`
