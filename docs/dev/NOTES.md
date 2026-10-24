@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 113
+- **Next entry**: 114
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (spec draft, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
+- **Active changeset**: `orphan-stop-warning` (spec locked, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1569,6 +1569,28 @@ SPEC.md and PLAN.md:
     flow is E27 in §8.2. U1, U5, U6 and the repeat rule are known
     issues; U4 is a non-goal. The spec grew two triggers and a window
     rule, so it goes back for one more review round before locking.
+
+113. **`orphan-stop-warning` spec round 2 folded; spec locked.**
+    Review (`plans/reports/orphan-stop-warning-spec-round-2-review.md`,
+    needs-rework, 13 findings; the reviewer's write hook refused the
+    `-review-2.md` name, so the file is `-round-2-review.md`). All
+    folded. Coordinator design calls, within the user's "fix both
+    along the way": an orphan sharing its minute with another end gets
+    a delete-only E8 block, because no start pairs cleanly with a
+    duplicate (F1); the long-splice `fix:` stops the earlier date's
+    start first, with the stop-hint window, so the user's own end
+    survives as an orphan with its own fixes (F2, F9); the 12h check
+    covers any splice into `D` or `D+1`, so a backdated stop that
+    clears an E7 is caught (F5); the yesterday hint drops its `or: mlm
+    stop` line once the start is 12h old, so mlm never suggests a
+    command it then warns about (F6); `stop` prints refused-join lines
+    for `D` and `D+1`, so a broken splice says so (F7). F3, F4, F13
+    tighten the E8 window rule; F8, F10 and the empty window are known
+    issues; F11, F12 complete the doc and test lists. Phase 14 skipped
+    at the user's call (small, wording-level surface); phase 13 runs on
+    Opus, approved by the user up front. Provisional task count: 2
+    (`stop` warnings; E8 hint + yesterday hint), so phases 5-7
+    collapse and phase 10 is skipped unless phase 5 finds 3+ tasks.
 
 ## Open questions (still need answers)
 
