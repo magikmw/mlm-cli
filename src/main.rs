@@ -1,8 +1,8 @@
 use std::ffi::OsString;
 
 use chrono::{DateTime, Local, Timelike};
-use mlm::cli::{self, Cli, Command, DeleteTarget, WeekAction};
-use mlm::{commands, db, status, week_target, week_view};
+use mlm::cli::{self, Cli, Command, DeleteTarget, ExportTarget, WeekAction};
+use mlm::{commands, db, export, status, week_target, week_view};
 
 fn main() {
     std::process::exit(run());
@@ -68,6 +68,9 @@ fn dispatch(cli: &Cli, now: DateTime<Local>) -> anyhow::Result<()> {
             None => week_view::run(&conn, now, args),
         },
         Command::Status { date } => status::run(&conn, now, date.as_deref()),
+        Command::Export(args) => match &args.target {
+            ExportTarget::Notes(a) => export::run_notes(&conn, now.date_naive(), a),
+        },
     }
 }
 
