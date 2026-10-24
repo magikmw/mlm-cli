@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 114
+- **Next entry**: 115
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
 - **Active changeset**: `orphan-stop-warning` (spec locked, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
@@ -1591,6 +1591,18 @@ SPEC.md and PLAN.md:
     Opus, approved by the user up front. Provisional task count: 2
     (`stop` warnings; E8 hint + yesterday hint), so phases 5-7
     collapse and phase 10 is skipped unless phase 5 finds 3+ tasks.
+
+114. **`orphan-stop-warning` changeset plan written**
+    (`plans/orphan-stop-warning-plan.md`). Two parallel tasks: Task 1
+    all code and tests (new `src/stop_warnings.rs`; `src/anomalies.rs`
+    owns the one E8 hint-line and refused-join renderer), Task 2 docs
+    (SPEC.md, README.md, AGENTS.md). This replaces the coordinator's
+    feature split, because `stop` reuses the E8 renderer and splitting
+    by feature would only serialize. Planner findings folded: a refused
+    join between `D` and `D+1` prints once, as `D`'s line (spec §3.1);
+    "word for word" covers the E8 hint lines, not the header (spec
+    §4.1); a real-clock test of the yesterday `or:` line moves to an
+    injected clock (Task 1). Two tasks, so phase 10 is skipped.
 
 ## Open questions (still need answers)
 

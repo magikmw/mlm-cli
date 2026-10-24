@@ -89,7 +89,9 @@ below, and one `stop` can print several warnings.
 
 `stop` classifies each date with the splice applied, as `status` does
 (SPEC §4.3.1). It warns once for every orphaned end on the date, and
-once for every refused join the date's `status` page shows.
+once for every refused join the date's `status` page shows. A refused
+join between `D` and `D+1` shows on both pages, but prints once, as
+`D`'s line naming `D+1`.
 
 - `D` covers an end the new punch displaced. Given `start 09:00` and
   `stop 17:00`, a new `stop 12:00` pairs with `09:00` and leaves `17:00`
@@ -124,8 +126,9 @@ print last.
 
 ### 4.1 Orphan block
 
-Three lines per orphaned end. They match `status`'s E8 block (SPEC
-§7.3, with §5's changes) word for word:
+Three lines per orphaned end. The header names the date, which
+`status`'s E8 header leaves to its page. The hint lines match `status`'s
+E8 block (SPEC §7.3, with §5's changes) word for word:
 
 ```
 warning: orphaned end on Mon 2026-10-05 at 14:16 (no matching start)
