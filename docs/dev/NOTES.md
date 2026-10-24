@@ -9,11 +9,12 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 117
+- **Next entry**: 118
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (task plans written; phase 11 implementation)
+- **Active changeset**: `orphan-stop-warning` (rescoped spec draft; next one review round, then a fresh collapsed plan)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
+- **Triage rules**: "Triaging review findings" below; apply at every fold
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
 
@@ -42,6 +43,32 @@ At final spec review (before implementation starts): give §6 (error
 handling & validation) particular scrutiny by mapping out concrete
 user flows end-to-end — tests will be written directly against those
 flows/assumptions, so gaps there become gaps in test coverage.
+
+## Triaging review findings (process, not product)
+
+mlm reports what is in the data. The user audits their own punches in
+`status`. mlm does not guess intent or guard against mistakes the user
+can see there. Reviewers are told to over-report, so the coordinator
+filters at every fold. Set in entry 117, after `orphan-stop-warning`
+grew three new mechanisms and 13 known issues from findings on its own
+fixes.
+
+- Drop a finding that restates the feature. New output appearing where
+  there was none is the change, not a gap.
+- Drop a finding that matches behavior the project already accepts
+  elsewhere, such as `start` doing the same thing.
+- Drop a finding whose harm needs the user to misread their own day,
+  when `status` would show the result straight away.
+- A finding whose fix needs a new mechanism (a threshold, a trigger, a
+  hint rule) is the user's call. Default to dropping it or filing it as
+  a known issue. Never fold one in as a coordinator decision.
+- Findings about a fix's own edge cases mean the fix is too big. Cut
+  the fix back. Do not patch its edges.
+- A known issue is a rough edge a user hits in normal use and is
+  misled by. Everything else is dropped, with one line in the decision
+  log saying so.
+- One spec review round. A second round is needed only when the fold
+  added a mechanism, and that is itself a sign the fold went wrong.
 
 ## Current manual process (plain text file)
 
@@ -1637,6 +1664,22 @@ SPEC.md and PLAN.md:
     §7.4.1 for `stop`'s rules, no "FE5" label in SPEC, the yesterday
     warning's form restated for `stop`, and the README `18:02` example
     noting its under-12h assumption. Phase 10 skipped (two tasks).
+
+117. **`orphan-stop-warning` rescoped.** The user cut the changeset
+    back to its first idea: `stop` warns on stderr for each orphaned
+    end on the date it wrote to, with `status`'s E8 hint lines. The
+    principle is that mlm reports the data and the user audits it, so
+    mlm does not guard against mistakes `status` already shows. Removed
+    from scope: the long-splice warning and its 12h threshold, the
+    yesterday hint's 12h rule, the E8 fix window and duplicate-minute
+    form, the `D+1` check, refused-join lines, and the lookback lines
+    after the warning. Each was a coordinator fold of a review finding,
+    and together they grew 13 known issues. Of those, the user called
+    the repeat-on-every-`stop` a feature, and five others restated the
+    feature. One known issue remains, the stop-then-start backfill
+    warning. The entries 112-116 plans and the task plans are
+    superseded; the next planning pass overwrites them. New process
+    section "Triaging review findings" records the rules this exposed.
 
 ## Open questions (still need answers)
 
