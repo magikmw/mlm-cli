@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 121
+- **Next entry**: 122
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (task plans written; phase 11 implementation)
+- **Active changeset**: `orphan-stop-warning` (Tasks 1-2 merged, gate green; next phase 13 final review on Opus)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1721,6 +1721,18 @@ SPEC.md and PLAN.md:
     updates AGENTS.md's `src/history.rs` bullet; docs-vs-code drift is
     checked at the merge gate against the built binary. Phase 10
     skipped (two tasks).
+
+121. **`orphan-stop-warning` Tasks 1-2 merged.** Task 2 (docs,
+    `0878e0e`) and Task 1 (code, `fd593cd`) merged `--no-ff`. Both
+    implementers found their worktree off the wrong base and rebased
+    onto `8a529ea` first. Task 1 swapped the plan's test writer for a
+    zero-length slice, because the plan's never-run `flush` dropped
+    coverage; no signature changed, so no report. Merge gate green:
+    fmt, build, 858 tests, clippy. Hand-runs of the built binary: FE5,
+    displaced end and backdated stop print the block, which matches
+    README's example apart from the dates; clean pair and splice are
+    silent; stdout empty and exit 0 throughout. Task worktrees and
+    branches removed.
 
 ## Open questions (still need answers)
 
