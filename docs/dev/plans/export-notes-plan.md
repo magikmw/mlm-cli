@@ -43,7 +43,7 @@ A finer split buys nothing. MONTH parsing, the clap surface and the command modu
 ## Interface contracts (pinned before worktrees open)
 
 1. **Command and aliases.** `mlm export notes`. `export` has the visible alias `ex`; `notes` has the visible alias `n`. `mlm ex n -w 43` works.
-2. **Top-level help.** `mlm --help` lists `export`. `mlm export --help` lists `notes`. The task plan picks the `export` one-line description, and Task 2 quotes it from Task 1's plan if it quotes it at all.
+2. **Top-level help.** `mlm --help` lists `export`. `mlm export --help` lists `notes`. `export`'s one-line description is `Print stored data as plain text`; `notes`'s is contract 3's command line.
 3. **`mlm export notes --help` text** (spec §3), verbatim:
    - command: `Print notes for a date, week or month, one per line (defaults to the current week)`
    - `-d, --date <DATE>`: ``Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g. `-1` = yesterday)``, backticks as in `status`'s DATE help
