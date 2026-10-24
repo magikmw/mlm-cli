@@ -1,10 +1,10 @@
 # Plan: orphan-stop-warning
 
-Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked). Reviews: `docs/dev/plans/reports/orphan-stop-warning-spec-review.md`, `docs/dev/plans/reports/orphan-stop-warning-spec-round-2-review.md`. Decision log: NOTES.md entries 111-113.
+Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked). Reviews: `docs/dev/plans/reports/orphan-stop-warning-spec-review.md`, `docs/dev/plans/reports/orphan-stop-warning-spec-round-2-review.md`. Decision log: NOTES.md entries 111-115. Plan review: `docs/dev/plans/reports/orphan-stop-warning-plan-review.md` (folded, entry 115).
 
 **Altitude note**: scope of work only. No code, no pseudocode, no function or type names. Task plans choose the identifiers. The one file name pinned below (the new module) is pinned for ownership and for AGENTS.md.
 
-Read for this plan: the spec in full; `src/commands.rs` (`start`/`stop` handlers, `start`'s best-effort warning path, the shared write helper); `src/anomalies.rs` (fact struct, block rendering, E8 and refused-join lines, fact builder); `src/lookback.rs` (scan, line facts, block and stderr forms, yesterday hint, overnight decision, today-page filter); `src/stint.rs` (`classify`, `classify_at`, splice gate, refused-join predicate); `src/render.rs` (stop-hint helpers, next-punch helper); `src/status.rs` (where the lookback lines and the E8 block are composed); `tests/start_hint_cli.rs`; SPEC.md section index and §1.2a; NOTES.md 111-113.
+Read for this plan: the spec in full; `src/commands.rs` (`start`/`stop` handlers, `start`'s best-effort warning path, the shared write helper); `src/anomalies.rs` (fact struct, block rendering, E8 and refused-join lines, fact builder); `src/lookback.rs` (scan, line facts, block and stderr forms, yesterday hint, overnight decision, today-page filter); `src/stint.rs` (`classify`, `classify_at`, splice gate, refused-join predicate); `src/render.rs` (stop-hint helpers, next-punch helper); `src/status.rs` (where the lookback lines and the E8 block are composed); `tests/start_hint_cli.rs`; SPEC.md section index and §1.2a; NOTES.md 111-115.
 
 ## Goal
 
@@ -22,11 +22,11 @@ A `stop` that leaves an orphaned end, a refused join or a splice of 12h or more 
 
 ### Target shape
 
-1. **E8 facts carry their window.** Each orphan on a date carries, beside its time, what its hint needs: whether another end shares its minute, and the latest earlier punch `P` (in pairing order, before `T`'s minute) together with whether `P`'s minute is inside the window. The window includes `P`'s minute when `P` closed a stint and excludes it when `P` is itself an orphan. The fact builder fills this from the date's bucket and its splice-aware classification. Nothing else in the fact struct changes meaning.
+1. **E8 facts carry their window.** Each orphan on a date carries, beside its time, what its hint needs: whether another end shares its minute, and the latest earlier punch `P` (in pairing order, before `T`'s minute). The minute-inclusion rule (spec §5) is a pairing consequence, not a fact: nothing stores or prints it, and tests check it as behaviour through classification. The fact builder fills this from the date's bucket and its splice-aware classification. Nothing else in the fact struct changes meaning.
 2. **One renderer for the E8 hint lines.** `src/anomalies.rs` produces the hint lines for one orphan (the three-line `fix:`/`or:` form or the two-line delete-only form) in one place. `status`'s block prefixes them with `[!] orphaned end at T (no matching start)`. `stop`'s block prefixes them with `warning: orphaned end on <weekday date> at T (no matching start)`. The refused-join sentence likewise has one source with a swappable `[!]`/`warning:` prefix. This keeps spec §4.1's "word for word" rule true by construction.
 3. **Yesterday hint 12h rule.** The lookback's line facts gain the start's age at `now` (or an equivalent "under 12h" flag). The `[i]` hint's `or:` line prints only when the existing two conditions hold and the start is under 12h old. The `fix:` line and the stderr yesterday form are unchanged.
 4. **`stop`'s warning pass** lives in a new module `src/stop_warnings.rs`, called from `stop` after the committed write. It does all reads first, builds every line, then prints. Any read error means no output.
-   - Reads: the punches needed to classify `D` and `D+1` with their neighbours (`D-1` through `D+2`, or `D-1` through `D+1` when `D` is today, so `D+1` is never read then), plus today's lookback.
+   - Reads: the punches needed to classify `D` and `D+1` with their neighbours (`D-1` through `D+2`; when `D` is today, `D-1` through `D+1`, because `D`'s own trio reads tomorrow exactly as today's `status` does, and `D+1`'s own checks are skipped), plus today's lookback.
    - Date warnings: for `D`, then `D+1`, one orphan block per orphaned end ascending by instant, then the refused-join line with the previous date, then with the next date. These come from the same fact builder `status` uses.
    - Long-splice blocks: for each splice of 12h or more whose end lies on `D` or `D+1` (`D` first). The splice is the one completed stint on the earlier date `A` whose end is on `A+1`. The block's `fix:` uses the existing stop-hint helper with the first punch on `A` after the start.
    - Lookback lines: only when at least one of the above printed. Today's lookback in `start`'s stderr forms, oldest first, filtered as today's `status` filters it (the yesterday entry only when the overnight decision finds a stint). No own-punch suppression and no carry marker.
@@ -77,21 +77,24 @@ Task 2 works from the locked spec text alone, so it does not wait for Task 1.
 - A duplicate same-minute `stop` prints two-line blocks for both.
 - A double-tapped `stop` after a splice prints two two-line blocks, then the refused-join line, and no yesterday warning (spec §4.5 third example, exact).
 - A backdated `stop` that breaks `D+1`'s splice prints the orphan block for `D+1`.
-- When `D` is today, `D+1` is not read.
+- When `D` is today, `D+1`'s checks are skipped, but `D`'s facts still use tomorrow's real punches as `status` does.
+- A refused join between `D` and `D+1` prints once. Seed yesterday `start 22:00`, today `stop 01:00` and `stop 02:00`, then run `mlm stop 21:00 --date -1`: stderr is yesterday's orphan block, one refused-join line naming today, then today's two orphan blocks.
 - Splices of 11h 59m are silent. Exactly 12h and 29h 16m print the long-splice block (spec §4.5 second example for 29h 16m).
 - A long splice with a punch after `S` on `A` names the window in `fix:`.
 - A backdated `stop` that clears `D`'s E7 and creates a 12h+ splice into `D+1` prints the long-splice block for `D+1`.
 - A `D+1` orphan and a long-splice block from one `stop` print in spec §4 order (date warnings for `D` then `D+1`, then long-splice blocks, then lookback).
 - An orphan with yesterday's lone unrefused start open prints the orphan block, then the yesterday stderr warning.
 - `--date` older than 14 days prints the orphan block and today's lookback, not the written date's.
-- A read failure after the committed write prints nothing extra and exits `0`, with the punch stored.
+- A read failure after the committed write prints nothing extra and exits `0`, with the punch stored. At least one test fails only a later read (the lookback) while the date reads succeed, and asserts no orphan block printed, which is what reads-first guarantees.
+- `stop` prints no carry-in marker, and suppresses no lookback entry by its own punch id.
+- The yesterday hint's boundary: a start 719 minutes old keeps the `or:` line, 720 drops it.
 - `status` E8 window cases: no earlier punch gives `(a time before T)`; an earlier closed stint gives the window with `P`'s minute included; an earlier orphan as `P` excludes its minute; an E14 pair as `P` works; another end at `T`'s minute gives the two-line block; an empty window prints as spec §1.2 describes.
 - `status` yesterday hint: start under 12h old with today empty keeps the `or:` line; 12h or more drops it; `fix:` unchanged either way.
-- Existing tests that assert the old E8 hint or the old `or:` line are updated to the new rule, not deleted.
+- Existing tests that assert the old E8 hint or the old `or:` line are updated to the new rule, not deleted. Known breakers: `tests/start_hint_cli.rs` `status_hint_with_or_line_when_today_is_empty` (real clock; the `or:` case moves to an injected clock), `src/lookback.rs` tests seeding a start near 24h old that expect the `or:` line, and the default of the new line-facts age field, which must be pinned so existing fixtures keep their meaning. `tests/week_target_cli.rs`'s "stay silent" wording is corrected if it covers `stop`.
 
 **Out of scope**: SPEC.md, README.md, AGENTS.md; `--help` text; `start`'s warnings; `mlm week`; pairing and the splice; warnings for overlaps or E7 a `stop` creates; a `--quiet` flag.
 
-**Owns exclusively**: `src/anomalies.rs`, `src/lookback.rs`, `src/stop_warnings.rs` (new), `src/commands.rs`, `src/lib.rs`, `src/stint.rs`, `src/render.rs`, `src/status.rs`, every file under `tests/` (including a new `stop` CLI test file), `coverage-baseline.json` (hook ratchet).
+**Owns exclusively**: `src/anomalies.rs`, `src/lookback.rs`, `src/stop_warnings.rs` (new), `src/commands.rs`, `src/lib.rs`, `src/stint.rs`, `src/render.rs`, `src/status.rs`, `src/main.rs` (only if `stop`'s signature changes), every file under `tests/` (including a new `stop` CLI test file), `coverage-baseline.json` (hook ratchet).
 
 `src/render.rs` and `src/status.rs` are listed because their tests build E8 fact fixtures and assert E8 and hint text. `src/stint.rs` is listed in case the long-splice lookup needs a small predicate there. Neither is expected to change behaviour.
 
@@ -101,15 +104,17 @@ Task 2 works from the locked spec text alone, so it does not wait for Task 1.
 
 **Scope and acceptance criteria**:
 
-- SPEC §1.2a replaces "None currently." with the six spec §1.2 items.
+- SPEC §1.2a replaces "None currently." with every spec §1.2 item. Section references local to the working spec are retargeted to SPEC.md's own sections (its §5 is SPEC §7.3's E8 block; its §6 is SPEC §7.1's yesterday hint).
 - SPEC §3.3 points to §7.4's `stop` warnings.
 - SPEC §3.7's "`start`, `stop` and `note` stay silent" names the `stop` exception.
-- SPEC §6.2's "not at insert time" sentence names the `stop` warning.
+- SPEC §6.2's "not at insert time" sentence names the `stop` warning, and so does SPEC §4.3's "not rejected at insert time" edge-case lead-in.
+- SPEC §3's "a run that creates and migrates a new database prints nothing" and flow F13 ("First run on a fresh database prints nothing on stderr") note that a first `mlm stop` warns about its orphan.
 - SPEC §7.1 gives the yesterday hint's `or:` condition the 12h rule, drops the `or:` line from the 15h 30m overnight example, notes the 12h warning in the "joins the start and clears the hint" sentence, and names `stop`'s warnings beside `start`'s where an old start drops out of them.
+- SPEC §7.3's standalone yesterday `or:` condition sentence ("The `or:` line prints only when ...") gains the 12h rule. The `18:02` `[i]` examples state that they assume a start under 12h old.
 - SPEC §7.3's E8 block gains spec §5's rules (window, minute inclusion, duplicate-minute two-line form, empty window), with the displaced example. The stop-hint rule's consumer list adds `stop`'s long-splice block.
 - SPEC §7.4 gains `stop`'s triggers (§3), blocks (§4.1-§4.3), order (§4), lookback rule (§4.4), examples (§4.5) and best-effort rule (§7). The "write commands print nothing" rule gains the exception.
 - SPEC §8.2 gains E27 (FE5 and `stop`'s warnings) next to E19. E8 and E22 change to match.
-- README: the write-commands "silent on success" line names the `start` and `stop` warnings; `mlm stop` gains the warning text and the spec §4.5 examples; the "joins the start and clears the hint" sentence notes the 12h warning; the `[i]` example beside `22:00-now (15h 30m so far ...)` drops its `or:` line; Possible issues mirrors the new SPEC §1.2a.
+- README: the write-commands "silent on success" line names the `start` and `stop` warnings; `mlm stop` gains the warning text and the spec §4.5 examples; the "joins the start and clears the hint" sentence notes the 12h warning; the `[i]` example beside `22:00-now (15h 30m so far ...)` drops its `or:` line; the `or:` condition sentence gains the 12h rule; the first-run silence sentence notes that a first `mlm stop` warns; Possible issues mirrors the new SPEC §1.2a.
 - AGENTS.md: the layout list gains `src/stop_warnings.rs`, and the `src/lookback.rs` bullet names `stop` beside `start`.
 - No doc points a reader at `docs/dev/specs/` or `docs/dev/plans/`.
 

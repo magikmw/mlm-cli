@@ -1,7 +1,9 @@
 # Orphaned-stop warning — design spec
 
 **Baseline**: written against `main` at `4c451d7` (`v0.4.0`).
-**Status**: locked 2026-10-24 after two adversarial review rounds
+**Status**: locked 2026-10-24 after two adversarial review rounds;
+wording and known-issue additions folded from the plan review (NOTES.md
+entries 114-115)
 (`docs/dev/plans/reports/orphan-stop-warning-spec-review.md`, 13
 findings, NOTES.md entry 112;
 `docs/dev/plans/reports/orphan-stop-warning-spec-round-2-review.md`, 13
@@ -74,6 +76,26 @@ write, stdout and the exit code are unchanged.
   `12:01` gives `(a time between 12:00 and 12:01)`, which no `HH:MM`
   satisfies. The hint text does not show whether `P`'s minute itself
   works (§5).
+
+- A genuine overnight session of 12h or more re-warns on every later
+  `stop` to its end date or the day before, and there is nothing to
+  fix. Only changing correct data silences it.
+- At the 12h boundary, `status` can still offer `or: mlm stop` at 11h
+  59m, and a bare `stop` a minute later draws the long-splice warning.
+- Past 12h, the yesterday hint's remaining `fix:` ends the session on
+  yesterday's date. A user still working has no suggested way to end it
+  now without the long-splice warning.
+- FE5 against a start 15 or more days old prints only the orphan block.
+  The lookback window ends at 14 days and `stop` prints no carry-in
+  marker, so nothing names the old start.
+- The delete-only `fix:` for a duplicate stop says "rerun with the end's
+  number", but `mlm delete punch` lists two identical `end` rows. Either
+  number works.
+- The `status --help` glossary still says an orphaned end means "Add a
+  start before it, or delete it", while a duplicate-minute orphan's
+  block offers only the delete.
+- A first `mlm stop` on a fresh database writes an orphan, so the first
+  run is no longer always silent on stderr.
 
 ## 2. Prerequisites
 

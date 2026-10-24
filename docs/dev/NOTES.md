@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 115
+- **Next entry**: 116
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (spec locked, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
+- **Active changeset**: `orphan-stop-warning` (plan folded, `docs/dev/plans/orphan-stop-warning-plan.md`; next phase 8 task plans)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1603,6 +1603,25 @@ SPEC.md and PLAN.md:
     "word for word" covers the E8 hint lines, not the header (spec
     §4.1); a real-clock test of the yesterday `or:` line moves to an
     injected clock (Task 1). Two tasks, so phase 10 is skipped.
+
+115. **`orphan-stop-warning` plan review folded**
+    (`plans/reports/orphan-stop-warning-plan-review.md`,
+    ship-with-followups, 11 findings + U1-U6). All folded into the plan
+    without changing locked behavior. F1: when `D` is today, `D`'s
+    trio still reads tomorrow, as `status` does, and only `D+1`'s own
+    checks are skipped. F2, F3: Task 2 also updates the standalone
+    yesterday `or:` condition sentences, the first-run-silence claims
+    (SPEC §3, F13, README) and SPEC §4.3's insert-time lead-in. F4-F7:
+    tests for the once-only `D`/`D+1` refused join, a partial read
+    failure, no carry marker, the 719/720 boundary, and named breaking
+    tests. F8: the minute-inclusion flag dropped from the facts; tested
+    as behaviour. F9-F11: status line and citations, retargeted
+    section refs, `src/main.rs` to Task 1. U1-U6 accepted as known
+    issues in spec §1.2 (12h+ genuine session re-warns with nothing to
+    fix; the 11h 59m boundary race; past 12h no non-warning way to end
+    a running session; FE5 against a 15+ day start names nothing;
+    duplicate rows in `delete punch`; the `--help` glossary), plus the
+    first-run stderr change.
 
 ## Open questions (still need answers)
 
