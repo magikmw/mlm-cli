@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 136
+- **Next entry**: 137
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `export-notes` (spec locked, planning, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `export-notes` (implemented and merged on branch `export-notes`, review next). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1888,6 +1888,16 @@ SPEC.md and PLAN.md:
     fixes three sentences the new command makes false (README's alias
     rule, README's and SPEC §7.4's list of output commands). Both
     quote the contract strings verbatim, so no realign.
+
+136. **`export-notes` tasks merged.** Task 2 (docs, `6ebd825`, no
+    report) and Task 1 (code, `b28a05c`,
+    `plans/reports/export-notes-task-1-report.md`) merged `--no-ff`.
+    Task 1 deviation: `parse_month` split into a private helper so no
+    unreachable `map_err` closure costs coverage; behavior unchanged.
+    Merge gate green on `export-notes`: fmt, build, 932 tests, clippy.
+    Smoke run on a seeded database matches spec §5 and §6; help and
+    `MONTH` strings match SPEC §3.8 and §6.1. Task worktrees and
+    branches removed.
 
 ## Open questions (still need answers)
 
