@@ -458,9 +458,9 @@ malformed. The nested stints overlap, though, and an overlap is flagged
 
 Edge cases, still just **detected and surfaced in that date's
 summary** (§3.5/§3.6 output), not silently fixed and not rejected at
-insert time (no editing/validation — see §1.2). The one insert-time
-signal is `stop`'s stderr warning for an orphaned `end` on the date it
-wrote to (§7.4). The punch is stored either way:
+insert time (no editing/validation — see §1.2). `start` and `stop`
+print stderr warnings at insert time (§7.4), and the punch is stored
+either way. The edge cases are:
 
 - **One unmatched trailing `start`** (stack has exactly one item once
   the date's punches are exhausted): the normal open/ongoing stint

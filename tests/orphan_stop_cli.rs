@@ -166,6 +166,45 @@ fn stop_hint_lines_match_status_page() {
     }
 }
 
+/// The stored end's date and `HH:MM`, so the bare-`stop` test never
+/// races the clock.
+fn stored_end(db: &Path) -> (NaiveDate, String) {
+    let conn = Connection::open(db).expect("open db");
+    let (date, at_utc): (String, String) = conn
+        .query_row(
+            "SELECT \"date\", at_utc FROM punches WHERE kind = 'end'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("one stored end");
+    let date = NaiveDate::parse_from_str(&date, "%Y-%m-%d").expect("stored date");
+    (date, at_utc[11..16].to_string())
+}
+
+#[test]
+fn bare_stop_warns_with_status_page_hints() {
+    let (_dir, db) = boot();
+    run_ok(&db, &["start", "22:00", "--date", "-2"]);
+    let o = mlm_utc(&db, &["stop"]);
+    let (date, hhmm) = stored_end(&db);
+    let status = mlm_utc(&db, &["status", &format_date(date)]);
+    assert!(status.status.success(), "{status:?}");
+    let page = stdout(&status);
+
+    assert_stop(&o, &block(date, &hhmm));
+    let warning = stderr(&o);
+    let lines: Vec<&str> = warning.lines().collect();
+    assert_eq!(lines.len(), 3, "{warning}");
+    let header = format!(
+        "warning: orphaned end on {} at ",
+        format_date_with_weekday(date)
+    );
+    assert!(lines[0].starts_with(&header), "{warning}");
+    for hint in &lines[1..] {
+        assert!(page.lines().any(|l| l == *hint), "{hint:?} not in:\n{page}");
+    }
+}
+
 #[test]
 fn read_failure_on_the_previous_date_prints_nothing() {
     let (_dir, db) = boot();
