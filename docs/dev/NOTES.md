@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 120
+- **Next entry**: 121
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (plan folded; next task plans)
+- **Active changeset**: `orphan-stop-warning` (task plans written; phase 11 implementation)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1710,6 +1710,17 @@ SPEC.md and PLAN.md:
     (dropped in entry 118), U5 (a malformed `D+1` row suppressing the
     warning is corrupt-data territory and follows from reading like
     `status`).
+
+120. **`orphan-stop-warning` task plans written**
+    (`plans/orphan-stop-warning-task-1-code.md`, green;
+    `plans/orphan-stop-warning-task-2-docs.md`, findings(4)). Task 2
+    notes settled as dispatch corrections: E27 goes at the end of
+    §8.2 to keep numeric order, not beside E19; rewording SPEC §3.7
+    and §6.2 so they are true for `start` too is accepted; Task 1
+    builds `stop`'s view with `history::PunchBuckets`, so Task 2 also
+    updates AGENTS.md's `src/history.rs` bullet; docs-vs-code drift is
+    checked at the merge gate against the built binary. Phase 10
+    skipped (two tasks).
 
 ## Open questions (still need answers)
 
