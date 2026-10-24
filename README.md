@@ -121,11 +121,12 @@ about orphaned ends on the date it wrote to (see below). Nothing else
 prints unless something went wrong. That holds on the first run too,
 when the database is created, except that a first `mlm stop` warns
 about its orphaned end, since no start exists yet for it to pair with.
-`week target` prints one line confirming the stored target. `status` and `week` are the commands that produce
-output. `delete note`/`delete punch` are a narrow exception too (see
-below). A `status` after punching in/out is still how you confirm things
-landed correctly. Add `-v`/`--verbose` to any command to see debug log
-lines on stderr, including the one-time migration line.
+`week target` prints one line confirming the stored target. `status`
+and `week` are the commands that produce output.
+`delete note`/`delete punch` are a narrow exception too (see below). A
+`status` after punching in/out is still how you confirm things landed
+correctly. Add `-v`/`--verbose` to any command to see debug log lines
+on stderr, including the one-time migration line.
 
 Every command has a 1 character alias, except `delete` (`del`).
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
