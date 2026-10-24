@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 112
+- **Next entry**: 113
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
 - **Active changeset**: `orphan-stop-warning` (spec draft, `docs/dev/specs/2026-10-24-orphan-stop-warning.md`)
@@ -1552,6 +1552,23 @@ SPEC.md and PLAN.md:
     stop time warns too. The cost is one needless warning when
     backfilling stop-then-start. Stale-start lines from the lookback
     follow the orphan warning only when one fires.
+
+112. **`orphan-stop-warning` spec review folded.** Review
+    (`plans/reports/orphan-stop-warning-spec-review.md`, needs-rework,
+    13 findings). User chose to fix F7 and U3 in this changeset rather
+    than file them: the E8 `fix:` hint gains a `(a time between P and
+    T)` window in `status` and `stop`, and `stop` warns when its end
+    splices into a stint of 12h or more. The 12h threshold is the
+    coordinator's pick; a genuine 12h+ overnight session warns too
+    (known issue). Coordinator folds: F1 silent cases restated over the
+    date's state after the write; F2 `stop` also checks `D+1`, since a
+    backdated stop can break the next date's splice; U2 `stop`'s
+    lookback uses today's `status` filter, so a refused join never
+    yields a yesterday fix that loses overnight time; F5 all reads
+    first, then print; F3 testing section; F4 full doc list; F6 FE5
+    flow is E27 in §8.2. U1, U5, U6 and the repeat rule are known
+    issues; U4 is a non-goal. The spec grew two triggers and a window
+    rule, so it goes back for one more review round before locking.
 
 ## Open questions (still need answers)
 
