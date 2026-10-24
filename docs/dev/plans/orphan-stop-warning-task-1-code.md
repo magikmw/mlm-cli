@@ -1,5 +1,7 @@
 # Task 1 plan: orphan-stop-warning, code and tests
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/orphan-stop-warning-plan.md` (Task 1).
 Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (§3, §4, §5, §6; non-goals §1.1).
 

@@ -1,5 +1,7 @@
 # Plan: orphan-stop-warning
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked, rescoped). Reviews: `docs/dev/plans/reports/orphan-stop-warning-rescope-review.md`, `docs/dev/plans/reports/orphan-stop-warning-rescope-plan-review.md` (folded, NOTES.md entry 119). Decision log: NOTES.md entries 111, 117, 118, and the "Triaging review findings" process section.
 
 This file replaces the plan for the superseded larger scope (entries 112-116). Its task plans were deleted in `44f8537`.

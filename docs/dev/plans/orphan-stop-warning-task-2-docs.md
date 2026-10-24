@@ -1,5 +1,7 @@
 # Task 2 plan: docs (SPEC.md, README.md, AGENTS.md)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset: orphan-stop-warning. Altitude: task plan. No file is edited by this plan.
 
 ## Read

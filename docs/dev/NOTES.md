@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 123
+- **Next entry**: 124
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (final review triaged; fix pass running)
+- **Active changeset**: `orphan-stop-warning` (merged and closed out on its branch; release awaits the user)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1746,6 +1746,16 @@ SPEC.md and PLAN.md:
     re-wrap README's stdout/stderr paragraph; F3 a CLI test for a bare
     `mlm stop`. Phase 14 skipped at the user's call. Scratch clone
     removed.
+
+123. **`orphan-stop-warning` fix pass merged; changeset closed out.**
+    Fix pass (`plans/reports/orphan-stop-warning-fixpass.md`, green)
+    closed F1-F3. F3's bare-`stop` test was seen failing with the
+    warning routed to a sink. Noted, not fixed: README's shell-alias
+    line predates this changeset and runs long. Merge gate green: fmt,
+    build, 859 tests, clippy. Close-out: archive banners on the spec,
+    plan and task plans; stale-pointer grep of README, SPEC, AGENTS.md,
+    `src/` and `tests/` clean. Fix-pass worktree and branch removed.
+    Not merged to `main`; release awaits the user's call.
 
 ## Open questions (still need answers)
 

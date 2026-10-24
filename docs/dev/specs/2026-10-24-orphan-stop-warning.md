@@ -1,5 +1,7 @@
 # Orphaned-stop warning — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `4c451d7` (`v0.4.0`).
 **Status**: locked 2026-10-24 after one review
 (`docs/dev/plans/reports/orphan-stop-warning-rescope-review.md`, folded
