@@ -1,8 +1,8 @@
 # Plan: orphan-stop-warning
 
-Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked, rescoped). Review: `docs/dev/plans/reports/orphan-stop-warning-rescope-review.md`. Decision log: NOTES.md entries 111, 117, 118, and the "Triaging review findings" process section.
+Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked, rescoped). Reviews: `docs/dev/plans/reports/orphan-stop-warning-rescope-review.md`, `docs/dev/plans/reports/orphan-stop-warning-rescope-plan-review.md` (folded, NOTES.md entry 119). Decision log: NOTES.md entries 111, 117, 118, and the "Triaging review findings" process section.
 
-This file replaces the plan for the superseded larger scope (entries 112-116). The task plans `orphan-stop-warning-task-1-code.md` and `orphan-stop-warning-task-2-docs.md` belong to that scope and are not inputs. The next pass overwrites them.
+This file replaces the plan for the superseded larger scope (entries 112-116). Its task plans were deleted in `44f8537`.
 
 **Altitude**: scope of work only. Task plans choose identifiers. The one new file name below is pinned for ownership.
 
@@ -16,7 +16,7 @@ The `stop` handler in `src/commands.rs` currently writes the punch through the s
 
 The two hint lines must not drift from `status`'s. Today they are built inside the E8 renderer in `src/anomalies.rs`, which is private to that module. The code task makes them reusable, so `status`'s E8 block and `stop`'s warning come from one source. `status`'s output must stay byte-identical.
 
-`stop` does not run `start`'s 14-day lookback and adds no new storage query. It adds no module, so the AGENTS.md layout list is unchanged.
+`stop` does not run `start`'s 14-day lookback and adds no new storage query. It adds no module. AGENTS.md's `src/anomalies.rs` bullet, which lists its callers, gains `stop` (Task 2).
 
 ## Global constraints
 
@@ -42,7 +42,7 @@ A finer split buys nothing. The code change is one handler step plus one small e
 
    `fix:` has four leading spaces and `or:` has five. Two spaces come before each parenthetical. The weekday-date form is the same one `start`'s warnings use. The two hint lines equal `status`'s E8 lines (SPEC §7.3).
 2. **Several orphans.** One block per orphaned end, ascending by instant, with no blank line between blocks. This matches `status`'s E8 rendering and `start`'s warnings.
-3. **Silence.** No orphaned end on D after the write means nothing on stderr. A read failure after the write also means nothing on stderr. Either way stdout is empty and the exit code is `0`.
+3. **Silence.** No orphaned end on D after the write means nothing on stderr. A read failure after the write also means nothing on stderr. Either way stdout is empty and the exit code is `0`. A failed write to stderr is ignored, as `start` ignores it, and never changes the exit code.
 4. **Doc example.** The FE5 example is spec §4's block, verbatim: today Mon 2026-10-05, `mlm start 22:00 --date -2`, then a bare `mlm stop` that lands at 14:16.
 5. **Flow id.** The new §8.2 flow is E27.
 
@@ -57,12 +57,12 @@ Acceptance criteria. Each CLI case asserts exact stderr, empty stdout and exit `
 - Clean pair (`start 09:00`, `stop 17:00`): stderr is empty.
 - Splice: yesterday has one open start, and today's stop is today's first punch. Stderr is empty.
 - Displaced end (`start 09:00`, `stop 17:00`, then `stop 12:00`): one block for 17:00.
-- Pre-existing orphan: a seeded orphaned end on D, then a clean pair on D. The final `stop` prints the old orphan's block.
-- Two orphans on one date: two blocks, ascending.
+- Pre-existing orphan: a seeded orphaned end on D at 08:00, then `start 09:00` and `stop 17:00` on D, so the new start cannot pair with the old orphan. The final `stop` prints the old orphan's block.
+- Two orphans on one date, inserted out of time order: two blocks, ascending.
 - `--date` to a past date: the block names that date, weekday included.
 - Read failure: a malformed row on D-1 (for example an unparseable `at_utc`, seeded raw). The `stop` to D prints nothing and exits `0`, and the punch is stored.
 - `status`'s E8 output stays byte-identical. The existing anomaly and status tests pass unchanged.
-- `stop` never prints `start`'s lookback lines.
+- `stop`'s stderr is covered by the existing ASCII sweep, or by an ASCII assertion in the new test file.
 
 **Out of scope**: refusing or retargeting a write. Warnings for overlaps, E7, stale starts or refused joins. Checking D+1 or any date other than D. Changes to `start`, `note`, `status` output, `mlm week`, pairing or the splice. `--help` text. Any doc file.
 
@@ -70,7 +70,7 @@ Acceptance criteria. Each CLI case asserts exact stderr, empty stdout and exit `
 
 ## Task 2: docs
 
-**Spec**: §7 user-visible surface, "Interaction with the project spec", §1.2 known issue.
+**Spec**: §3 trigger, §4 output, §5 errors (for SPEC §7.4's text), §7 user-visible surface, "Interaction with the project spec", §1.2 known issue.
 
 This task folds the behavior into the live docs so SPEC.md and README.md stand alone, with no pointer out to the working spec.
 
@@ -83,11 +83,12 @@ Acceptance criteria:
 - SPEC §7.4 states the trigger, gives the block (contract 1, with the FE5 example) and the best-effort rule, and adds the `stop` exception to the "write commands print nothing" rule.
 - SPEC §8.2 gains E27 next to E19, and E8 names it.
 - README.md: the "silent on success" line names both the `start` and `stop` warnings. The "That holds on the first run too" sentence notes that a first `mlm stop` warns. The `mlm stop` section gains the warning and the FE5 example. Possible issues mirrors the new §1.2a item.
+- AGENTS.md's `src/anomalies.rs` bullet names `stop` among its callers.
 - Every quoted warning matches contract 1 byte for byte.
 
-**Out of scope**: `--help` text (spec §7). NOTES.md and AGENTS.md. Archiving the working spec. Any source or test file.
+**Out of scope**: `--help` text (spec §7). NOTES.md. Archiving the working spec. Any source or test file.
 
-**Owns exclusively**: `docs/dev/SPEC.md`, `README.md`. NOTES.md and the spec archive banner stay with the coordinator.
+**Owns exclusively**: `docs/dev/SPEC.md`, `README.md`, `AGENTS.md`. NOTES.md and the spec archive banner stay with the coordinator.
 
 ## Risks and ambiguities
 

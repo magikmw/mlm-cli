@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 119
+- **Next entry**: 120
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (spec locked; next collapsed plan)
+- **Active changeset**: `orphan-stop-warning` (plan folded; next task plans)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1696,6 +1696,20 @@ SPEC.md and PLAN.md:
     skipped at the user's call; phase 13 on Opus, pre-approved.
     Expected tasks: 1-2 (code, docs), so phases 5-7 collapse and 10 is
     skipped.
+
+119. **`orphan-stop-warning` rescoped plan reviewed and folded**
+    (`plans/orphan-stop-warning-plan.md`; review
+    `plans/reports/orphan-stop-warning-rescope-plan-review.md`,
+    ship-with-followups, F1-F6 + U1-U5). Folded: F1 AGENTS.md's
+    `anomalies.rs` caller list goes to Task 2; F2 Task 2 cites spec
+    §3-§5; F3 stale note on the deleted task plans; F4 the
+    no-lookback criterion dropped (a non-feature); F5 out-of-order
+    inserts, pinned pre-existing-orphan times, ASCII coverage; F6 a
+    failed stderr write is ignored. Dropped under the triage rules:
+    U1-U3 (long splice, `D+1`, refused join, all cut in entry 117), U4
+    (dropped in entry 118), U5 (a malformed `D+1` row suppressing the
+    warning is corrupt-data territory and follows from reading like
+    `status`).
 
 ## Open questions (still need answers)
 
