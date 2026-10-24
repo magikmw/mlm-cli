@@ -1,4 +1,4 @@
-//! `mlm week [WEEK_ID]` — the rendering half of Milestone 11 (SPEC.md
+//! `mlm week [WEEK_ID] [--notes]` — the rendering half of Milestone 11 (SPEC.md
 //! §3.6, §7.2, §7.3).
 //!
 //! Split per the milestone plan: [`render_week`] is a pure function
@@ -16,6 +16,9 @@
 //!   and would compile.
 //! - Accounting comes from `history::load_history`, the same loader
 //!   `status` uses. A failed storage read is a hard error.
+//! - With `--notes`, [`run`] makes one ranged note read of its own
+//!   (`storage::notes_in_range`, Monday to Sunday), after the loader and
+//!   outside it. Without the flag it makes no note read.
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
@@ -27,6 +30,7 @@ use crate::date::{WeekId, format_date, parse_week_id};
 use crate::history::{self, PunchBuckets};
 use crate::lookback;
 use crate::render::{self, CarryMarker};
+use crate::storage::{self, Note};
 use crate::time::format_minutes;
 
 /// Left-hand label column width shared with the trailing block (§4.2).
@@ -36,6 +40,9 @@ use crate::time::format_minutes;
 const LABEL_WIDTH: usize = 15;
 
 const WEEKDAY_ABBREVS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// Prefix of a note line under its row: six spaces, then `- `.
+const NOTE_PREFIX: &str = "      - ";
 
 /// One row of the §7.2 table. Built once per date in the week's Mon..Sun
 /// span — see `build_rows`.
@@ -54,6 +61,9 @@ pub struct WeekRow {
     /// feeds `has_any`, the `[!]` footer, the carry marker or carry
     /// accounting.
     pub has_overnight: bool,
+    /// This date's note bodies, in insertion order. Empty unless `run`
+    /// attached them for `--notes`.
+    pub notes: Vec<String>,
 }
 
 /// Everything `render_week` needs, and nothing it can compute itself
@@ -116,8 +126,18 @@ fn push_rows(out: &mut String, view: &WeekView) {
         }
         out.push_str(row_markers(row));
         out.push('\n');
+        push_row_notes(out, row);
     }
     out.push('\n');
+}
+
+/// The row's notes, one line each, directly under the row.
+fn push_row_notes(out: &mut String, row: &WeekRow) {
+    for body in &row.notes {
+        out.push_str(NOTE_PREFIX);
+        out.push_str(body);
+        out.push('\n');
+    }
 }
 
 /// `  [!]`, `  [i]` or `  [!] [i]`, or nothing.
@@ -213,6 +233,7 @@ fn build_rows_from(
             is_ongoing: ctx.day.is_ongoing() && is_today,
             has_anomaly: facts.has_any(),
             has_overnight: Some(date) == overnight,
+            notes: Vec::new(),
         }
     })
 }
@@ -229,8 +250,9 @@ fn build_rows(
     build_rows_from(dates, &buckets, today, now_utc, overnight)
 }
 
-/// Build the full `WeekView` for `week`. Every storage read goes through
-/// `history::load_history`, so a failed read is an error.
+/// Build the full `WeekView` for `week`, with no notes attached. Every
+/// storage read here goes through `history::load_history`, so a failed
+/// read is an error. [`run`] adds the `--notes` read outside this builder.
 pub fn build_week_view(
     conn: &Connection,
     week: WeekId,
@@ -272,7 +294,26 @@ fn monday_overnight(
     overnight.filter(|&d| holds(today) && !holds(d))
 }
 
-/// `mlm week [WEEK_ID]` (the `action: None` arm; `week target` is
+/// Puts each note's body on the row whose date it carries, keeping the
+/// order of `notes`. A note dated outside `dates` is dropped.
+fn attach_notes(rows: &mut [WeekRow; 7], dates: [NaiveDate; 7], notes: Vec<Note>) {
+    for note in notes {
+        if let Some(i) = dates.iter().position(|d| *d == note.date) {
+            rows[i].notes.push(note.body);
+        }
+    }
+}
+
+/// One ranged note read over `week`'s Monday to Sunday, attached to
+/// `view`'s rows. A failed read is an error.
+fn with_notes(conn: &Connection, view: &mut WeekView, week: WeekId) -> anyhow::Result<()> {
+    let (start, end) = week.span();
+    let notes = storage::notes_in_range(conn, start, end)?;
+    attach_notes(&mut view.rows, week.dates(), notes);
+    Ok(())
+}
+
+/// `mlm week [WEEK_ID] [--notes]` (the `action: None` arm; `week target` is
 /// Milestone 8's `week_target::run`, dispatched separately by `main`).
 pub fn run(conn: &Connection, now: DateTime<Local>, args: &WeekArgs) -> anyhow::Result<()> {
     let today = now.date_naive();
@@ -281,7 +322,10 @@ pub fn run(conn: &Connection, now: DateTime<Local>, args: &WeekArgs) -> anyhow::
         None => WeekId::current(today),
     };
 
-    let view = build_week_view(conn, week, now)?;
+    let mut view = build_week_view(conn, week, now)?;
+    if args.notes {
+        with_notes(conn, &mut view, week)?;
+    }
     print!("{}", render_week(&view));
     Ok(())
 }
@@ -316,6 +360,7 @@ mod tests {
             is_ongoing: false,
             has_anomaly: false,
             has_overnight: false,
+            notes: Vec::new(),
         }
     }
 
@@ -1157,6 +1202,7 @@ Target:        40h 00m
             let args = WeekArgs {
                 action: None,
                 week_id: Some(bad.to_string()),
+                notes: false,
             };
             let result = run(&conn, today, &args);
             assert!(result.is_err(), "expected error for {bad}");
@@ -1231,6 +1277,7 @@ Target:        40h 00m
         let args = WeekArgs {
             action: None,
             week_id: Some("2026-07".to_string()),
+            notes: false,
         };
         let result = run(&conn, fixed_now(), &args);
         assert!(result.is_ok());
@@ -1766,5 +1813,244 @@ Target:        40h 00m
             let extra = if lines > 0 { lines + 1 } else { 0 };
             assert_eq!(out.matches('\n').count(), 16 + extra, "mask {mask}");
         }
+    }
+
+    // ---- week --notes ----
+
+    fn notes(bodies: &[&str]) -> Vec<String> {
+        bodies.iter().map(|b| b.to_string()).collect()
+    }
+
+    fn strip_note_lines(s: &str) -> String {
+        s.split_inclusive('\n')
+            .filter(|l| !l.starts_with(NOTE_PREFIX))
+            .collect()
+    }
+
+    fn clear_notes(view: &WeekView) -> WeekView {
+        let mut plain = view.clone();
+        for row in &mut plain.rows {
+            row.notes.clear();
+        }
+        plain
+    }
+
+    #[test]
+    fn notes_render_under_their_rows_byte_exact() {
+        let mut view = example_b();
+        view.rows[0].notes = notes(&["fixed migration runner bug", "started punch pairing tests"]);
+        view.rows[2].has_anomaly = true;
+        view.rows[2].notes = notes(&["code review for #41"]);
+        let want = "\
+Week 2026-06 (2026-02-02 - 2026-02-08)
+
+Total behind: 03h 10m
+
+  Mon 2026-02-02   07h 30m
+      - fixed migration runner bug
+      - started punch pairing tests
+  Tue 2026-02-03   08h 00m
+  Wed 2026-02-04   07h 45m  [!]
+      - code review for #41
+  Thu 2026-02-05   08h 10m
+  Fri 2026-02-06   05h 25m
+  Sat 2026-02-07   00h 00m
+  Sun 2026-02-08   00h 00m
+
+[!] needs a look: run mlm status DATE for details and fixes
+
+Carry-in:      00h 00m
+Worked:        36h 50m
+Fulfillment:   36h 50m
+Target:        40h 00m
+";
+        assert_eq!(render_week(&view), want);
+    }
+
+    #[test]
+    fn marked_rows_keep_marker_then_notes() {
+        let mut view = example_b();
+        view.rows[1].has_overnight = true;
+        view.rows[2].has_anomaly = true;
+        view.rows[3].has_anomaly = true;
+        view.rows[3].has_overnight = true;
+        view.rows[1].notes = notes(&["t"]);
+        view.rows[2].notes = notes(&["w"]);
+        view.rows[3].notes = notes(&["th"]);
+        let out = render_week(&view);
+        assert!(
+            out.contains("  Tue 2026-02-03   08h 00m  [i]\n      - t\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("  Wed 2026-02-04   07h 45m  [!]\n      - w\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("  Thu 2026-02-05   08h 10m  [!] [i]\n      - th\n"),
+            "{out}"
+        );
+        assert_eq!(strip_note_lines(&out), render_week(&clear_notes(&view)));
+    }
+
+    #[test]
+    fn ongoing_row_is_followed_by_its_notes() {
+        let mut view = example_a();
+        view.rows[3].notes = notes(&["on call"]);
+        let out = render_week(&view);
+        assert!(
+            out.contains(
+                "  Thu 2026-02-12   07h 25m (incl. ongoing)\n      - on call\n  Fri 2026-02-13"
+            ),
+            "{out}"
+        );
+        assert_eq!(strip_note_lines(&out), EXAMPLE_A_GOLDEN);
+    }
+
+    #[test]
+    fn note_only_row_keeps_its_zero_row() {
+        let mut view = example_b();
+        view.rows[5].notes = notes(&["planning only"]);
+        let out = render_week(&view);
+        assert!(
+            out.contains("  Sat 2026-02-07   00h 00m\n      - planning only\n  Sun 2026-02-08"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn notes_leave_footers_and_carry_block_unchanged() {
+        for mask in 0..16u32 {
+            let anomaly = mask & 1 != 0;
+            let overnight = mask & 2 != 0;
+            let last_week = mask & 4 != 0;
+            let carry = mask & 8 != 0;
+            let mut view = example_b();
+            view.rows[2].has_anomaly = anomaly;
+            view.rows[2].has_overnight = overnight;
+            if last_week {
+                view.overnight_last_week = Some(d(2026, 2, 1));
+            }
+            if carry {
+                view.carry_marker = marker(2, wk(2026, 38));
+            }
+            view.rows[2].notes = notes(&["wed one", "wed two"]);
+            view.rows[6].notes = notes(&["sun"]);
+            let lines =
+                usize::from(anomaly) + usize::from(overnight || last_week) + usize::from(carry);
+            let out = render_week(&view);
+            let extra = if lines > 0 { lines + 1 } else { 0 };
+            assert_eq!(out.matches('\n').count(), 16 + extra + 3, "mask {mask}");
+            assert_eq!(
+                strip_note_lines(&out),
+                render_week(&clear_notes(&view)),
+                "mask {mask}"
+            );
+        }
+    }
+
+    #[test]
+    fn monday_footer_unchanged_with_notes() {
+        let mut view = example_a();
+        view.overnight_last_week = Some(d(2026, 2, 15));
+        view.rows[0].notes = notes(&["x"]);
+        let line = "[i] open stint on Sun 2026-02-15 (last week): mlm status shows how to stop it";
+        let want = EXAMPLE_A_GOLDEN.replace("\n\nCarry-in:", &format!("\n\n{line}\n\nCarry-in:"));
+        let out = render_week(&view);
+        assert!(
+            out.contains("  Mon 2026-02-09   08h 10m\n      - x\n"),
+            "{out}"
+        );
+        assert_eq!(strip_note_lines(&out), want);
+    }
+
+    #[test]
+    fn empty_notes_render_byte_identical() {
+        let a = example_a();
+        let b = example_b();
+        assert!(a.rows.iter().chain(&b.rows).all(|r| r.notes.is_empty()));
+        assert_eq!(render_week(&a), EXAMPLE_A_GOLDEN);
+        assert_eq!(render_week(&b), EXAMPLE_B_GOLDEN);
+    }
+
+    #[test]
+    fn non_ascii_note_passes_through() {
+        let mut view = example_b();
+        view.rows[0].notes = notes(&["caf\u{e9} \u{2013} review"]);
+        let out = render_week(&view);
+        assert!(out.contains("      - caf\u{e9} \u{2013} review\n"), "{out}");
+        assert!(
+            strip_note_lines(&out)
+                .bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7E).contains(&b))
+        );
+    }
+
+    fn note(id: i64, date: NaiveDate, body: &str) -> storage::Note {
+        storage::Note {
+            id,
+            date,
+            body: body.to_string(),
+            created_at_utc: Utc.with_ymd_and_hms(2026, 2, 9, 9, 0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn attach_notes_by_date_in_order_and_drops_outside() {
+        let dates = week_dates();
+        let now = now_utc(2026, 2, 12, 18, 0);
+        let mut rows = build_rows(dates, &[], d(2026, 2, 12), now);
+        let given = vec![
+            note(1, dates[0], "a"),
+            note(2, dates[0], "b"),
+            note(3, dates[6], "c"),
+            note(4, d(2026, 2, 16), "z"),
+        ];
+        attach_notes(&mut rows, dates, given);
+        assert_eq!(rows[0].notes, notes(&["a", "b"]));
+        assert_eq!(rows[6].notes, notes(&["c"]));
+        assert!(rows.iter().all(|r| !r.notes.iter().any(|b| b == "z")));
+        assert!(rows[1..6].iter().all(|r| r.notes.is_empty()));
+    }
+
+    #[test]
+    fn run_with_notes_reads_and_errors_on_renamed_body() {
+        let conn = new_test_db();
+        conn.execute("ALTER TABLE notes RENAME COLUMN body TO body_gone", [])
+            .expect("rename column");
+        let mut args = WeekArgs {
+            action: None,
+            week_id: Some("2026-07".into()),
+            notes: true,
+        };
+        assert!(run(&conn, fixed_now(), &args).is_err());
+        args.notes = false;
+        assert!(run(&conn, fixed_now(), &args).is_ok());
+    }
+
+    #[test]
+    fn run_with_notes_attaches_through_storage() {
+        let conn = new_test_db();
+        let tue = d(2026, 2, 10);
+        let at = |h| Utc.with_ymd_and_hms(2026, 2, 10, h, 0, 0).unwrap();
+        storage::insert_note(&conn, tue, "second", at(15)).unwrap();
+        storage::insert_note(&conn, tue, "first", at(10)).unwrap();
+        let week = wk(2026, 7);
+        let mut view = build_week_view(&conn, week, fixed_now()).unwrap();
+        assert!(view.rows.iter().all(|r| r.notes.is_empty()));
+        with_notes(&conn, &mut view, week).unwrap();
+        assert_eq!(view.rows[1].notes, notes(&["first", "second"]));
+        assert!(
+            view.rows
+                .iter()
+                .enumerate()
+                .all(|(i, r)| i == 1 || r.notes.is_empty())
+        );
+        let args = WeekArgs {
+            action: None,
+            week_id: Some("2026-07".into()),
+            notes: true,
+        };
+        assert!(run(&conn, fixed_now(), &args).is_ok());
     }
 }

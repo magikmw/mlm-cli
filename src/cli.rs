@@ -49,6 +49,10 @@ Glossary:
       A stint stopped after midnight is counted on the day it started.
       `spans to next day` ends the start date's stint line, and
       `continues previous day's stint` ends the next date's header.
+  - <note>
+      One of a date's notes, in the order they were added. `mlm status`
+      lists them under `Notes:`, and `mlm week --notes` under the date's
+      row. Notes change no total, marker or footer.
   [!], [i]
       `[!]` flags an anomaly, such as an unclosed start, an orphaned end
       or overlapping stints. In `mlm week` it marks the date's row. `[i]`
@@ -219,7 +223,7 @@ pub struct DeleteEntryArgs {
 // arm is Milestone 11's to render, per PLAN.md's "canonical shape" note).
 // ---------------------------------------------------------------------------
 
-/// `mlm week [WEEK_ID]` and `mlm week target [WEEK_ID] DURATION` share this
+/// `mlm week [WEEK_ID] [--notes]` and `mlm week target [WEEK_ID] DURATION` share this
 /// struct: a first token matching a known subcommand name (`target`) is
 /// taken as the subcommand, otherwise it falls through to the positional
 /// `WEEK_ID` (no week id can ever be the literal string `target`).
@@ -233,6 +237,10 @@ pub struct WeekArgs {
     /// Defaults to the current week.
     #[arg(value_name = "WEEK_ID")]
     pub week_id: Option<String>,
+
+    /// Show each date's notes under its row.
+    #[arg(short, long)]
+    pub notes: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -417,14 +425,22 @@ mod tests {
         Cli::try_parse_from(args)
     }
 
-    fn week_target_args(cli: Cli) -> WeekTargetArgs {
+    fn week_args(cli: Cli) -> WeekArgs {
         match cli.command {
-            Command::Week(WeekArgs {
-                action: Some(WeekAction::Target(t)),
-                ..
-            }) => t,
-            other => panic!("expected Command::Week(.. Target ..), got {other:?}"),
+            Command::Week(a) => a,
+            other => panic!("expected Command::Week, got {other:?}"),
         }
+    }
+
+    fn week_target_args(cli: Cli) -> WeekTargetArgs {
+        let WeekAction::Target(t) = week_args(cli).action.expect("expected week target");
+        t
+    }
+
+    fn week_view_args(cli: Cli) -> WeekArgs {
+        let a = week_args(cli);
+        assert!(a.action.is_none(), "expected the week view, got {a:?}");
+        a
     }
 
     // P1
@@ -470,9 +486,49 @@ mod tests {
             Command::Week(WeekArgs {
                 action: None,
                 week_id: Some(id),
+                notes: false,
             }) => assert_eq!(id, "2026-07"),
             _ => panic!("expected Command::Week with no action and week_id set"),
         }
+    }
+
+    #[test]
+    fn notes_flag_parses_long_and_short_in_either_order() {
+        for args in [
+            &["mlm", "week", "-n", "2026-43"][..],
+            &["mlm", "week", "2026-43", "-n"],
+            &["mlm", "week", "--notes", "2026-43"],
+            &["mlm", "week", "2026-43", "--notes"],
+            &["mlm", "w", "-n", "2026-43"],
+        ] {
+            let a = week_view_args(parse(args).unwrap());
+            assert!(a.notes, "{args:?}");
+            assert_eq!(a.week_id.as_deref(), Some("2026-43"), "{args:?}");
+        }
+        let bare = week_view_args(parse(&["mlm", "week", "-n"]).unwrap());
+        assert!(bare.notes);
+        assert_eq!(bare.week_id, None);
+        assert!(!week_view_args(parse(&["mlm", "week"]).unwrap()).notes);
+    }
+
+    #[test]
+    fn notes_after_target_is_a_target_token() {
+        let t = week_target_args(parse(&["mlm", "week", "target", "40h", "--notes"]).unwrap());
+        assert_eq!(t.split(), (Some("40h"), "--notes"));
+        let err = parse(&["mlm", "week", "target", "43", "40h", "--notes"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::TooManyValues);
+    }
+
+    #[test]
+    fn glossary_has_the_note_line_entry_before_markers() {
+        let note = GLOSSARY.find("\n  - <note>\n").expect("note entry");
+        let spans = GLOSSARY.find("\n  spans to next day").unwrap();
+        let markers = GLOSSARY.find("\n  [!], [i]\n").unwrap();
+        assert!(spans < note && note < markers);
+        let flat = GLOSSARY.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(flat.contains(
+            "One of a date's notes, in the order they were added. `mlm status` lists them under `Notes:`, and `mlm week --notes` under the date's row. Notes change no total, marker or footer."
+        ));
     }
 
     // --- Milestone 7: start/stop/note parse shape -----------------------
