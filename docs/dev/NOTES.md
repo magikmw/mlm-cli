@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 131
+- **Next entry**: 133
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `week-notes` (implemented and merged on branch `week-notes`, review next); `export-notes` queued after it. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `export-notes` (spec drafting, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1832,6 +1832,24 @@ SPEC.md and PLAN.md:
     change. Merge gate green on `week-notes`: fmt, build, 891 tests,
     clippy; smoke run of `week -n` on a seeded database matches the
     spec layout. Task worktrees and branches removed.
+
+131. **`week-notes` reviewed and triaged; closed out.** Phase 14
+    (`returning`, `plans/reports/week-notes-fresh-eyes.md`, 10
+    findings) and phase 13 on Sonnet at the user's choice
+    (`plans/reports/week-notes-final-review.md`, ship-with-followups,
+    3 findings). All dropped with the user's agreement: fresh-eyes
+    hits are the dropped known issues, existing note normalization,
+    existing exit codes and headline wording. Final F1 (long-help
+    layout) needs no fix. F2 (raw control characters in note bodies,
+    `status` too) would be a new mechanism; the user skipped it. F3
+    (`WeekArgs` doc comment past 80 columns) folds into
+    `export-notes`, which edits `src/cli.rs`. No fix pass. Archive
+    banners on the spec, plan and task plans. Scratch clone and
+    sandbox removed.
+
+132. **`week-notes` merged to `main`, unreleased.** The user had it
+    merged `--no-ff` and moved on to `export-notes`, which branches
+    from `main`.
 
 ## Open questions (still need answers)
 

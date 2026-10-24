@@ -1,5 +1,7 @@
 # Week notes — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `3bcff42` (`v0.4.0` + `orphan-stop-warning`, unreleased).
 **Status**: locked 2026-10-24 after one review
 (`docs/dev/plans/reports/week-notes-spec-review.md`, folded in NOTES.md

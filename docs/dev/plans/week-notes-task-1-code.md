@@ -1,5 +1,7 @@
 # Task 1 plan: code and tests (`mlm week --notes`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset: week-notes. Altitude: task plan. No source file is edited by this plan.
 
 ## Read

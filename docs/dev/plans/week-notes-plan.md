@@ -1,5 +1,7 @@
 # Plan: week-notes
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-24-week-notes.md` (locked). Reviews: `docs/dev/plans/reports/week-notes-spec-review.md` (folded, NOTES.md entry 126), `docs/dev/plans/reports/week-notes-plan-review.md` (folded, NOTES.md entry 127). Decision log: NOTES.md entries 125, 126 and the "Triaging review findings" process section.
 
 **Altitude**: scope of work only. Task plans choose identifiers. The one new file name below is pinned for ownership.
