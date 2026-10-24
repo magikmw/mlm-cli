@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 130
+- **Next entry**: 131
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `week-notes` (spec locked, planning, branch `week-notes`); `export-notes` queued after it. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `week-notes` (implemented and merged on branch `week-notes`, review next); `export-notes` queued after it. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1821,6 +1821,17 @@ SPEC.md and PLAN.md:
     (`plans/week-notes-task-2-docs.md`) adds §3.5 to its targets and
     uses spec §5's example in full plus a README Features line. Task
     2 realigned against Task 1 for the glossary text.
+
+130. **`week-notes` tasks merged.** Task 2 (docs, `f22a179`, no
+    report) and Task 1 (code, `54079d4`,
+    `plans/reports/week-notes-task-1-report.md`) merged `--no-ff`.
+    Task 1 deviations: the `week --help` long form puts the flag's
+    description on its own line (golden fixed to real output); test
+    helpers merged to satisfy the coverage ratchet. SPEC §3.6 says
+    `--help` "lists it as" the text, true in both layouts, so no doc
+    change. Merge gate green on `week-notes`: fmt, build, 891 tests,
+    clippy; smoke run of `week -n` on a seeded database matches the
+    spec layout. Task worktrees and branches removed.
 
 ## Open questions (still need answers)
 
