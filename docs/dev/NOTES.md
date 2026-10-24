@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 116
+- **Next entry**: 117
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (plan folded, `docs/dev/plans/orphan-stop-warning-plan.md`; next phase 8 task plans)
+- **Active changeset**: `orphan-stop-warning` (task plans written; phase 11 implementation)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 
 Phase 0 profile (`coordinating-development`), set in entry 65:
@@ -1622,6 +1622,21 @@ SPEC.md and PLAN.md:
     a running session; FE5 against a 15+ day start names nothing;
     duplicate rows in `delete punch`; the `--help` glossary), plus the
     first-run stderr change.
+
+116. **`orphan-stop-warning` task plans written**
+    (`plans/orphan-stop-warning-task-1-code.md`, findings(3);
+    `plans/orphan-stop-warning-task-2-docs.md`, green). Task 1 finding
+    1: a start at the minute of `D`'s spliced first end E14-pairs with
+    it and breaks the splice, so spec §5 now excludes that minute too
+    (wording, no printed-text change). Finding 2: spec §8's "`D+1` not
+    read" bullet corrected to match the plan. Finding 3: unit tests use
+    Mon 2026-02-09 to dodge a southern-hemisphere DST shift; accepted.
+    Task 2 plan's §7.3 minute-rule text predates finding 1, so its
+    implementer gets the one-sentence correction as a dispatch note
+    instead of a re-align round. Task 2 deviations accepted: new SPEC
+    §7.4.1 for `stop`'s rules, no "FE5" label in SPEC, the yesterday
+    warning's form restated for `stop`, and the README `18:02` example
+    noting its under-12h assumption. Phase 10 skipped (two tasks).
 
 ## Open questions (still need answers)
 

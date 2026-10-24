@@ -267,7 +267,9 @@ overlap.
   that instant either pairs with `T`, or pairs with `P` at zero length
   (E14) while `P`'s old start moves to `T`. Both are clean. When `P` is
   an orphaned end, a start at `P`'s minute pairs with `P` and leaves `T`
-  orphaned, so the window excludes it.
+  orphaned, so the window excludes it. When `P` is the date's spliced
+  first end, a start at `P`'s minute pairs with it at zero length and
+  breaks the splice, so the window excludes it too.
 - The window can be empty (§1.2).
 
 The displaced example (`start 09:00`, `stop 12:00`, orphan `17:00`)
@@ -301,7 +303,8 @@ before the write (SPEC §6.1) is unchanged.
 - double-tapped `stop` after a splice → two-line blocks, refused-join line,
   no yesterday warning
 - backdated `stop` breaking `D+1`'s splice → orphan block for `D+1`
-- `D` is today → `D+1` not read
+- `D` is today → `D+1`'s checks skipped; `D`'s facts still use tomorrow's
+  punches, as `status` does
 - splice of 11h 59m → silent
 - splice of exactly 12h, and of 29h 16m → long-splice block
 - long splice with a punch after `S` on `A` → `fix:` window
