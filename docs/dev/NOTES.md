@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 118
+- **Next entry**: 119
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `orphan-stop-warning` (rescoped spec draft; next one review round, then a fresh collapsed plan)
+- **Active changeset**: `orphan-stop-warning` (spec locked; next collapsed plan)
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1680,6 +1680,22 @@ SPEC.md and PLAN.md:
     warning. The entries 112-116 plans and the task plans are
     superseded; the next planning pass overwrites them. New process
     section "Triaging review findings" records the rules this exposed.
+
+118. **`orphan-stop-warning` rescoped spec reviewed and locked.**
+    Review (`plans/reports/orphan-stop-warning-rescope-review.md`,
+    ship-with-followups, F1-F6 + U1-U7), triaged under the new rules.
+    Folded: F1, F2 wording on what `start` and `stop` report; F3 any
+    read failure suppresses the whole warning, so a failed neighbor
+    read can't fake an orphan; F4 a malformed-row injection for the
+    read-failure test; F6 SPEC §6 lead-in and E8 on the doc list; U5
+    one non-goal line; U6 known issue widened to any stop-before-start.
+    Dropped: F5 (tests pinning non-features), U1 (the `start` hint is
+    right when today's start was forgotten, and `delete` covers FE5),
+    U2-U4 (the long-splice, `D+1` and refused-join mechanisms the user
+    cut in entry 117), U7 (no age phrase restates the design). Phase 14
+    skipped at the user's call; phase 13 on Opus, pre-approved.
+    Expected tasks: 1-2 (code, docs), so phases 5-7 collapse and 10 is
+    skipped.
 
 ## Open questions (still need answers)
 

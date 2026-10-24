@@ -1,9 +1,11 @@
 # Orphaned-stop warning — design spec
 
 **Baseline**: written against `main` at `4c451d7` (`v0.4.0`).
-**Status**: draft, rescoped 2026-10-24 (NOTES.md entry 117).
+**Status**: locked 2026-10-24 after one review
+(`docs/dev/plans/reports/orphan-stop-warning-rescope-review.md`, folded
+in NOTES.md entry 118).
 **Input**: fresh-eyes finding FE5 from `overnight-visibility` (NOTES.md
-entry 108). Decisions: NOTES.md entries 111 and 117.
+entry 108). Decisions: NOTES.md entries 111, 117 and 118.
 
 ## 1. Summary
 
@@ -17,9 +19,9 @@ joins adjacent dates only, so today's end stays orphaned.
 
 After this changeset, `stop` warns on stderr when the date it wrote to
 holds an orphaned end. The warning carries the fixes `status` already
-prints for it. `start` already warns about the open starts it leaves
-behind (SPEC §7.4), so each write command now reports the unmatched
-punch it leaves. The write, stdout and the exit code are unchanged.
+prints for it. `start` already warns about open starts other than the
+one it just wrote (SPEC §7.4), so both punch commands now report the
+unmatched punches their date holds. The write, stdout and the exit code are unchanged.
 
 ## 1.1 Non-goals
 
@@ -27,13 +29,14 @@ punch it leaves. The write, stdout and the exit code are unchanged.
   Inserts stay unvalidated (SPEC §1.2, §4.3).
 - No change to pairing, the splice, totals, `status`, `mlm week`,
   `start` or `note`.
-- `stop` checks only the date it wrote to.
+- `stop` checks only the date it wrote to, and only for orphaned ends.
+  It says nothing about an overlap or a second open start it creates.
 
 ## 1.2 Known issues
 
-- Backfilling stop-then-start warns once. `mlm stop 17:00 --date -1`
-  followed by `mlm start 09:00 --date -1` is legal (SPEC §3.2), but the
-  first command prints an orphan warning. The second command clears it.
+- Entering a stop before its start warns once. `mlm stop 17:00` then
+  `mlm start 09:00` is legal on any date (SPEC §3.2), but the first
+  command prints an orphan warning. The second command clears it.
 
 ## 2. Prerequisites
 
@@ -75,9 +78,10 @@ warning: orphaned end on Mon 2026-10-05 at 14:16 (no matching start)
 
 ## 5. Errors
 
-The check is best-effort, as `start`'s is (SPEC §7.4). If the read
-after the committed write fails, `stop` prints nothing extra and still
-exits `0`. A hard error before the write (SPEC §6.1) is unchanged.
+The check is best-effort, as `start`'s is (SPEC §7.4). If any read
+after the committed write fails, `stop` prints nothing at all and still
+exits `0`. A failed neighbor read never counts as an empty date, since
+that would turn a spliced end into a false orphan. A hard error before the write (SPEC §6.1) is unchanged.
 
 ## 6. Testing
 
@@ -92,7 +96,8 @@ Each case asserts exact stderr, empty stdout and exit `0`:
   the old orphan
 - two orphans on one date → two blocks, ascending
 - `--date` to a past date → block names that date
-- read failure after the write → nothing extra, punch stored
+- read failure after the write (for example a malformed row on `D-1`,
+  so the write itself succeeds) → nothing printed, punch stored
 
 ## 7. User-visible surface
 
@@ -114,8 +119,9 @@ Each case asserts exact stderr, empty stdout and exit `0`:
 - §3.3 points to §7.4's `stop` warning.
 - §3.7's "`start`, `stop` and `note` stay silent" names the `stop`
   exception.
-- §4.3's "not rejected at insert time" lead-in and §6.2's "not at insert
-  time" sentence name the `stop` warning.
+- §4.3's "not rejected at insert time" lead-in, §6's "surfaced later"
+  lead-in and §6.2's "not at insert time" sentence name the `stop`
+  warning.
 - §7.4 gains `stop`'s trigger, block and best-effort rule. The "write
   commands print nothing" rule gains the exception.
-- §8.2 gains E27, `stop`'s warning, next to E19.
+- §8.2 gains E27, `stop`'s warning, next to E19. E8 names it.
