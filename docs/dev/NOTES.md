@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 139
+- **Next entry**: 140
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `dst-now-panic` (unwrap audit first, entry 138), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (spec draft, entry 139), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1920,6 +1920,20 @@ SPEC.md and PLAN.md:
     `dst-now-panic`, after an audit of every `unwrap` the user asked
     for. Order: `dst-now-panic`, then `relative-ids`. Spec, plan and
     task plans archived. Merged to `main` `--no-ff`, unreleased.
+
+139. **`panic-fixes` brainstorm.** Renames `dst-now-panic` (entry 138)
+    and widens it to the unwrap audit's user-reachable panics
+    (`plans/reports/unwrap-audit-review.md`). F1 DST `now`: fix. F2/F4
+    huge target: cap `week target` at `168h`, the hours in a week; a
+    future user config may raise it, with the risk stated. F3 stdout
+    write failure: a broken pipe exits quietly with a nonzero code; any
+    other write failure prints `error: cannot write output: <reason>`
+    and exits `1`. The user chose quiet over a message because `| head`
+    would print it on every run. F5-F7 and the two non-panic bugs
+    (`parse_date` years 0000-0999, week ranges near 9999) dropped.
+    Coordinator picks: exit `141` for the broken pipe (the shell's
+    `SIGPIPE` code), the cap message text, the help line. Baseline
+    `main` at `dd91952`; branch `panic-fixes`.
 
 ## Open questions (still need answers)
 
