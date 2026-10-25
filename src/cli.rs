@@ -102,6 +102,10 @@ pub enum Command {
         #[arg(allow_negative_numbers = true)]
         date: Option<String>,
     },
+
+    /// Print stored data as plain text
+    #[command(visible_alias = "ex")]
+    Export(ExportArgs),
 }
 
 /// Shared argument shape for `start` and `stop` (SPEC §3.2/§3.3 — "same
@@ -223,10 +227,10 @@ pub struct DeleteEntryArgs {
 // arm is Milestone 11's to render, per PLAN.md's "canonical shape" note).
 // ---------------------------------------------------------------------------
 
-/// `mlm week [WEEK_ID] [--notes]` and `mlm week target [WEEK_ID] DURATION` share this
-/// struct: a first token matching a known subcommand name (`target`) is
-/// taken as the subcommand, otherwise it falls through to the positional
-/// `WEEK_ID` (no week id can ever be the literal string `target`).
+/// `mlm week [WEEK_ID] [--notes]` and `mlm week target [WEEK_ID] DURATION`
+/// share this struct: a first token matching a known subcommand name
+/// (`target`) is taken as the subcommand, otherwise it falls through to the
+/// positional `WEEK_ID` (no week id can ever be the literal string `target`).
 #[derive(Args, Debug)]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct WeekArgs {
@@ -282,6 +286,48 @@ pub struct WeekTargetArgs {
         hide = true
     )]
     pub args: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// `export notes`
+// ---------------------------------------------------------------------------
+
+/// `mlm export notes [--date DATE | --week WEEK_ID | --month MONTH]`. A
+/// required subcommand, as `delete` has, so bare `mlm export` is a usage
+/// error that prints this command's help.
+#[derive(Args, Debug)]
+pub struct ExportArgs {
+    #[command(subcommand)]
+    pub target: ExportTarget,
+}
+
+/// What `export` prints.
+#[derive(Subcommand, Debug)]
+pub enum ExportTarget {
+    /// Print notes for a date, week or month, one per line (defaults to
+    /// the current week)
+    #[command(visible_alias = "n")]
+    Notes(ExportNotesArgs),
+}
+
+/// At most one range flag (the group). Each takes hyphen values, so `-1`
+/// reaches its parser, and a following flag becomes this flag's value.
+#[derive(Args, Debug)]
+#[group(multiple = false)]
+pub struct ExportNotesArgs {
+    /// Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g.
+    /// `-1` = yesterday)
+    #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
+    pub date: Option<String>,
+
+    /// Week to export: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7)
+    #[arg(short, long, value_name = "WEEK_ID", allow_hyphen_values = true)]
+    pub week: Option<String>,
+
+    /// Month to export: YYYY-MM (e.g. 2026-03) or a bare month number (e.g.
+    /// 3)
+    #[arg(short, long, value_name = "MONTH", allow_hyphen_values = true)]
+    pub month: Option<String>,
 }
 
 /// The parse tree with the help surface applied.
@@ -952,5 +998,82 @@ mod tests {
         let (kind, text) = clap_text(super::parse(&os(&["mlm", "week", "7", "foo"])).unwrap_err());
         assert_eq!(kind, clap::error::ErrorKind::ArgumentConflict);
         assert!(text.contains("Usage:"), "{text}");
+    }
+
+    // --- export notes: cli surface ---------------------------------------
+
+    fn export_notes_args(cli: Cli) -> ExportNotesArgs {
+        let Command::Export(ExportArgs {
+            target: ExportTarget::Notes(a),
+        }) = cli.command
+        else {
+            panic!("expected export notes");
+        };
+        a
+    }
+
+    #[test]
+    fn export_aliases_parse_like_the_long_form() {
+        let a = export_notes_args(parse(&["mlm", "ex", "n", "-w", "43"]).unwrap());
+        assert_eq!(a.week.as_deref(), Some("43"));
+        assert_eq!(a.date, None);
+        assert_eq!(a.month, None);
+        let cli = parse(&["mlm", "n", "hi"]).unwrap();
+        assert!(matches!(cli.command, Command::Note(_)), "{:?}", cli.command);
+    }
+
+    #[test]
+    fn export_range_flags_take_hyphen_values() {
+        let a = export_notes_args(parse(&["mlm", "export", "notes", "-d", "-1"]).unwrap());
+        assert_eq!(a.date.as_deref(), Some("-1"));
+        let a = export_notes_args(parse(&["mlm", "export", "notes", "-w", "-1"]).unwrap());
+        assert_eq!(a.week.as_deref(), Some("-1"));
+        let a = export_notes_args(parse(&["mlm", "export", "notes", "-m", "-1"]).unwrap());
+        assert_eq!(a.month.as_deref(), Some("-1"));
+        let a = export_notes_args(parse(&["mlm", "export", "notes", "--month=3"]).unwrap());
+        assert_eq!(a.month.as_deref(), Some("3"));
+        let a = export_notes_args(parse(&["mlm", "export", "notes", "-m", "-d"]).unwrap());
+        assert_eq!(a.month.as_deref(), Some("-d"));
+        assert_eq!(a.date, None);
+    }
+
+    #[test]
+    fn export_with_no_flag_has_no_range() {
+        let a = export_notes_args(parse(&["mlm", "export", "notes"]).unwrap());
+        assert_eq!((a.date, a.week, a.month), (None, None, None));
+    }
+
+    #[test]
+    fn export_usage_errors_are_clap_errors() {
+        use clap::error::ErrorKind;
+        let cases: [(&[&str], ErrorKind); 4] = [
+            (
+                &["mlm", "export"],
+                ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
+            ),
+            (
+                &[
+                    "mlm",
+                    "export",
+                    "notes",
+                    "-d",
+                    "2026-01-05",
+                    "-w",
+                    "2026-02",
+                ],
+                ErrorKind::ArgumentConflict,
+            ),
+            (
+                &["mlm", "export", "notes", "-m", "3", "-m", "4"],
+                ErrorKind::ArgumentConflict,
+            ),
+            (&["mlm", "export", "notes", "-d"], ErrorKind::InvalidValue),
+        ];
+        for (args, want) in cases {
+            let failure = super::parse(&os(args)).unwrap_err();
+            assert_eq!(failure.exit_code(), 2, "{args:?}");
+            let (kind, _) = clap_text(failure);
+            assert_eq!(kind, want, "{args:?}");
+        }
     }
 }

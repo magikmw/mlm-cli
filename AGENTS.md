@@ -14,7 +14,8 @@ spec.
 ## Current state
 
 All commands (`start`, `stop`, `note`, `delete`, `status`, `week`,
-`week target`) are implemented, tested, and match `docs/dev/SPEC.md`.
+`week target`, `export notes`) are implemented, tested, and match
+`docs/dev/SPEC.md`.
 Remaining stretch ideas (not implemented):
 
 - dashboard layout/widgets (ratatui: `Chart`/`Sparkline`/`BarChart`)
@@ -32,12 +33,13 @@ real logic instead of re-deriving it — new top-level modules go in
 - `src/db.rs` — SQLite connection + schema/migrations, app-data path
   resolution via `directories::ProjectDirs` (+ `MLM_DB_PATH` override)
 - `src/time.rs` — TIME/DURATION parsing and the one duration formatter
-- `src/date.rs` — DATE/WEEK_ID parsing, `WeekId`
+- `src/date.rs` — DATE/WEEK_ID/MONTH parsing, `WeekId`, and a month's
+  first and last day
 - `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read,
   one ranged week-target-override read, and one ranged note read
   (`notes_in_range`, an inclusive date range in, a flat `Vec<Note>`
   out, ascending by date, insertion order within a date) that
-  `week --notes` calls
+  `week --notes` and `export notes` call
 - `src/stint.rs` — LIFO stint-pairing algorithm (§4.3)
 - `src/week.rs` — target/carry/fulfillment accounting (§2.4/§5)
 - `src/anomalies.rs` — per-date anomaly facts (E7, stale, E8, overlap,
@@ -60,6 +62,8 @@ real logic instead of re-deriving it — new top-level modules go in
   marker line
 - `src/commands.rs`, `src/status.rs`, `src/week_target.rs`,
   `src/week_view.rs` — per-command wiring over the above
+- `src/export.rs` — `mlm export notes`, which resolves the range, makes
+  one ranged note read and prints one line per note
 - `src/main.rs` — CLI entry point: parses args, dispatches, exit code
 - `examples/seed_test_data.rs` — dev-only test-data generator (below)
 

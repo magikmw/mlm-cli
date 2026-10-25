@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 133
+- **Next entry**: 139
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `export-notes` (spec drafting, branch `export-notes`). `week-notes` is on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `dst-now-panic` (unwrap audit first, entry 138), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1850,6 +1850,76 @@ SPEC.md and PLAN.md:
 132. **`week-notes` merged to `main`, unreleased.** The user had it
     merged `--no-ff` and moved on to `export-notes`, which branches
     from `main`.
+
+133. **`export-notes` spec locked.** The user approved the draft
+    (decisions beyond entry 125: `-d`/`-w`/`-m`, bare month number,
+    future range prints nothing, the `MONTH` messages, the `WeekArgs`
+    comment re-wrap). One review
+    (`plans/reports/export-notes-spec-review.md`, 19 findings). Folded:
+    F1 `--date` shares input forms, not the future check; F2 all three
+    flags take hyphen values, repeated/missing-value rows added; F4
+    `YYYY-M` accepted, four-digit year; F5 the "exactly one line"
+    claim cut, since pre-v0.3.0 rows can hold newlines; F6/U7 help
+    value names and default-week wording pinned; F7/F8 tests and doc
+    targets added. Dropped: F3 broken pipe, since a month of notes
+    fits in the pipe buffer and `week` behaves the same; F9 the user
+    already took the re-wrap; U1-U6, U8-U10 per entry 128's
+    known-issue default. Phase 14 runs at `returning`: a new opt-in
+    command touches no first-run path. Expected 2 tasks (code, docs).
+
+134. **`export-notes` plan folded.** Plan
+    (`plans/export-notes-plan.md`, 2 tasks: code+tests, docs) reviewed
+    once (`plans/reports/export-notes-plan-review.md`, 13 findings).
+    Folded: F1 a flag followed by another flag takes it as its value
+    and fails as an exit-1 parse error (spec §6 row added); F2 a
+    resolver test pins calendar year for bare `M`; F3 MONTH needs its
+    own out-of-range arm; F4 any four-digit MONTH year; F5 AGENTS.md
+    Current state and storage entry, SPEC §1.2 and §6.2 added to Task
+    2; F6 clock tests use `Utc::now()`; F7 Task 1 owns
+    `coverage-baseline.json`; U4 `--date` help keeps `status`'s
+    backticks. Dropped U1-U3, U5, U6 per entry 128's default; U3
+    matches WEEK_ID's own `expected YYYY-WW or WW` wording.
+
+135. **`export-notes` task plans written.** Task 1
+    (`plans/export-notes-task-1-code.md`, green) pins `ArgKind::Month`,
+    `parse_month`, `src/export.rs` and the full `export notes --help`
+    golden; clap behavior checked on a prototype. Task 2
+    (`plans/export-notes-task-2-docs.md`) adds SPEC §3.8 and §7.5 and
+    fixes three sentences the new command makes false (README's alias
+    rule, README's and SPEC §7.4's list of output commands). Both
+    quote the contract strings verbatim, so no realign.
+
+136. **`export-notes` tasks merged.** Task 2 (docs, `6ebd825`, no
+    report) and Task 1 (code, `b28a05c`,
+    `plans/reports/export-notes-task-1-report.md`) merged `--no-ff`.
+    Task 1 deviation: `parse_month` split into a private helper so no
+    unreachable `map_err` closure costs coverage; behavior unchanged.
+    Merge gate green on `export-notes`: fmt, build, 932 tests, clippy.
+    Smoke run on a seeded database matches spec §5 and §6; help and
+    `MONTH` strings match SPEC §3.8 and §6.1. Task worktrees and
+    branches removed.
+
+137. **Next changeset: `relative-ids`.** The `export-notes` spec gave
+    `-N` to `--date` only. The user meant `-N` for every range. The
+    coordinator asked about `--date` alone and did not flag the gap.
+    Decision: `-N` (N before the current one, `-0` invalid) for
+    `WEEK_ID` in `mlm week` and `export notes --week`, and for `MONTH`
+    in `export notes --month`. `week target` unchanged. This drops the
+    SPEC §1.2 non-goal on relative week notation. Starts on its own
+    branch from `main` after `export-notes` merges. No release yet.
+    Final review of `export-notes` running on Opus (user's choice).
+
+138. **`export-notes` reviewed, triaged and closed out.** Fresh-eyes
+    (`plans/reports/export-notes-fresh-eyes.md`, 12 findings) all
+    dropped; the one real gap (`-w -1`) is `relative-ids` (entry 137).
+    Final review on Opus (`plans/reports/export-notes-final-review.md`)
+    returned ship-with-followups: no export findings; F1 is an existing
+    panic in `src/main.rs` (`with_second(0).unwrap()`) during the
+    repeated autumn DST hour, reproduced live 2026-10-25 02:22 CEST.
+    The user chose no fix pass here. F1 becomes its own changeset,
+    `dst-now-panic`, after an audit of every `unwrap` the user asked
+    for. Order: `dst-now-panic`, then `relative-ids`. Spec, plan and
+    task plans archived. Merged to `main` `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 

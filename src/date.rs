@@ -1,9 +1,11 @@
-//! Calendar dates (`DATE`) and ISO week ids (`WEEK_ID`): parsing,
-//! validation, formatting and week iteration.
+//! Calendar dates (`DATE`), ISO week ids (`WEEK_ID`) and calendar months
+//! (`MONTH`): parsing, validation, formatting, week iteration and a
+//! month's first and last day.
 //!
 //! Spec basis: SPEC.md §1.3 (a week is an ISO year + ISO week tuple),
 //! §2.3 (`week_targets.week_id` storage form), §3.5 (`DATE` argument),
-//! §3.6 (`WEEK_ID` argument forms), §6.1 (hard errors).
+//! §3.6 (`WEEK_ID` argument forms), §3.8 (`MONTH` argument forms), §6.1
+//! (hard errors).
 
 // Milestone 2 lands this module ahead of its consumers (Milestones 4, 6,
 // 8, 9, 10, 11). Everything here is exercised by the unit tests below;
@@ -16,11 +18,12 @@ use chrono::{Datelike, Days, NaiveDate, Weekday};
 // Errors (PLAN.md contract 7, local to this milestone)
 // ---------------------------------------------------------------------------
 
-/// Which of this milestone's two argument kinds failed to parse.
+/// Which argument kind failed to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgKind {
     Date,
     WeekId,
+    Month,
 }
 
 /// Machine-inspectable cause. Tests assert on this, not on message text.
@@ -29,7 +32,7 @@ pub enum Cause {
     /// Did not match the argument's grammar at all.
     Shape,
     /// Matched the grammar but a component is outside its legal range
-    /// (week `0`, or a year outside `1000..=9999`).
+    /// (week `0`, a year outside `1000..=9999`, or a month outside 1-12).
     OutOfRange,
     /// Well-shaped `YYYY-MM-DD` that is not a real calendar date.
     NoSuchCalendarDate,
@@ -68,11 +71,14 @@ impl std::fmt::Display for DateWeekError {
         let name = match self.arg {
             ArgKind::Date => "DATE",
             ArgKind::WeekId => "WEEK_ID",
+            ArgKind::Month => "MONTH",
         };
         write!(f, "invalid {} \"{}\": ", name, self.input)?;
         match (&self.arg, &self.cause) {
             (ArgKind::Date, Cause::Shape) => write!(f, "expected YYYY-MM-DD or -N (N >= 1)"),
             (ArgKind::WeekId, Cause::Shape) => write!(f, "expected YYYY-WW or WW"),
+            (ArgKind::Month, Cause::Shape) => write!(f, "expected YYYY-MM or MM"),
+            (ArgKind::Month, Cause::OutOfRange) => write!(f, "month must be 1-12"),
             (ArgKind::Date, Cause::OutOfRange) => write!(f, "date offset is out of range"),
             (_, Cause::OutOfRange) => write!(f, "week number must be 1 or greater"),
             (_, Cause::NoSuchCalendarDate) => write!(f, "not a real calendar date"),
@@ -384,6 +390,80 @@ pub fn parse_week_id(s: &str, today: NaiveDate) -> Result<WeekId, DateWeekError>
     }
     let week: u32 = week_str.parse().map_err(|_| shape_err())?;
     WeekId::new(year, week, s)
+}
+
+// ---------------------------------------------------------------------------
+// MONTH
+// ---------------------------------------------------------------------------
+
+/// A calendar month: (calendar year, month 1-12).
+///
+/// Invariant: `1 <= month <= 12` and `0 <= year <= 9999`, the same
+/// four-digit domain `parse_date` accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Month {
+    year: i32,
+    month: u32,
+}
+
+impl Month {
+    /// Validated constructor. `input` only populates `DateWeekError::input`.
+    pub fn new(year: i32, month: u32, input: &str) -> Result<Self, DateWeekError> {
+        if !(1..=12).contains(&month) || !(0..=MAX_YEAR).contains(&year) {
+            return Err(DateWeekError::new(ArgKind::Month, input, Cause::OutOfRange));
+        }
+        Ok(Self { year, month })
+    }
+
+    /// The 1st of the month.
+    pub fn first_day(self) -> NaiveDate {
+        NaiveDate::from_ymd_opt(self.year, self.month, 1)
+            .expect("Month's invariant guarantees the 1st exists")
+    }
+
+    /// The month's last calendar day: the day before the next month's 1st.
+    pub fn last_day(self) -> NaiveDate {
+        let (year, month) = if self.month == 12 {
+            (self.year + 1, 1)
+        } else {
+            (self.year, self.month + 1)
+        };
+        NaiveDate::from_ymd_opt(year, month, 1)
+            .and_then(|d| d.pred_opt())
+            .expect("the next month's 1st exists for every year up to 9999")
+    }
+
+    /// `(first day, last day)`, inclusive.
+    pub fn span(self) -> (NaiveDate, NaiveDate) {
+        (self.first_day(), self.last_day())
+    }
+}
+
+/// Parse a `MONTH` argument (§3.8): `YYYY-MM`, `YYYY-M`, or a bare
+/// `M`/`MM` whose year defaults to `today`'s **calendar** year.
+pub fn parse_month(s: &str, today: NaiveDate) -> Result<Month, DateWeekError> {
+    let (year, month) =
+        month_parts(s, today).ok_or_else(|| DateWeekError::new(ArgKind::Month, s, Cause::Shape))?;
+    Month::new(year, month, s)
+}
+
+/// `(year, month number)` if `s` has a MONTH shape; the number is not
+/// range-checked yet.
+fn month_parts(s: &str, today: NaiveDate) -> Option<(i32, u32)> {
+    let all_digits = |t: &str| t.bytes().all(|c| c.is_ascii_digit());
+    let (year, month_str) = match s.split_once('-') {
+        Some((y, m)) => {
+            if y.len() != 4 || !all_digits(y) {
+                return None;
+            }
+            (y.parse().ok()?, m)
+        }
+        None => (today.year(), s),
+    };
+    if month_str.is_empty() || month_str.len() > 2 || !all_digits(month_str) {
+        return None;
+    }
+    Some((year, month_str.parse().ok()?))
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,7 +1105,116 @@ mod tests {
             assert!(parse_date(input).is_err(), "parse_date {input:?}");
             assert!(parse_week_id(input, TODAY()).is_err(), "week {input:?}");
             assert!(WeekId::from_key(input).is_err(), "from_key {input:?}");
+            assert!(parse_month(input, TODAY()).is_err(), "month {input:?}");
         }
+    }
+
+    // --- MONTH (export-notes spec §3, §6) ------------------------------
+
+    /// A known-valid month; panics on a typo in the test itself.
+    fn mo(y: i32, m: u32) -> Month {
+        Month::new(y, m, "test").expect("test fixture is a real month")
+    }
+
+    fn month_err(input: &str, cause: Cause) -> DateWeekError {
+        DateWeekError::new(ArgKind::Month, input, cause)
+    }
+
+    #[test]
+    fn parse_month_accepts_all_four_equivalent_forms() {
+        for input in ["2026-03", "2026-3", "3", "03"] {
+            assert_eq!(parse_month(input, TODAY()), Ok(mo(2026, 3)), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn bare_month_defaults_to_todays_calendar_year_not_iso_year() {
+        // 2025-12-30 is in ISO year 2026; 2027-01-02 is in ISO year 2026.
+        assert_eq!(parse_month("1", d(2025, 12, 30)), Ok(mo(2025, 1)));
+        assert_eq!(parse_month("12", d(2027, 1, 2)), Ok(mo(2027, 12)));
+    }
+
+    #[test]
+    fn full_month_ignores_today() {
+        for today in [d(2026, 2, 12), d(1999, 7, 1), d(2030, 12, 31)] {
+            assert_eq!(parse_month("2026-03", today), Ok(mo(2026, 3)), "{today}");
+        }
+    }
+
+    #[test]
+    fn parse_month_accepts_any_four_digit_year() {
+        assert_eq!(parse_month("0000-01", TODAY()), Ok(mo(0, 1)));
+        assert_eq!(parse_month("9999-12", TODAY()), Ok(mo(9999, 12)));
+    }
+
+    #[test]
+    fn parse_month_rejects_wrong_shapes() {
+        for input in [
+            "2026-003", "26-03", "abc", "2026-", "-1", "-d", "", " 3 ", "+1", "2026-1-1",
+            "2026/03", "123", "999-03",
+        ] {
+            assert_eq!(
+                parse_month(input, TODAY()),
+                Err(month_err(input, Cause::Shape)),
+                "{input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_month_rejects_month_numbers_outside_1_to_12() {
+        for input in ["0", "00", "13", "2026-00", "2026-13", "99"] {
+            assert_eq!(
+                parse_month(input, TODAY()),
+                Err(month_err(input, Cause::OutOfRange)),
+                "{input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn month_new_rejects_a_year_outside_the_domain() {
+        assert_eq!(
+            Month::new(10000, 1, "x"),
+            Err(month_err("x", Cause::OutOfRange))
+        );
+        assert_eq!(
+            Month::new(-1, 1, "x"),
+            Err(month_err("x", Cause::OutOfRange))
+        );
+    }
+
+    #[test]
+    fn month_span_follows_the_calendar() {
+        let cases = [
+            (mo(2024, 2), (d(2024, 2, 1), d(2024, 2, 29))),
+            (mo(2026, 2), (d(2026, 2, 1), d(2026, 2, 28))),
+            (mo(2025, 12), (d(2025, 12, 1), d(2025, 12, 31))),
+            (mo(2000, 2), (d(2000, 2, 1), d(2000, 2, 29))),
+            (mo(2100, 2), (d(2100, 2, 1), d(2100, 2, 28))),
+            (mo(2026, 4), (d(2026, 4, 1), d(2026, 4, 30))),
+            (mo(0, 1), (d(0, 1, 1), d(0, 1, 31))),
+            (mo(9999, 12), (d(9999, 12, 1), d(9999, 12, 31))),
+        ];
+        for (month, span) in cases {
+            assert_eq!(month.span(), span, "{month:?}");
+        }
+    }
+
+    #[test]
+    fn month_error_messages_match_the_spec() {
+        let msg = |s: &str| parse_month(s, TODAY()).unwrap_err().to_string();
+        assert_eq!(msg("abc"), r#"invalid MONTH "abc": expected YYYY-MM or MM"#);
+        assert_eq!(msg("-1"), r#"invalid MONTH "-1": expected YYYY-MM or MM"#);
+        assert_eq!(msg("13"), r#"invalid MONTH "13": month must be 1-12"#);
+        assert_eq!(
+            msg("2026-13"),
+            r#"invalid MONTH "2026-13": month must be 1-12"#
+        );
+        assert_eq!(
+            parse_week_id("0", TODAY()).unwrap_err().to_string(),
+            r#"invalid WEEK_ID "0": week number must be 1 or greater"#
+        );
     }
 
     // --- resolve_date (backdated-punches spec §2, §5) ------------------

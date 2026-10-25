@@ -10,6 +10,7 @@ pub mod cli;
 pub mod commands;
 pub mod date;
 pub mod db;
+pub mod export;
 pub mod history;
 pub mod lookback;
 pub mod render;
