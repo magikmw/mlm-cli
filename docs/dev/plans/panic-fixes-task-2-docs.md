@@ -1,5 +1,7 @@
 # Task plan: panic-fixes, Task 2 (docs)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/panic-fixes-plan.md` (Task 2, interface contracts 1-9).
 Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked).
 Branch `panic-fixes`, planned at tip `9c8108b`.

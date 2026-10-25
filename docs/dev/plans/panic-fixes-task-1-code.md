@@ -1,5 +1,7 @@
 # Task plan: panic-fixes Task 1, code and tests
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/panic-fixes-plan.md` (Task 1). Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked). Branch `panic-fixes`, tip `9c8108b`. Plan only. No source file was edited to write it.
 
 ## Read for this plan

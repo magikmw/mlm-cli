@@ -1,5 +1,7 @@
 # Plan: panic-fixes
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked). Review: `docs/dev/plans/reports/panic-fixes-spec-review.md` (folded, NOTES.md entry 140). Audit: `docs/dev/plans/reports/unwrap-audit-review.md` F1-F4. Decision log: NOTES.md entries 138-142. Plan review: `docs/dev/plans/reports/panic-fixes-plan-review.md` (folded, NOTES.md entry 142).
 
 **Altitude**: scope of work only. Task plans choose identifiers and mechanisms.

@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 150
+- **Next entry**: 151
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (fixes merged, final review next, entry 148), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (entry 137, brainstorm next). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2050,6 +2050,18 @@ SPEC.md and PLAN.md:
     releases. The user keeps the read-back check as is. The switch is
     a possible later changeset. Final review of `panic-fixes` running
     on Opus (user's choice).
+
+150. **`panic-fixes` reviewed and closed out.** Final review on Opus
+    (`plans/reports/panic-fixes-final-review.md`): ship-with-followups.
+    A probe of every local minute within 4h of every transition
+    2025-2028 in 14 zones found no storage mismatch; recreate-line
+    replays stored identical rows; mutations were caught. F1 the
+    repeated-hour tests skipped near midnight and on 1 January; the
+    `TZ` rule now puts the local clock near midday, so they never skip.
+    F2 `mlm::exit_code` is the one exit mapping, 141 included, and
+    `main` calls it. Fix pass `3b60694` merged; gate green: fmt, build,
+    983 tests, clippy. Spec, plan and task plans archived. Merged to
+    `main` `--no-ff`, unreleased. Next: `relative-ids` (entry 137).
 
 ## Open questions (still need answers)
 
