@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 146
+- **Next entry**: 147
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (merged on branch, storage fix in progress, entry 145), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (merged on branch, review next, entry 146), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2012,6 +2012,11 @@ SPEC.md and PLAN.md:
     SPEC §2.1 and the docs already merged. The AC3 test goes back to
     asserting the first pass. `src/storage.rs` joins the changeset's
     scope.
+
+146. **Repeated-hour fix merged.** `4c3b9c1` merged `--no-ff`, no
+    report. Storage compares the two instants and keeps the earlier.
+    Gate green: fmt, build, 971 tests, clippy. By hand, `TZ=
+    Europe/Warsaw mlm start 02:30 --date 2026-10-25` stores `00:30Z`.
 
 ## Open questions (still need answers)
 
