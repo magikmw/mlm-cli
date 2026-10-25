@@ -199,7 +199,7 @@ mod unix {
 
     use std::process::{ChildStdin, Stdio};
 
-    use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
+    use chrono::{DateTime, Datelike, NaiveDateTime, TimeDelta, Timelike, Utc};
 
     /// The write end of a pipe whose read end is already closed. A helper
     /// process holds the read end as its stdin and exits. Taking `stdin`
@@ -315,36 +315,35 @@ mod unix {
         Second,
     }
 
-    /// A POSIX `TZ` rule (standard UTC, DST UTC+1) whose DST ends so that
-    /// `now` sits in `pass` of the repeated hour, 30 minutes from each
-    /// edge. `None` when the repeated hour would not fit inside one local
-    /// date other than 1 January, where DST could not start before it
-    /// ends.
-    fn repeated_hour_tz(now: DateTime<Utc>, pass: Pass) -> Option<String> {
-        let u = now.with_second(0)?.with_nanosecond(0)?.naive_utc();
+    /// A POSIX `TZ` rule whose DST (standard + 1h) starts on 1 January at
+    /// 00:00 and ends so that `now` sits in `pass` of the repeated hour,
+    /// 30 minutes from each edge. The standard offset puts `now` at 12:MM
+    /// local standard time, so the repeated hour stays inside one local
+    /// date. Also returns that standard wall time.
+    fn repeated_hour_tz(now: DateTime<Utc>, pass: Pass) -> (String, NaiveDateTime) {
+        let std_hours = 12 - i64::from(now.hour());
+        let wall = floor(now).naive_utc() + TimeDelta::hours(std_hours);
         let t = match pass {
-            Pass::First => u + TimeDelta::minutes(30),
-            Pass::Second => u - TimeDelta::minutes(30),
+            Pass::First => wall + TimeDelta::minutes(30),
+            Pass::Second => wall - TimeDelta::minutes(30),
         };
         let end = t + TimeDelta::hours(1);
-        if t.date() != end.date() || t.ordinal0() == 0 {
-            return None;
-        }
-        Some(format!(
-            "AAA0BBB-1,0,{}/{}",
+
+        // POSIX offsets count hours west of UTC.
+        let tz = format!(
+            "AAA{}BBB{},0/0,{}/{}",
+            -std_hours,
+            -(std_hours + 1),
             end.ordinal0(),
             end.format("%H:%M")
-        ))
+        );
+        (tz, wall)
     }
 
     fn floor(t: DateTime<Utc>) -> DateTime<Utc> {
         t.with_second(0)
             .and_then(|t| t.with_nanosecond(0))
             .expect("UTC has every minute")
-    }
-
-    fn skip() {
-        eprintln!("skipped: repeated hour crosses a date boundary");
     }
 
     fn status_in(db: &Path, tz: &str) {
@@ -359,9 +358,7 @@ mod unix {
 
     #[test]
     fn repeated_hour_first_pass_status_exits_zero() {
-        let Some(tz) = repeated_hour_tz(Utc::now(), Pass::First) else {
-            return skip();
-        };
+        let (tz, _) = repeated_hour_tz(Utc::now(), Pass::First);
         let (_dir, db) = fresh();
         status_in(&db, &tz);
     }
@@ -369,9 +366,7 @@ mod unix {
     #[test]
     fn repeated_hour_second_pass_status_and_untyped_start() {
         let before = Utc::now();
-        let Some(tz) = repeated_hour_tz(before, Pass::Second) else {
-            return skip();
-        };
+        let (tz, wall) = repeated_hour_tz(before, Pass::Second);
         let (_dir, db) = fresh();
         status_in(&db, &tz);
 
@@ -396,7 +391,7 @@ mod unix {
         let lo = floor(before) - TimeDelta::hours(1);
         let hi = floor(after) - TimeDelta::hours(1);
         assert!(lo <= stored && stored <= hi, "{stored} not in {lo}..={hi}");
-        assert_eq!(*date, floor(before).format("%Y-%m-%d").to_string());
+        assert_eq!(*date, wall.format("%Y-%m-%d").to_string());
     }
 
     fn punch_rows(db: &Path) -> Vec<(String, String, String)> {
