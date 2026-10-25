@@ -1,6 +1,7 @@
 //! Argument parsing (clap).
 
 use std::ffi::OsString;
+use std::io::Write;
 
 use clap::error::{ContextKind, ContextValue};
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -275,7 +276,7 @@ pub enum WeekAction {
     before_help = "\
 Arguments:
   [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
-  <DURATION>  Target to set: 20h, 33h30m or 45m (human format, never raw minutes)"
+  <DURATION>  Target to set: 20h, 33h30m or 45m, up to 168h (human format, never raw minutes)"
 )]
 pub struct WeekTargetArgs {
     #[arg(
@@ -364,7 +365,9 @@ impl ParseFailure {
             Self::Clap(err) => {
                 let _ = err.print();
             }
-            Self::SwappedWeekTarget(message) => eprintln!("{message}"),
+            Self::SwappedWeekTarget(message) => {
+                let _ = writeln!(std::io::stderr(), "{message}");
+            }
         }
         self.exit_code()
     }
@@ -917,6 +920,10 @@ mod tests {
         assert_eq!(
             swapped(&["mlm", "week", "2026-7", "target", "20h"]),
             Some("error: put WEEK_ID after target: mlm week target 2026-7 20h".to_string())
+        );
+        assert_eq!(
+            swapped(&["mlm", "week", "2026-41", "target", "200h"]),
+            Some("error: put WEEK_ID after target: mlm week target 2026-41 200h".to_string())
         );
         assert_eq!(
             swapped(&["mlm", "week", "7", "target", "-5h"]),

@@ -6,11 +6,14 @@
 //! `YYYY-MM-DD`, two spaces, then the body. No range is checked against
 //! today, so a future range prints nothing.
 
+use std::io::Write;
+
 use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::cli::ExportNotesArgs;
 use crate::date::{DateWeekError, WeekId, format_date, parse_month, parse_week_id, resolve_date};
+use crate::emit;
 use crate::storage::{self, Note};
 
 /// The inclusive `(first, last)` dates the flags name. Clap's group
@@ -40,16 +43,17 @@ pub fn render_lines(notes: &[Note]) -> String {
         .collect()
 }
 
-/// `mlm export notes`. A parse or read error returns before anything
-/// prints, so stdout stays empty.
-pub fn run_notes(
+/// `mlm export notes`. A parse or read error returns before anything is
+/// written, so stdout stays empty.
+pub fn run_notes<W: Write>(
     conn: &Connection,
     today: NaiveDate,
     args: &ExportNotesArgs,
+    out: &mut W,
 ) -> anyhow::Result<()> {
     let (from, to) = resolve_range(args, today)?;
     let notes = storage::notes_in_range(conn, from, to)?;
-    print!("{}", render_lines(&notes));
+    emit(out, &render_lines(&notes))?;
     Ok(())
 }
 
@@ -189,14 +193,49 @@ mod tests {
         let conn = fresh_db();
         conn.execute_batch("ALTER TABLE notes RENAME COLUMN body TO body_gone")
             .expect("rename column");
-        let err = run_notes(&conn, d(2026, 1, 7), &args(None, Some("2026-02"), None))
-            .expect_err("a broken read must be an error");
+        let err = run_notes(
+            &conn,
+            d(2026, 1, 7),
+            &args(None, Some("2026-02"), None),
+            &mut std::io::sink(),
+        )
+        .expect_err("a broken read must be an error");
         assert!(err.to_string().starts_with("database error:"), "{err}");
     }
 
     #[test]
     fn run_notes_succeeds_on_an_empty_range() {
         let conn = fresh_db();
-        assert!(run_notes(&conn, d(2026, 1, 7), &args(None, None, None)).is_ok());
+        assert!(
+            run_notes(
+                &conn,
+                d(2026, 1, 7),
+                &args(None, None, None),
+                &mut std::io::sink()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn run_notes_writes_lines() {
+        let conn = fresh_db();
+        let at = Utc.with_ymd_and_hms(2026, 10, 19, 10, 0, 0).unwrap();
+        storage::insert_note(&conn, d(2026, 10, 19), "piped", at).unwrap();
+        let a = args(Some("2026-10-19"), None, None);
+        let mut out = Vec::new();
+        run_notes(&conn, d(2026, 10, 24), &a, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "2026-10-19  piped\n");
+
+        let mut full: &mut [u8] = &mut [];
+        let err = run_notes(&conn, d(2026, 10, 24), &a, &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
+    }
+
+    #[test]
+    fn run_notes_empty_range_writes_nothing_even_to_a_failing_writer() {
+        let conn = fresh_db();
+        let mut full: &mut [u8] = &mut [];
+        assert!(run_notes(&conn, d(2026, 1, 7), &args(None, None, None), &mut full).is_ok());
     }
 }
