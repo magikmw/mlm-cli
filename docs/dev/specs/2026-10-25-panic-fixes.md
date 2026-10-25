@@ -1,10 +1,12 @@
 # Panic fixes — design spec
 
 **Baseline**: written against `main` at `dd91952` (`v0.4.0` + `orphan-stop-warning` + `week-notes` + `export-notes`, unreleased).
-**Status**: draft, one review folded (`docs/dev/plans/reports/panic-fixes-spec-review.md`, NOTES.md entry 140).
+**Status**: locked 2026-10-25 after one review
+(`docs/dev/plans/reports/panic-fixes-spec-review.md`, folded in NOTES.md
+entry 140; lock in entry 141).
 **Input**: `export-notes` final review F1 and the unwrap audit
 (`docs/dev/plans/reports/unwrap-audit-review.md`, F1-F4). Decisions:
-NOTES.md entries 138, 139 and 140.
+NOTES.md entries 138-141.
 
 ## 1. Summary
 

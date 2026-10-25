@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 141
+- **Next entry**: 142
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (spec review folded, entry 140), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (spec locked, plan next, entry 141), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1949,6 +1949,13 @@ SPEC.md and PLAN.md:
     failure; help and version stay clap's. F5-F7 tests gated Unix or
     Linux, the write-keeps test uses `week target`. F8, F9, F10
     wording. F11-F16, F20, F21 dropped by default.
+
+141. **`panic-fixes` spec locked.** The user chose option 1 for the
+    repeated hour: fix only the crash, storage unchanged, a second-pass
+    punch stores the first-pass instant like a typed one. Estimate two
+    tasks (code, docs), so the plan is collapsed and phase 10 skipped.
+    Phase 14 runs, `returning` tier: the cap error, the help line and
+    exit `141` are user-visible.
 
 ## Open questions (still need answers)
 
