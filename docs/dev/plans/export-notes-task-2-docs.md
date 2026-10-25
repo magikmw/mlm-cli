@@ -1,5 +1,7 @@
 # Task plan: export-notes, Task 2 (docs)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset plan: `docs/dev/plans/export-notes-plan.md`, "Task 2: docs".
 Spec: `docs/dev/specs/2026-10-24-export-notes.md` (locked).
 Branch: `export-notes` at `e80fa86`.

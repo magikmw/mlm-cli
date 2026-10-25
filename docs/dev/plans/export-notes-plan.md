@@ -1,5 +1,7 @@
 # Plan: export-notes
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-24-export-notes.md` (locked). Review: `docs/dev/plans/reports/export-notes-spec-review.md` (folded, NOTES.md entry 133). Decision log: NOTES.md entries 125, 128, 133 and the "Triaging review findings" process section.
 
 **Altitude**: scope of work only. Task plans choose identifiers. The one new source file name below is pinned for ownership.

@@ -1,5 +1,7 @@
 # Export notes — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `b25bef7` (`v0.4.0` + `orphan-stop-warning` + `week-notes`, unreleased).
 **Status**: locked 2026-10-24 after one review
 (`docs/dev/plans/reports/export-notes-spec-review.md`, folded in NOTES.md
