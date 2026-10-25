@@ -25,13 +25,24 @@ pub mod week_view;
 
 use std::io::{ErrorKind, Write};
 
-/// The test-side exit mapping: `Ok` is 0, any `Err` is 1. `main` adds
-/// exit 141 for a broken stdout pipe.
+/// What a shell reports for a process killed by `SIGPIPE` (§6.3).
+pub const EXIT_BROKEN_PIPE: i32 = 141;
+
+/// The process exit code for a command's result (§6.3). `Ok` is 0. A
+/// broken stdout pipe is 141. Any other error is 1.
 pub fn exit_code(result: &anyhow::Result<()>) -> i32 {
     match result {
         Ok(()) => 0,
+        Err(e) if is_broken_pipe(e) => EXIT_BROKEN_PIPE,
         Err(_) => 1,
     }
+}
+
+/// True only when the top-level error is an `OutputError` for a broken
+/// pipe. A storage-side I/O error is never an output error.
+fn is_broken_pipe(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<OutputError>()
+        .is_some_and(OutputError::is_broken_pipe)
 }
 
 /// A failed write to stdout. `main` exits 141 on a broken pipe and
@@ -65,6 +76,34 @@ pub fn emit<W: Write + ?Sized>(out: &mut W, text: &str) -> Result<(), OutputErro
 mod tests {
     use super::*;
     use std::io::ErrorKind;
+
+    #[test]
+    fn ok_exits_zero() {
+        assert_eq!(exit_code(&Ok(())), 0);
+    }
+
+    #[test]
+    fn plain_error_exits_one() {
+        assert_eq!(exit_code(&Err(anyhow::anyhow!("boom"))), 1);
+    }
+
+    #[test]
+    fn broken_pipe_output_error_exits_141() {
+        let err = OutputError(std::io::Error::from(ErrorKind::BrokenPipe));
+        assert_eq!(exit_code(&Err(err.into())), 141);
+    }
+
+    #[test]
+    fn other_output_error_exits_one() {
+        let err = OutputError(std::io::Error::other("disk on fire"));
+        assert_eq!(exit_code(&Err(err.into())), 1);
+    }
+
+    #[test]
+    fn bare_broken_pipe_io_error_exits_one() {
+        let err = std::io::Error::from(ErrorKind::BrokenPipe);
+        assert_eq!(exit_code(&Err(err.into())), 1);
+    }
 
     #[test]
     fn emit_writes_and_flushes() {
