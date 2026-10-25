@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 147
+- **Next entry**: 148
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (merged on branch, review next, entry 146), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (DST boundary fix in progress, entry 147), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2017,6 +2017,19 @@ SPEC.md and PLAN.md:
     report. Storage compares the two instants and keeps the earlier.
     Gate green: fmt, build, 971 tests, clippy. By hand, `TZ=
     Europe/Warsaw mlm start 02:30 --date 2026-10-25` stores `00:30Z`.
+
+147. **`panic-fixes` fresh-eyes.** `returning` tier,
+    `plans/reports/panic-fixes-fresh-eyes.md`, 13 findings. F1 is a
+    regression from `4c3b9c1`: on 2026-10-25 under Europe/Warsaw a
+    typed `03:00` stores `01:00Z` (shown as 02:00) instead of `02:00Z`.
+    chrono's unix `Local` reports the wall time at the hour's end as
+    ambiguous, with one candidate that does not exist as a wall time,
+    and `earlier_instant` picks it. F2 and F4 follow from F1. Fix
+    dispatched: a candidate counts only if it reads back as the typed
+    wall time, with tests at every boundary minute in autumn and
+    spring. F3 (no way to enter the second pass) is SPEC §2.1 as
+    designed. F5-F13 dropped by default: accepted decisions (entries
+    139-141) or behavior older than this changeset.
 
 ## Open questions (still need answers)
 
