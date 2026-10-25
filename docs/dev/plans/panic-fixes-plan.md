@@ -1,6 +1,6 @@
 # Plan: panic-fixes
 
-Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked). Review: `docs/dev/plans/reports/panic-fixes-spec-review.md` (folded, NOTES.md entry 140). Audit: `docs/dev/plans/reports/unwrap-audit-review.md` F1-F4. Decision log: NOTES.md entries 138-141.
+Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked). Review: `docs/dev/plans/reports/panic-fixes-spec-review.md` (folded, NOTES.md entry 140). Audit: `docs/dev/plans/reports/unwrap-audit-review.md` F1-F4. Decision log: NOTES.md entries 138-142. Plan review: `docs/dev/plans/reports/panic-fixes-plan-review.md` (folded, NOTES.md entry 142).
 
 **Altitude**: scope of work only. Task plans choose identifiers and mechanisms.
 
@@ -25,7 +25,7 @@ No schema change, no new dependency, no new top-level module, no MSRV change.
 - Verification set: `cargo fmt`, `cargo build`, `cargo test`, `cargo clippy --all-targets -- -D warnings`.
 - The pre-commit hook enforces cognitive complexity of 15 or less per function (`clippy.toml`) and a coverage ratchet against `coverage-baseline.json`. Every new branch needs a test: the cap, the broken-pipe exit, the other-failure exit, and each stderr site's ignore path.
 - Targets: Linux and Windows MSVC. CI also runs macOS. Tests that rely on `TZ`, on pipes or on `/dev/full` carry the platform gate spec §6 names (Unix, Unix, Linux).
-- MSRV stays `1.85` (`Cargo.toml`). Test helpers must build on it, so `std::io::pipe` (stable in 1.87) is out.
+- `Cargo.toml` declares `rust-version = "1.85"`, and this changeset leaves it alone. New code and test helpers add no std API that clippy's `incompatible_msrv` lint flags against it, so `std::io::pipe` (1.87) is out. CI builds on stable only.
 - No new runtime dependency, no schema change, no new top-level module. A new module needs a coordinator decision first, because AGENTS.md's layout list would change.
 - Existing output, messages and help stay byte-identical, apart from contract 3's help line. Existing tests keep their meaning.
 - All new output is ASCII.
@@ -54,7 +54,7 @@ A finer code split buys nothing. The three fixes share `src/main.rs` (the `now` 
 
    `error: cannot write output: <reason>`
 
-   `<reason>` is the I/O error's standard display text. On Linux, stdout `/dev/full` gives `error: cannot write output: No space left on device (os error 28)`.
+   `<reason>` is the I/O error's standard display text. The write error is recognised as a distinct output error at the stdout write path, never by searching an error chain for any I/O error, so a storage-side I/O failure (for example creating the data dir) keeps its own message. On Linux, stdout `/dev/full` gives `error: cannot write output: No space left on device (os error 28)`.
 6. **Committed writes stay.** `week target` and `delete note|punch N` keep their change when the output fails, and exit per contracts 4 and 5. Output written before the failure stays written.
 7. **Stderr failure.** A failed stderr write is ignored at every site, and the exit code is the one the command would have returned. The sites are the warnings, the `error:` line and the swapped-target reminder.
 8. **Unchanged.** Clap's help, version and usage-error output keep their current exit codes and handling. The swapped-target reminder still fires for an over-cap duration (`mlm week 2026-41 target 200h` prints the reminder, exit `2`). Typed repeated-hour times and every stored value resolve as today.
@@ -66,16 +66,17 @@ A finer code split buys nothing. The three fixes share `src/main.rs` (the `now` 
 
 `src/main.rs` takes `now` without a local rebuild, ignores a failed stderr write on its `error:` line, flushes stdout before exit, and maps a write error to contracts 4 and 5. `src/week_target.rs` adds the cap check (contracts 1, 2) before the upsert. `src/cli.rs` carries contract 3's help line and ignores a failed stderr write on the swapped-target reminder. The ten stdout sites in `src/status.rs`, `src/week_view.rs`, `src/export.rs`, `src/week_target.rs` and `src/commands.rs` write through a fallible path whose error reaches `src/main.rs` as an I/O error. `tests/week_target_cli.rs`'s help golden takes the new line. The minute truncation gets a unit test over a fixed zone (the `chrono-tz` dev-dependency, `Europe/Warsaw` at a second-pass instant on 2026-10-25), so it runs on every platform. Process-level tests go in a new `tests/panic_fixes_cli.rs`, driven through the binary with `MLM_DB_PATH`. The repeated-hour test builds a POSIX `TZ` rule from the current time so that now sits in the second pass, and it reads the stored instant back from the database. The pipe tests close the read end before the binary starts, with a helper that builds on Rust 1.85.
 
-Acceptance criteria. CLI cases assert exact stdout, stderr and exit code.
+Acceptance criteria. CLI cases assert exact stdout, stderr and exit code, except where the output depends on the clock (the open-stint `status` case and the repeated-hour cases), which assert exit code, stderr and the clock-free lines.
 - The truncation unit test passes at a second-pass instant and keeps the instant, not the first-pass rebuild.
-- Unix only: with now in the second pass of a computed `TZ` rule, `mlm status` exits `0`, and an untyped `mlm start` exits `0` and stores the first-pass instant of the current wall minute, an hour before the real now. The test tolerates a minute boundary between its clock reads and the binary's.
+- Unix only: with now in the first pass of a computed `TZ` rule, `mlm status` exits `0`.
+- Unix only: with now in the second pass of a computed `TZ` rule, `mlm status` exits `0`, and an untyped `mlm start` exits `0` and stores the first-pass instant of the current wall minute, an hour before the real now. The test tolerates a minute boundary between its clock reads and the binary's, and skips when the shifted window would cross a local date or year boundary.
 - `week target 168h` and `week target 10080m` succeed with today's echo line.
 - `week target 168h1m`, `200h` and `99999999999h` print contract 2's message with the right `got` value, exit `1`, empty stdout, and leave no `week_targets` row. An existing row for that week keeps its old value.
 - `week target -5h`, `10x` and `9999999999999999999h` keep their current messages and exit codes.
 - `mlm week 2026-41 target 200h` prints the swapped-target reminder and exits `2`.
 - `status` with an open stint today and a `168h` target exits `0` and shows an `est. EOD` line.
 - `mlm week target --help` and `-h` print the golden with contract 3's line.
-- Unix only: stdout a pipe whose read end is closed before spawn gives exit `141` and empty stderr for `mlm week`, `mlm export notes` and `mlm status`.
+- Unix only: stdout a pipe whose read end is closed before spawn gives exit `141` and empty stderr for `mlm week`, `mlm export notes` (with at least one note seeded in range, since an empty range writes nothing) and `mlm status`.
 - Unix only: under the same pipe, `mlm week target 40h` exits `141` and the target is stored. `mlm delete punch 1` exits `141` and the punch is gone.
 - Linux only: stdout `/dev/full` under `mlm week` prints contract 5's line on stderr and exits `1`.
 - Unix only: stderr a closed-read-end pipe on an exit-`1` error (for example a malformed TIME) exits `1`, and on the swapped-target shape exits `2`.
@@ -95,7 +96,8 @@ Acceptance criteria:
 - SPEC §2.1 and §4.1 say that taking the current time never fails, that `now` is the current instant truncated to the minute in the repeated hour too, and that an untyped `start`/`stop` there stores the first-pass instant, as a typed time does.
 - SPEC §3.7 gains the `168h` cap (contract 1) and the order of checks (contract 2). If it quotes the help, it quotes contract 3's line.
 - SPEC §6.1 gains the cap error (contract 2) under the DURATION bullet.
-- SPEC §6.3 gains the write-failure runtime error (contracts 4-7): exit `141` with empty stderr for a broken pipe, contract 5's line and exit `1` for any other failure, committed writes kept, stderr failures ignored. §6.1's heading and the §6 intro stay true.
+- SPEC §6.3 gains the write-failure runtime error (contracts 4-7): exit `141` with empty stderr for a broken pipe, contract 5's line and exit `1` for any other failure, committed writes kept, stderr failures ignored. Its sentence "A runtime error ... exits `1`" is reworded so the broken-pipe `141` doesn't contradict it. §6.1's heading and the §6 intro stay true.
+- SPEC §1.2a gains stored targets above `168h`, set before the cap, as a possible issue: they can still panic `status`'s `est. EOD` and overflow totals.
 - SPEC §8.2 gains error flows for an over-cap target and for both write failures.
 - README.md's `week target` section names the `168h` cap and shows contract 2's message. One short paragraph on piping says a closed pipe exits `141` quietly and any other write failure prints an `error:` line.
 - AGENTS.md is checked and left alone unless a statement in it goes stale. With no new module, none is expected.
@@ -108,8 +110,7 @@ Acceptance criteria:
 ## Risks and ambiguities
 
 - **`<reason>` text.** The spec says "the system's message". Std's I/O error display adds ` (os error N)` to the OS text. Contract 5 pins std's display, since that is what every other `error:` line in `mlm` shows for an I/O error. Stripping the suffix would be a new formatting rule.
-- **Swapped-target reminder and the cap.** The spec does not say whether `week 2026-41 target 200h` gets the reminder or the cap error. The reminder checks shape only, and a negative value already counts as a duration there. Contract 8 keeps that, so the parse layer's behavior does not change.
-- **Stored oversized targets are undocumented.** Spec §1.1 keeps them able to panic `status` and overflow totals, but "Interaction" names no SPEC section for it. SPEC §1.2a ("Possible issues to revisit") is the natural home. The plan leaves it out of Task 2, so the coordinator decides whether to add it.
+- **Swapped-target reminder and the cap.** Spec §4 puts the reminder first. The reminder checks shape only, and a negative value already counts as a duration there. Contract 8 keeps that.
 - **Stdout flush at exit.** `std::process::exit` flushes stdout and ignores the error. A write that sits in the buffer would fail silently and exit `0`. Task 1 must flush and check before exiting.
 - **Deterministic closed pipe on 1.85.** Dropping the read end after spawn races the child's first write, and `std::io::pipe` needs 1.87. One 1.85-compatible route borrows a pipe from a short-lived helper process, whose stdin is the read end, and waits for it to exit before spawning `mlm`. Task 1's plan picks the mechanism.
 - **Repeated-hour test near midnight.** A `TZ` rule built from the current time has to keep the shifted wall time on the same local date, or `start` writes to another date. Task 1's plan handles the boundary, for example by skipping the test in the minutes around midnight.

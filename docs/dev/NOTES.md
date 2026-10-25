@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 142
+- **Next entry**: 143
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (spec locked, plan next, entry 141), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (plan folded, task plans next, entry 142), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1956,6 +1956,25 @@ SPEC.md and PLAN.md:
     tasks (code, docs), so the plan is collapsed and phase 10 skipped.
     Phase 14 runs, `returning` tier: the cap error, the help line and
     exit `141` are user-visible.
+
+142. **`panic-fixes` plan folded.** Plan
+    `plans/panic-fixes-plan.md`, two tasks (code, docs), no shared
+    file. Its three spec points went into the spec: `<reason>` is std's
+    I/O error text with the `(os error N)` suffix, the swapped-target
+    reminder comes before the cap, and SPEC §1.2a lists stored oversized
+    targets. One review (`plans/reports/panic-fixes-plan-review.md`, 16
+    findings). F1 §1.2a item now in Task 2. F2 risk removed. F3 the
+    `rust-version = "1.85"` claim reworded; the gate is clippy's
+    `incompatible_msrv` lint. F4 the export pipe test seeds a note. F5
+    clock-dependent cases assert clock-free lines. F6 the write error
+    is recognised at the stdout write path, never by a chain search. F7
+    Task 2 rewords SPEC §6.3's exit-`1` sentence. F8 a first-pass test,
+    and the `TZ` test skips across date or year boundaries. U1 and U2
+    follow from option 1 (entry 141): second-pass untyped punches store
+    an hour early, and a stint crossing the passes can store an end
+    before its start. Entry 140's claim that option 1 avoids the
+    backwards case is wrong for that crossing. U3-U8 dropped by
+    default.
 
 ## Open questions (still need answers)
 
