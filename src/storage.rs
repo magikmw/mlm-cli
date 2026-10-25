@@ -216,9 +216,9 @@ fn to_utc_and_date<Tz: TimeZone>(
 
     let resolved = match tz.from_local_datetime(&naive_local) {
         LocalResult::Single(dt) => dt,
-        // The repeated hour on fall-back: use the earlier of the two real
-        // instants (§2.1's documented, conventional choice).
-        LocalResult::Ambiguous(earliest, _latest) => earliest,
+        // The repeated hour on fall-back takes the earlier real instant
+        // (§2.1). Compare them, because chrono's order varies by `Tz`.
+        LocalResult::Ambiguous(a, b) => earlier_instant(a, b),
         // The skipped hour on spring-forward: no real instant exists.
         LocalResult::None => {
             return Err(StorageError::NonexistentLocalTime { local: naive_local });
@@ -231,6 +231,11 @@ fn to_utc_and_date<Tz: TimeZone>(
     // at insert from `at_utc` + local timezone".
     let date = at_utc.with_timezone(tz).date_naive();
     Ok((at_utc, date))
+}
+
+/// The earlier of two instants, whatever order they come in.
+fn earlier_instant<Tz: TimeZone>(a: DateTime<Tz>, b: DateTime<Tz>) -> DateTime<Tz> {
+    if b < a { b } else { a }
 }
 
 /// Build a `Punch` from a local wall-clock date/time without touching a
@@ -1296,6 +1301,14 @@ mod tests {
         assert_eq!(punches[0].id, id);
         assert_eq!(punches[0].at_utc, utc(2026, 10, 25, 0, 30, 0));
         assert_eq!(punches[0].date, d(2026, 10, 25));
+    }
+
+    #[test]
+    fn earlier_instant_ignores_argument_order() {
+        let first = utc(2026, 10, 25, 0, 30, 0).with_timezone(&TZ_WARSAW);
+        let second = utc(2026, 10, 25, 1, 30, 0).with_timezone(&TZ_WARSAW);
+        assert_eq!(earlier_instant(first, second), first);
+        assert_eq!(earlier_instant(second, first), first);
     }
 
     // D4

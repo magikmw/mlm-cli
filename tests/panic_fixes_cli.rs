@@ -384,30 +384,47 @@ mod unix {
         assert_eq!(err(&o), "");
         assert_eq!(out(&o), "");
 
-        let conn = open(&db);
-        let mut stmt = conn
-            .prepare(r#"SELECT at_utc, "date", kind FROM punches"#)
-            .expect("prepare");
-        let rows: Vec<(String, String, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-            .expect("query")
-            .collect::<Result<_, _>>()
-            .expect("rows");
+        let rows = punch_rows(&db);
         assert_eq!(rows.len(), 1, "{rows:?}");
         let (at_utc, date, kind) = &rows[0];
         assert_eq!(kind, "start");
 
-        // The stored instant is one of the two passes for the captured
-        // local minute: the real instant, or one hour before it.
+        // Storage takes the first pass, one hour before the captured minute.
         let stored = DateTime::parse_from_rfc3339(at_utc)
             .expect("rfc 3339")
             .with_timezone(&Utc);
-        let (lo, hi) = (floor(before), floor(after));
-        let captured = |t: DateTime<Utc>| lo <= t && t <= hi;
-        assert!(
-            captured(stored) || captured(stored + TimeDelta::hours(1)),
-            "{stored} is neither pass of {lo}..={hi}"
-        );
+        let lo = floor(before) - TimeDelta::hours(1);
+        let hi = floor(after) - TimeDelta::hours(1);
+        assert!(lo <= stored && stored <= hi, "{stored} not in {lo}..={hi}");
         assert_eq!(*date, floor(before).format("%Y-%m-%d").to_string());
+    }
+
+    fn punch_rows(db: &Path) -> Vec<(String, String, String)> {
+        let conn = open(db);
+        let mut stmt = conn
+            .prepare(r#"SELECT at_utc, "date", kind FROM punches"#)
+            .expect("prepare");
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows")
+    }
+
+    #[test]
+    fn typed_repeated_hour_start_stores_the_first_pass() {
+        let (_dir, db) = fresh();
+        let o = mlm(&db, &["start", "02:30", "--date", "2026-10-25"])
+            .env("TZ", "Europe/Warsaw")
+            .output()
+            .expect("failed to run mlm binary");
+        assert_eq!(o.status.code(), Some(0), "{o:?}");
+        assert_eq!(
+            punch_rows(&db),
+            [(
+                "2026-10-25T00:30:00Z".to_string(),
+                "2026-10-25".to_string(),
+                "start".to_string()
+            )]
+        );
     }
 }
