@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 140
+- **Next entry**: 141
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (spec draft, entry 139), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (spec review folded, entry 140), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1934,6 +1934,21 @@ SPEC.md and PLAN.md:
     Coordinator picks: exit `141` for the broken pipe (the shell's
     `SIGPIPE` code), the cap message text, the help line. Baseline
     `main` at `dd91952`; branch `panic-fixes`.
+
+140. **`panic-fixes` spec review folded.** One review
+    (`plans/reports/panic-fixes-spec-review.md`, 21 findings). F1: an
+    untyped `start`/`stop` passes today's clock time to the storage
+    re-resolve (`commands.rs`, `storage.rs`), which takes the earlier
+    pass, so fixing `now` alone cannot store a second-pass instant. The
+    spec shrinks to match: `now` stops panicking, storage is unchanged,
+    a second-pass punch stores the first-pass instant as a typed one
+    does. That keeps typed and untyped consistent and avoids the
+    backwards-stint and orphan cases F17-F19 describe. F2 §1 and §1.1
+    now say stored oversized targets can still panic. F3 write failure
+    moves to §6.3 as a runtime error. F4 every stderr site ignores
+    failure; help and version stay clap's. F5-F7 tests gated Unix or
+    Linux, the write-keeps test uses `week target`. F8, F9, F10
+    wording. F11-F16, F20, F21 dropped by default.
 
 ## Open questions (still need answers)
 
