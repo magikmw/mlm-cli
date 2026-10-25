@@ -9,7 +9,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 149
+- **Next entry**: 150
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
 - **Active changeset**: `panic-fixes` (fixes merged, final review next, entry 148), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
@@ -2042,6 +2042,14 @@ SPEC.md and PLAN.md:
     Europe/Warsaw: 2026-10-25 02:30 → `00:30Z`, 03:00 → `02:00Z`;
     2026-03-29 02:00 → gap error, 03:00 → `01:00Z`. The fix agent
     briefly wrote two punches to the UAT database and removed them.
+
+149. **`chrono-tz` switch deferred.** chrono's unix `Local` mishandles
+    DST edge minutes, while `chrono-tz` gets them right. Converting
+    through `chrono-tz` plus `iana-time-zone` would remove the cause,
+    at the cost of a bigger binary and tz updates that ship with
+    releases. The user keeps the read-back check as is. The switch is
+    a possible later changeset. Final review of `panic-fixes` running
+    on Opus (user's choice).
 
 ## Open questions (still need answers)
 
