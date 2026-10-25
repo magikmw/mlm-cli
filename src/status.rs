@@ -6,7 +6,7 @@
 //!   [`StatusView`].
 //! - [`render`] is a pure `&StatusView -> String` function with no
 //!   clock, no DB, no parsing — the golden-test surface.
-//! - [`run`] is the CLI entry point: calls `resolve`, prints on `Ok`,
+//! - [`run`] is the CLI entry point: calls `resolve`, writes to `out` on `Ok`,
 //!   propagates the error on `Err` (`main`'s existing `exit_code` maps
 //!   that to a nonzero exit and an stderr message, SPEC.md §6.3).
 //!
@@ -28,12 +28,15 @@
 //! the same loader `mlm week` uses, so both commands account a week
 //! identically and a failed read is an error.
 
+use std::io::Write;
+
 use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, Utc};
 use rusqlite::Connection;
 
 use crate::anomalies::{self, DateAnomalies};
 use crate::carry_scan;
 use crate::date::{self, WeekId};
+use crate::emit;
 use crate::history;
 use crate::lookback;
 use crate::render::{self, CarryMarker, local_time};
@@ -518,13 +521,18 @@ pub fn resolve(
 // run: CLI entry point
 // ---------------------------------------------------------------------------
 
-/// `mlm status [DATE]` (SPEC.md §3.5). Prints the rendered view to
-/// stdout on success (§7.4: only `status`/`week` produce stdout output);
+/// `mlm status [DATE]` (SPEC.md §3.5). Writes the rendered view to
+/// `out` on success (§7.4: only `status`/`week` produce stdout output);
 /// a hard error propagates for `main`'s shared `exit_code` path to print
 /// to stderr and exit nonzero (§6.3).
-pub fn run(conn: &Connection, now: DateTime<Local>, date_arg: Option<&str>) -> anyhow::Result<()> {
+pub fn run<W: Write>(
+    conn: &Connection,
+    now: DateTime<Local>,
+    date_arg: Option<&str>,
+    out: &mut W,
+) -> anyhow::Result<()> {
     let view = resolve(date_arg, now, conn)?;
-    print!("{}", render(&view));
+    emit(out, &render(&view))?;
     Ok(())
 }
 
@@ -608,6 +616,19 @@ mod tests {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");
         db::apply_migrations(&mut conn).expect("apply migrations");
         conn
+    }
+
+    #[test]
+    fn run_writes_the_rendered_view() {
+        let conn = test_db();
+        let mut out = Vec::new();
+        run(&conn, now_thu_1800(), None, &mut out).unwrap();
+        let expected = render(&resolve(None, now_thu_1800(), &conn).unwrap());
+        assert_eq!(String::from_utf8(out).unwrap(), expected);
+
+        let mut full: &mut [u8] = &mut [];
+        let err = run(&conn, now_thu_1800(), None, &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
     }
 
     // -----------------------------------------------------------------

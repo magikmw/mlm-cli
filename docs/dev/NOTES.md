@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 139
+- **Next entry**: 151
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `dst-now-panic` (unwrap audit first, entry 138), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (entry 137, brainstorm next). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1920,6 +1920,148 @@ SPEC.md and PLAN.md:
     `dst-now-panic`, after an audit of every `unwrap` the user asked
     for. Order: `dst-now-panic`, then `relative-ids`. Spec, plan and
     task plans archived. Merged to `main` `--no-ff`, unreleased.
+
+139. **`panic-fixes` brainstorm.** Renames `dst-now-panic` (entry 138)
+    and widens it to the unwrap audit's user-reachable panics
+    (`plans/reports/unwrap-audit-review.md`). F1 DST `now`: fix. F2/F4
+    huge target: cap `week target` at `168h`, the hours in a week; a
+    future user config may raise it, with the risk stated. F3 stdout
+    write failure: a broken pipe exits quietly with a nonzero code; any
+    other write failure prints `error: cannot write output: <reason>`
+    and exits `1`. The user chose quiet over a message because `| head`
+    would print it on every run. F5-F7 and the two non-panic bugs
+    (`parse_date` years 0000-0999, week ranges near 9999) dropped.
+    Coordinator picks: exit `141` for the broken pipe (the shell's
+    `SIGPIPE` code), the cap message text, the help line. Baseline
+    `main` at `dd91952`; branch `panic-fixes`.
+
+140. **`panic-fixes` spec review folded.** One review
+    (`plans/reports/panic-fixes-spec-review.md`, 21 findings). F1: an
+    untyped `start`/`stop` passes today's clock time to the storage
+    re-resolve (`commands.rs`, `storage.rs`), which takes the earlier
+    pass, so fixing `now` alone cannot store a second-pass instant. The
+    spec shrinks to match: `now` stops panicking, storage is unchanged,
+    a second-pass punch stores the first-pass instant as a typed one
+    does. That keeps typed and untyped consistent and avoids the
+    backwards-stint and orphan cases F17-F19 describe. F2 §1 and §1.1
+    now say stored oversized targets can still panic. F3 write failure
+    moves to §6.3 as a runtime error. F4 every stderr site ignores
+    failure; help and version stay clap's. F5-F7 tests gated Unix or
+    Linux, the write-keeps test uses `week target`. F8, F9, F10
+    wording. F11-F16, F20, F21 dropped by default.
+
+141. **`panic-fixes` spec locked.** The user chose option 1 for the
+    repeated hour: fix only the crash, storage unchanged, a second-pass
+    punch stores the first-pass instant like a typed one. Estimate two
+    tasks (code, docs), so the plan is collapsed and phase 10 skipped.
+    Phase 14 runs, `returning` tier: the cap error, the help line and
+    exit `141` are user-visible.
+
+142. **`panic-fixes` plan folded.** Plan
+    `plans/panic-fixes-plan.md`, two tasks (code, docs), no shared
+    file. Its three spec points went into the spec: `<reason>` is std's
+    I/O error text with the `(os error N)` suffix, the swapped-target
+    reminder comes before the cap, and SPEC §1.2a lists stored oversized
+    targets. One review (`plans/reports/panic-fixes-plan-review.md`, 16
+    findings). F1 §1.2a item now in Task 2. F2 risk removed. F3 the
+    `rust-version = "1.85"` claim reworded; the gate is clippy's
+    `incompatible_msrv` lint. F4 the export pipe test seeds a note. F5
+    clock-dependent cases assert clock-free lines. F6 the write error
+    is recognised at the stdout write path, never by a chain search. F7
+    Task 2 rewords SPEC §6.3's exit-`1` sentence. F8 a first-pass test,
+    and the `TZ` test skips across date or year boundaries. U1 and U2
+    follow from option 1 (entry 141): second-pass untyped punches store
+    an hour early, and a stint crossing the passes can store an end
+    before its start. Entry 140's claim that option 1 avoids the
+    backwards case is wrong for that crossing. U3-U8 dropped by
+    default.
+
+143. **`panic-fixes` task plans.** Task 1
+    (`plans/panic-fixes-task-1-code.md`) pins the mechanisms: a helper
+    child holding a pipe's read end for the closed-pipe tests (no
+    `std::io::pipe`, no `libc`), a computed POSIX `TZ` rule for both
+    passes, and an `OutputError` type in `src/lib.rs` that `main`
+    checks at the top level only. Accepted deviations: R1 printing
+    functions take a writer, so 40 existing test calls gain a sink
+    argument with no assertion change; R2 the flush sits after each
+    write, not once in `main`, so no unreachable branch costs coverage;
+    R8 two pipe tests use a fixed past date. Task 2
+    (`plans/panic-fixes-task-2-docs.md`) keeps S10 (README Possible
+    issues mirrors SPEC §1.2a) and S8 (SPEC §7 "plain line output").
+    U2 stays out of the docs. README's stale "1.85+" (the crate needs
+    1.88) is out of scope. No realign: Task 2 rests on the contracts
+    only, and Task 1 changed no pinned string.
+
+144. **`panic-fixes` tasks merged.** Task 2 (docs, `40a44fa`, no
+    report) and Task 1 (code, `54dc3c1`,
+    `plans/reports/panic-fixes-task-1-report.md`) merged `--no-ff`.
+    Merge gate green on `panic-fixes`: fmt, build, 969 tests, clippy.
+    Smoke run matches: cap error exit 1, `168h` accepted, the swapped
+    reminder before the cap, `/dev/full` gives the write error exit 1,
+    `| true` exits 141 silent, help line per contract 3. Task 1 found
+    an older bug: chrono's unix `Local` lists `Ambiguous` with the
+    smaller offset first, so `storage.rs` keeps the second pass for a
+    repeated-hour time, against SPEC §2.1. Confirmed by hand: `TZ=
+    Europe/Warsaw mlm start 02:30` on 2026-10-25 stores `01:30Z`, not
+    `00:30Z`. The AC3 test accepts either pass until the user decides.
+    Worktrees and branches removed.
+
+145. **Repeated-hour storage fixed in `panic-fixes`.** The user chose
+    to fix the bug in entry 144 here. Storage picks the earlier of the
+    two instants by comparing them, not by their order, so code matches
+    SPEC §2.1 and the docs already merged. The AC3 test goes back to
+    asserting the first pass. `src/storage.rs` joins the changeset's
+    scope.
+
+146. **Repeated-hour fix merged.** `4c3b9c1` merged `--no-ff`, no
+    report. Storage compares the two instants and keeps the earlier.
+    Gate green: fmt, build, 971 tests, clippy. By hand, `TZ=
+    Europe/Warsaw mlm start 02:30 --date 2026-10-25` stores `00:30Z`.
+
+147. **`panic-fixes` fresh-eyes.** `returning` tier,
+    `plans/reports/panic-fixes-fresh-eyes.md`, 13 findings. F1 is a
+    regression from `4c3b9c1`: on 2026-10-25 under Europe/Warsaw a
+    typed `03:00` stores `01:00Z` (shown as 02:00) instead of `02:00Z`.
+    chrono's unix `Local` reports the wall time at the hour's end as
+    ambiguous, with one candidate that does not exist as a wall time,
+    and `earlier_instant` picks it. F2 and F4 follow from F1. Fix
+    dispatched: a candidate counts only if it reads back as the typed
+    wall time, with tests at every boundary minute in autumn and
+    spring. F3 (no way to enter the second pass) is SPEC §2.1 as
+    designed. F5-F13 dropped by default: accepted decisions (entries
+    139-141) or behavior older than this changeset.
+
+148. **DST boundary fix merged.** `daa2392` merged `--no-ff`
+    (`plans/reports/panic-fixes-fix-2-report.md`). Storage keeps only
+    candidates that read back as the typed wall time, then the
+    earliest; none left is the nonexistent-time error. The cause also
+    hit spring: unix `Local` returned `Single` for the gap's first
+    minute, so `start 02:00` on a spring-forward day stored `01:00Z`
+    instead of failing. Both fixed, with tests at every boundary
+    minute. Gate green: fmt, build, 978 tests, clippy. By hand under
+    Europe/Warsaw: 2026-10-25 02:30 → `00:30Z`, 03:00 → `02:00Z`;
+    2026-03-29 02:00 → gap error, 03:00 → `01:00Z`. The fix agent
+    briefly wrote two punches to the UAT database and removed them.
+
+149. **`chrono-tz` switch deferred.** chrono's unix `Local` mishandles
+    DST edge minutes, while `chrono-tz` gets them right. Converting
+    through `chrono-tz` plus `iana-time-zone` would remove the cause,
+    at the cost of a bigger binary and tz updates that ship with
+    releases. The user keeps the read-back check as is. The switch is
+    a possible later changeset. Final review of `panic-fixes` running
+    on Opus (user's choice).
+
+150. **`panic-fixes` reviewed and closed out.** Final review on Opus
+    (`plans/reports/panic-fixes-final-review.md`): ship-with-followups.
+    A probe of every local minute within 4h of every transition
+    2025-2028 in 14 zones found no storage mismatch; recreate-line
+    replays stored identical rows; mutations were caught. F1 the
+    repeated-hour tests skipped near midnight and on 1 January; the
+    `TZ` rule now puts the local clock near midday, so they never skip.
+    F2 `mlm::exit_code` is the one exit mapping, 141 included, and
+    `main` calls it. Fix pass `3b60694` merged; gate green: fmt, build,
+    983 tests, clippy. Spec, plan and task plans archived. Merged to
+    `main` `--no-ff`, unreleased. Next: `relative-ids` (entry 137).
 
 ## Open questions (still need answers)
 

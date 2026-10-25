@@ -214,16 +214,9 @@ fn to_utc_and_date<Tz: TimeZone>(
         .expect("nanosecond 0 is always a valid NaiveTime component");
     let naive_local = local_date.and_time(local_time);
 
-    let resolved = match tz.from_local_datetime(&naive_local) {
-        LocalResult::Single(dt) => dt,
-        // The repeated hour on fall-back: use the earlier of the two real
-        // instants (§2.1's documented, conventional choice).
-        LocalResult::Ambiguous(earliest, _latest) => earliest,
-        // The skipped hour on spring-forward: no real instant exists.
-        LocalResult::None => {
-            return Err(StorageError::NonexistentLocalTime { local: naive_local });
-        }
-    };
+    let candidates = tz.from_local_datetime(&naive_local);
+    let resolved = real_instant(candidates, naive_local, tz)
+        .ok_or(StorageError::NonexistentLocalTime { local: naive_local })?;
 
     let at_utc = resolved.with_timezone(&Utc);
     // Deliberately round-tripped through the timezone rather than reusing
@@ -231,6 +224,25 @@ fn to_utc_and_date<Tz: TimeZone>(
     // at insert from `at_utc` + local timezone".
     let date = at_utc.with_timezone(tz).date_naive();
     Ok((at_utc, date))
+}
+
+/// The earliest candidate that reads back in `tz` as the typed
+/// `naive_local` (§2.1). Unix `Local` can offer one that does not, at
+/// 03:00 on fall-back or 02:00 on spring-forward. `None` means the time
+/// does not exist.
+fn real_instant<Tz: TimeZone>(
+    candidates: LocalResult<DateTime<Tz>>,
+    naive_local: NaiveDateTime,
+    tz: &Tz,
+) -> Option<DateTime<Tz>> {
+    let all = match candidates {
+        LocalResult::Single(a) => vec![a],
+        LocalResult::Ambiguous(a, b) => vec![a, b],
+        LocalResult::None => vec![],
+    };
+    all.into_iter()
+        .filter(|c| tz.from_utc_datetime(&c.naive_utc()).naive_local() == naive_local)
+        .min()
 }
 
 /// Build a `Punch` from a local wall-clock date/time without touching a
@@ -1296,6 +1308,78 @@ mod tests {
         assert_eq!(punches[0].id, id);
         assert_eq!(punches[0].at_utc, utc(2026, 10, 25, 0, 30, 0));
         assert_eq!(punches[0].date, d(2026, 10, 25));
+    }
+
+    fn warsaw(at: DateTime<Utc>) -> DateTime<chrono_tz::Tz> {
+        at.with_timezone(&TZ_WARSAW)
+    }
+
+    #[test]
+    fn real_instant_takes_the_earlier_of_two_real_candidates() {
+        let typed = d(2026, 10, 25).and_time(t(2, 30));
+        let first = warsaw(utc(2026, 10, 25, 0, 30, 0));
+        let second = warsaw(utc(2026, 10, 25, 1, 30, 0));
+        for candidates in [
+            LocalResult::Ambiguous(first, second),
+            LocalResult::Ambiguous(second, first),
+        ] {
+            assert_eq!(real_instant(candidates, typed, &TZ_WARSAW), Some(first));
+        }
+    }
+
+    // Unix `Local` lists 03:00+02:00 (01:00Z, which reads back as 02:00)
+    // beside the real 03:00+01:00 on the fall-back day.
+    #[test]
+    fn real_instant_drops_a_candidate_with_another_wall_time() {
+        let typed = d(2026, 10, 25).and_time(t(3, 0));
+        let bogus = warsaw(utc(2026, 10, 25, 1, 0, 0));
+        let real = warsaw(utc(2026, 10, 25, 2, 0, 0));
+        for candidates in [
+            LocalResult::Ambiguous(bogus, real),
+            LocalResult::Ambiguous(real, bogus),
+        ] {
+            assert_eq!(real_instant(candidates, typed, &TZ_WARSAW), Some(real));
+        }
+    }
+
+    // Unix `Local` returns 02:00+01:00 (01:00Z, which reads back as 03:00)
+    // as the only candidate at the start of the spring-forward gap.
+    #[test]
+    fn real_instant_rejects_a_lone_candidate_with_another_wall_time() {
+        let typed = d(2026, 3, 29).and_time(t(2, 0));
+        let bogus = LocalResult::Single(warsaw(utc(2026, 3, 29, 1, 0, 0)));
+        assert_eq!(real_instant(bogus, typed, &TZ_WARSAW), None);
+        assert_eq!(real_instant(LocalResult::None, typed, &TZ_WARSAW), None);
+    }
+
+    #[test]
+    fn dst_boundary_minutes_store_the_real_instant() {
+        let cases = [
+            (d(2026, 10, 25), t(1, 59), utc(2026, 10, 24, 23, 59, 0)),
+            (d(2026, 10, 25), t(2, 0), utc(2026, 10, 25, 0, 0, 0)),
+            (d(2026, 10, 25), t(2, 59), utc(2026, 10, 25, 0, 59, 0)),
+            (d(2026, 10, 25), t(3, 0), utc(2026, 10, 25, 2, 0, 0)),
+            (d(2026, 10, 25), t(3, 1), utc(2026, 10, 25, 2, 1, 0)),
+            (d(2027, 3, 28), t(1, 59), utc(2027, 3, 28, 0, 59, 0)),
+            (d(2027, 3, 28), t(3, 0), utc(2027, 3, 28, 1, 0, 0)),
+        ];
+        for (date, time, at_utc) in cases {
+            let p = punch_from_local(1, PunchKind::Start, date, time, &TZ_WARSAW).expect("real");
+            assert_eq!((p.at_utc, p.date), (at_utc, date), "{date} {time}");
+        }
+    }
+
+    #[test]
+    fn dst_gap_minutes_are_nonexistent() {
+        for time in [t(2, 0), t(2, 30), t(2, 59)] {
+            let err = punch_from_local(1, PunchKind::Start, d(2027, 3, 28), time, &TZ_WARSAW)
+                .expect_err("gap minute");
+            assert!(
+                matches!(err, StorageError::NonexistentLocalTime { local }
+                    if local == d(2027, 3, 28).and_time(time)),
+                "{time}: {err:?}"
+            );
+        }
     }
 
     // D4

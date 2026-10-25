@@ -5,12 +5,36 @@
 //! against an in-memory `Connection` in the meantime.
 #![allow(dead_code)]
 
+use std::io::Write;
+
 use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::cli::WeekTargetArgs;
 use crate::date::{WeekId, parse_week_id};
+use crate::emit;
 use crate::time::{format_minutes, parse_duration};
+
+/// The largest target `week target` accepts: the hours in a week (168h).
+pub const MAX_TARGET_MINUTES: i64 = 168 * 60;
+
+/// `week target` with a DURATION above `MAX_TARGET_MINUTES` (spec §4).
+/// Holds the parsed minutes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetTooLarge(pub i64);
+
+impl std::fmt::Display for TargetTooLarge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "target cannot exceed {} (got {})",
+            format_minutes(MAX_TARGET_MINUTES),
+            format_minutes(self.0)
+        )
+    }
+}
+
+impl std::error::Error for TargetTooLarge {}
 
 /// Set (insert or replace) a week's absolute target override (§2.3, §3.7).
 ///
@@ -56,8 +80,9 @@ pub fn echo_line(week: &WeekId, minutes: i64) -> String {
 /// which is what makes the omitted-`WEEK_ID` default deterministic under
 /// test. WEEK_ID is validated before DURATION (a documented choice, not
 /// a spec mandate) so that with both tokens malformed, the leftmost one
-/// wins. Both parses complete before the single upsert call, so a
-/// failure at either step cannot leave a write behind.
+/// wins. The order is WEEK_ID, then the DURATION parse, then the 168h
+/// cap. All three run before the single upsert call, so a failure at
+/// any step cannot leave a write behind.
 pub fn apply(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow::Result<String> {
     let (week_tok, dur_tok) = args.split();
 
@@ -69,14 +94,25 @@ pub fn apply(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyh
     let minutes = parse_duration(dur_tok)?;
     debug_assert!(minutes >= 0, "parse_duration guarantees non-negative");
 
+    if minutes > MAX_TARGET_MINUTES {
+        return Err(TargetTooLarge(minutes).into());
+    }
+
     set_week_target(conn, &week, minutes)?;
     Ok(echo_line(&week, minutes))
 }
 
 /// `mlm week target [WEEK_ID] DURATION` (§3.7): writes the override, then
-/// prints one line (§3.5).
-pub fn run(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyhow::Result<()> {
-    println!("{}", apply(conn, today, args)?);
+/// writes one line to `out` (§3.5). The target stays written when the
+/// output fails.
+pub fn run<W: Write>(
+    conn: &Connection,
+    today: NaiveDate,
+    args: &WeekTargetArgs,
+    out: &mut W,
+) -> anyhow::Result<()> {
+    let line = apply(conn, today, args)?;
+    emit(out, &format!("{line}\n"))?;
     Ok(())
 }
 
@@ -206,7 +242,13 @@ mod tests {
     fn explicit_week_id_writes_that_week() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        run(&conn, today, &args(&["2026-07", "33h30m"])).unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2026-07", "33h30m"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(2010));
     }
 
@@ -215,7 +257,7 @@ mod tests {
     fn omitted_week_id_defaults_to_current_week() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2026, 2, 12).unwrap(); // Thu, ISO week 2026-07
-        run(&conn, today, &args(&["33h30m"])).unwrap();
+        run(&conn, today, &args(&["33h30m"]), &mut std::io::sink()).unwrap();
         assert_eq!(row_count(&conn), 1);
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(2010));
 
@@ -224,7 +266,13 @@ mod tests {
         // Gregorian one, must be used.
         let conn2 = new_conn();
         let boundary_today = NaiveDate::from_ymd_opt(2025, 12, 29).unwrap();
-        run(&conn2, boundary_today, &args(&["33h30m"])).unwrap();
+        run(
+            &conn2,
+            boundary_today,
+            &args(&["33h30m"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn2, &wk(2026, 1)).unwrap(), Some(2010));
     }
 
@@ -233,11 +281,23 @@ mod tests {
     fn zero_duration_accepted() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        run(&conn, today, &args(&["2026-07", "0h"])).unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2026-07", "0h"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(0));
 
         let conn2 = new_conn();
-        run(&conn2, today, &args(&["2026-08", "0m"])).unwrap();
+        run(
+            &conn2,
+            today,
+            &args(&["2026-08", "0m"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn2, &wk(2026, 8)).unwrap(), Some(0));
     }
 
@@ -246,7 +306,13 @@ mod tests {
     fn negative_duration_rejected_no_write() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        let err = run(&conn, today, &args(&["2026-07", "-5h"])).unwrap_err();
+        let err = run(
+            &conn,
+            today,
+            &args(&["2026-07", "-5h"]),
+            &mut std::io::sink(),
+        )
+        .unwrap_err();
         assert!(
             err.downcast_ref::<crate::time::DurationParseError>()
                 .is_some()
@@ -260,7 +326,7 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
         for bad in ["0", "abcd", "2027-53"] {
             let conn = new_conn();
-            let err = run(&conn, today, &args(&[bad, "33h30m"])).unwrap_err();
+            let err = run(&conn, today, &args(&[bad, "33h30m"]), &mut std::io::sink()).unwrap_err();
             assert!(
                 err.downcast_ref::<crate::date::DateWeekError>().is_some(),
                 "input {bad}: {err}"
@@ -274,7 +340,13 @@ mod tests {
     fn unpadded_week_id_normalized() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        run(&conn, today, &args(&["2026-7", "33h30m"])).unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2026-7", "33h30m"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(2010));
     }
 
@@ -284,7 +356,8 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
         for bad in ["10", "10x", ""] {
             let conn = new_conn();
-            let err = run(&conn, today, &args(&["2026-07", bad])).unwrap_err();
+            let err =
+                run(&conn, today, &args(&["2026-07", bad]), &mut std::io::sink()).unwrap_err();
             assert!(
                 err.downcast_ref::<crate::time::DurationParseError>()
                     .is_some(),
@@ -299,7 +372,13 @@ mod tests {
     fn week_id_validated_before_duration() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        let err = run(&conn, today, &args(&["2027-53", "-5h"])).unwrap_err();
+        let err = run(
+            &conn,
+            today,
+            &args(&["2027-53", "-5h"]),
+            &mut std::io::sink(),
+        )
+        .unwrap_err();
         assert!(err.downcast_ref::<crate::date::DateWeekError>().is_some());
         assert_eq!(row_count(&conn), 0);
     }
@@ -309,8 +388,20 @@ mod tests {
     fn override_replaces_not_duplicates() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        run(&conn, today, &args(&["2026-07", "40h"])).unwrap();
-        run(&conn, today, &args(&["2026-07", "33h30m"])).unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2026-07", "40h"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2026-07", "33h30m"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(row_count(&conn), 1);
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(2010));
     }
@@ -320,7 +411,109 @@ mod tests {
     fn succeeds_for_a_week_with_no_data() {
         let conn = new_conn();
         let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        run(&conn, today, &args(&["2099-01", "10h"])).unwrap();
+        run(
+            &conn,
+            today,
+            &args(&["2099-01", "10h"]),
+            &mut std::io::sink(),
+        )
+        .unwrap();
         assert_eq!(get_week_target(&conn, &wk(2099, 1)).unwrap(), Some(600));
+    }
+
+    // --- cap (panic-fixes spec §4) -------------------------------------
+
+    #[test]
+    fn cap_boundary_values_are_accepted() {
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        for dur in ["168h", "167h60m", "10080m"] {
+            let conn = new_conn();
+            let line = apply(&conn, today, &args(&["2026-41", dur])).unwrap();
+            assert_eq!(line, "Week 2026-41 target: 168h 00m", "input {dur}");
+            assert_eq!(get_week_target(&conn, &wk(2026, 41)).unwrap(), Some(10080));
+        }
+    }
+
+    #[test]
+    fn over_cap_is_rejected_after_the_parse_and_writes_nothing() {
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let cases = [
+            (
+                "168h1m",
+                10081,
+                "target cannot exceed 168h 00m (got 168h 01m)",
+            ),
+            (
+                "10081m",
+                10081,
+                "target cannot exceed 168h 00m (got 168h 01m)",
+            ),
+            (
+                "200h",
+                12000,
+                "target cannot exceed 168h 00m (got 200h 00m)",
+            ),
+            (
+                "99999999999h",
+                5_999_999_999_940,
+                "target cannot exceed 168h 00m (got 99999999999h 00m)",
+            ),
+        ];
+        for (dur, minutes, message) in cases {
+            let conn = new_conn();
+            let err = apply(&conn, today, &args(&["2026-41", dur])).unwrap_err();
+            assert_eq!(
+                err.downcast_ref::<TargetTooLarge>(),
+                Some(&TargetTooLarge(minutes)),
+                "input {dur}"
+            );
+            assert_eq!(err.to_string(), message);
+            assert_eq!(row_count(&conn), 0);
+        }
+    }
+
+    #[test]
+    fn cap_runs_after_the_week_id_check() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let err = apply(&conn, today, &args(&["2027-53", "200h"])).unwrap_err();
+        assert!(err.downcast_ref::<crate::date::DateWeekError>().is_some());
+        assert!(err.downcast_ref::<TargetTooLarge>().is_none());
+    }
+
+    #[test]
+    fn i64_overflow_keeps_the_format_error() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let err = apply(&conn, today, &args(&["2026-41", "9999999999999999999h"])).unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<crate::time::DurationParseError>(),
+            Some(crate::time::DurationParseError::InvalidFormat(_))
+        ));
+        assert_eq!(row_count(&conn), 0);
+    }
+
+    // --- output writer (panic-fixes spec §5) ---------------------------
+
+    #[test]
+    fn run_writes_the_echo_line() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let mut out = Vec::new();
+        run(&conn, today, &args(&["2026-41", "20h"]), &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "Week 2026-41 target: 20h 00m\n"
+        );
+    }
+
+    #[test]
+    fn run_keeps_the_target_when_output_fails() {
+        let conn = new_conn();
+        let today = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let mut full: &mut [u8] = &mut [];
+        let err = run(&conn, today, &args(&["2026-41", "20h"]), &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
+        assert_eq!(get_week_target(&conn, &wk(2026, 41)).unwrap(), Some(1200));
     }
 }

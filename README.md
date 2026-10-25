@@ -51,6 +51,10 @@ later.
   `mlm start 09:00` is fine on any date, but the first command prints
   an orphaned-end warning (see `mlm stop` below). The second command
   clears it.
+- A week target above 168h, set before `week target` had a limit, stays
+  stored. With a stint open, `status` can crash on it, and week totals
+  can come out wrong, in that week and later ones through carry-in.
+  Setting that week's target again, at 168h or less, fixes it.
 
 ## Install
 
@@ -129,6 +133,14 @@ about its orphaned end, since no start exists yet for it to pair with.
 `status` after punching in/out is still how you confirm things landed
 correctly. Add `-v`/`--verbose` to any command to see debug log lines
 on stderr, including the one-time migration line.
+
+Output pipes and redirects like any other command's. If the reader
+closes the pipe before `mlm` finishes writing, `mlm` stops quietly and
+exits 141, the code a shell reports for a process killed by a closed
+pipe, so `set -o pipefail` scripts see what they see from other tools.
+Any other write failure, such as a full disk under `> file`, prints one
+`error: cannot write output: <reason>` line and exits 1. A change the
+command already made, such as a new week target or a deletion, stays.
 
 Every command has a 1 character alias, except `delete` (`del`) and `export` (`ex`).
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
@@ -552,8 +564,17 @@ Target:        45h 00m
 ```
 
 The duration echoes in the standard format, so `90m` prints as `01h 30m`.
+
+The target is at most 168h, the hours in a week. A larger value fails
+with exit code 1 and leaves the week's target as it was:
+
+```sh
+$ mlm week target 200h
+error: target cannot exceed 168h 00m (got 200h 00m)
+```
+
 `WEEK_ID` goes after `target`. Typing it before `target` fails with a
-reminder and exit code 2:
+reminder and exit code 2, even when the duration is over the limit:
 
 ```sh
 $ mlm week 2026-41 target 20h

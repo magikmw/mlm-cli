@@ -67,6 +67,12 @@ yet, a possible issue works but has a rough edge.
 - Entering a stop before its start warns once. `mlm stop 17:00` then
   `mlm start 09:00` is legal on any date (§3.2), but the first command
   prints an orphan warning (§7.4). The second command clears it.
+- A week target above `168h` stored before the cap existed (§3.7)
+  stays stored, and reads never clamp it. In that week, and in later
+  weeks through carry-in, `status` with a stint open today can panic on
+  the `est. EOD` line, and the week totals can overflow into wrong
+  figures. Setting that week's target again, at `168h` or less,
+  replaces it.
 
 ### 1.3 Terminology
 
@@ -111,16 +117,24 @@ them silently displaying an hour off. `chrono`'s timezone-aware
 conversion (via the system tz database) does this correctly as long as
 every conversion call passes the specific instant, not a cached offset.
 
-Two DST edge cases this raises, both resolved explicitly rather than
+Three DST edge cases this raises, all resolved explicitly rather than
 left to whatever the conversion library happens to do by default:
 
 - **Spring-forward gap**: a typed local `TIME` that doesn't correspond
   to any real local instant on today's date (the hour skipped when
   clocks jump forward) is a hard error (§6.1) — nothing written, same
   treatment as the `24:00` boundary case.
-- **Fall-back ambiguity**: a typed local `TIME` that occurs *twice*
-  (the repeated hour when clocks fall back) resolves to the **earlier**
-  of the two real instants.
+- **Fall-back ambiguity**: a local time that occurs *twice* (the
+  repeated hour when clocks fall back) resolves to the **earlier** of
+  the two real instants. This holds for a typed `TIME` and for the
+  current time that a `start` or `stop` without `TIME` stores (§4.1).
+  So a punch made in the second pass, typed or not, stores the
+  first-pass instant, earlier than the real clock by the length of the
+  shift (one hour in most zones).
+- **Current time in the repeated hour**: taking the current time never
+  fails. `now` is the current instant truncated to the whole minute
+  (§4.1), in the repeated hour as in any other, so every command works
+  during it.
 
 ### 2.2 Migrations
 
@@ -367,6 +381,26 @@ uses the human duration format (§4.2), not raw minutes — e.g. `20h`,
 `33h30m` — so setting a target has the same friction as everything
 else here: no mental-math input.
 
+`DURATION` is at most `168h` (10080 minutes, the hours in a week).
+`168h`, `167h60m` and `10080m` are accepted, and `168h1m` and `10081m`
+are not. A larger value fails with one line on stderr and exit `1`,
+stdout stays empty, and no target is written:
+
+```
+error: target cannot exceed 168h 00m (got 200h 00m)
+```
+
+The `got` value is the parsed duration in the standard format (§4.2),
+so `168h1m` prints `(got 168h 01m)` and `99999999999h` prints
+`(got 99999999999h 00m)`. A week that already has a target keeps it.
+The checks run in this order: `WEEK_ID`, then the `DURATION` grammar
+and sign (§6.1), then the cap. So a malformed value (`10x`), a negative
+one (`-5h`) and one too large to parse at all (`9999999999999999999h`)
+keep their own messages. The `WEEK_ID`-before-`target` reminder below
+comes before every check, so `mlm week 2026-41 target 200h` prints the
+reminder and exits `2`. A target stored above `168h` before the cap
+existed stays as it is (§1.2a).
+
 On success it prints one line to stdout, with the week id it wrote to
 (the current week when omitted) and the stored target in the standard
 duration format (§4.2):
@@ -390,8 +424,14 @@ week target` even when the user typed the `w` alias, and prints no
 `Usage:` block. The success echo above uses the normalized week id, so
 `mlm week target 2026-7 33h30m` prints `Week 2026-07 target: 33h 30m`.
 `mlm week target --help` shows the usage `mlm week target [OPTIONS]
-[WEEK_ID] <DURATION>` and an Arguments section naming both arguments. No
-parser error for this subcommand mentions `<ARGS>`.
+[WEEK_ID] <DURATION>` and an Arguments section naming both arguments.
+Its `DURATION` line names the cap:
+
+```
+  <DURATION>  Target to set: 20h, 33h30m or 45m, up to 168h (human format, never raw minutes)
+```
+
+No parser error for this subcommand mentions `<ARGS>`.
 
 ### 3.8 `mlm export notes [--date DATE | --week WEEK_ID | --month MONTH]`
 
@@ -455,6 +495,15 @@ local datetime, then converted to UTC for storage per-instant (§2.1).
 There is no seconds precision anywhere —
 everything is minute-granular, per NOTES.md's "keep time in minutes"
 call.
+
+`now` is the current instant truncated to the whole minute, taken once
+per command. The truncation drops seconds from the instant itself and
+never rebuilds a local wall time, so taking the current time never
+fails, the repeated autumn hour included (§2.1). A `start` or `stop`
+without `TIME` takes `now`'s local hour and minute on today's date and
+converts them the same way as a typed `TIME`. In the second pass of the
+repeated hour that local time resolves to the earlier instant (§2.1),
+so the punch stores the first-pass instant, as a typed `TIME` does.
 
 ### 4.2 Duration formatting
 
@@ -705,7 +754,15 @@ and still exits `0`.
 - Malformed `DURATION` (§3.7/§4.2): doesn't match the input grammar,
   or parses to a negative number of minutes. Zero is legal (a
   deliberate week off, see §2.3's `week_targets` note) — only
-  negative is rejected.
+  negative is rejected. A value too large to parse at all
+  (`9999999999999999999h`) fails the grammar check. A well-formed
+  `DURATION` above `168h` fails the cap (§3.7), checked after the
+  grammar and the sign:
+
+  `error: target cannot exceed 168h 00m (got 200h 00m)`
+
+  `got` is the parsed value in the standard format (§4.2). `168h`
+  itself is accepted.
 - Malformed `TIME` boundary: `24:00` is rejected, not accepted as a
   next-day-midnight alias — valid range is `00:00` through `23:59`.
 - A `TIME` that falls in a DST spring-forward gap (§2.1) — no real
@@ -753,15 +810,44 @@ and still exits `0`.
 
 `0` on success (including a status view that reports anomalies, since
 the anomaly is data to look at and not a tool failure). Nonzero on any
-§6.1 hard error. A runtime error (a bad value, a storage failure) exits
-`1`. A usage error from the argument parser (an unknown flag, a missing
-argument, the `week WEEK_ID target DURATION` shape) exits `2`.
+§6.1 hard error. A runtime error (a bad value, a storage failure, a
+failed output write) exits `1`, except a broken pipe on stdout, which
+exits `141` (below). A usage error from the argument parser (an unknown
+flag, a missing argument, the `week WEEK_ID target DURATION` shape)
+exits `2`.
+
+A failed write to stdout is a runtime error, not a §6.1 rejection,
+because a write command may already have committed its change:
+
+- Stdout closed by its reader (a broken pipe): the command stops
+  writing, prints nothing to stderr, and exits `141`, on every
+  platform. `141` is what a shell reports for a process killed by
+  `SIGPIPE`, so `set -o pipefail` scripts see the same code as from
+  other tools.
+- Any other stdout write failure: one line on stderr, exit `1`:
+
+  `error: cannot write output: <reason>`
+
+  `<reason>` is the I/O error's standard text, `(os error N)` suffix
+  included. On Linux, stdout on `/dev/full` prints:
+
+  `error: cannot write output: No space left on device (os error 28)`
+
+- Lines written before the failure stay written.
+- A write command that already committed its change keeps it. Only
+  the output is lost. `week target` keeps the stored target, and
+  `delete note|punch N` keeps the deletion.
+
+A failed write to stderr is ignored at every stderr site: the `start`
+and `stop` warnings (§7.4), `error:` lines, and the
+`week WEEK_ID target` reminder (§3.7). The exit code is the one the
+command would have returned.
 
 ## 7. Output layout
 
 Plain ASCII throughout (no box-drawing/unicode dashes) — matches the
 portability goal behind the ratatui pick (README) even though this is
-plain `println!` output, not a TUI screen.
+plain line output, not a TUI screen.
 
 ### 7.1 `mlm status`
 
@@ -1851,4 +1937,27 @@ or less directly.
 - **E31** - `mlm export notes` read failure (§6.1): with the
   `notes.body` column renamed, it prints `error: ...` to stderr,
   nothing to stdout, and exits `1`.
+- **E32** - Week target cap (§3.7, §6.1): `mlm week target 168h` and
+  `mlm week target 10080m` print the echo line with `168h 00m`.
+  `168h1m`, `200h` and `99999999999h` print the cap error with
+  `(got 168h 01m)`, `(got 200h 00m)` and `(got 99999999999h 00m)`,
+  exit `1`, print nothing to stdout, and write no target. A week that
+  already had a target keeps it. `-5h`, `10x` and
+  `9999999999999999999h` keep their own messages.
+  `mlm week 2026-41 target 200h` prints the reminder of E24 and exits
+  `2`. `status` with a stint open today and a `168h` target exits `0`
+  and shows its `est. EOD` line.
+- **E33** - Stdout closed by its reader (§6.3): with stdout a pipe
+  whose reader has already closed, `mlm week`, `mlm status` and
+  `mlm export notes` over a range with at least one note print nothing
+  to stderr and exit `141`. `mlm week target 40h` and `mlm delete punch 1`
+  under the same pipe exit `141`, and the target is stored and the
+  punch is gone.
+- **E34** - Other write failures (§6.3): `mlm week` with stdout on
+  `/dev/full` (Linux) prints this on stderr and exits `1`:
+
+  `error: cannot write output: No space left on device (os error 28)`
+
+  With stderr a closed pipe, a malformed `TIME` still exits `1` and the
+  `week WEEK_ID target` shape still exits `2`.
 

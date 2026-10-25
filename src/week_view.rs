@@ -20,6 +20,8 @@
 //!   (`storage::notes_in_range`, Monday to Sunday), after the loader and
 //!   outside it. Without the flag it makes no note read.
 
+use std::io::Write;
+
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
 
@@ -27,6 +29,7 @@ use crate::anomalies;
 use crate::carry_scan;
 use crate::cli::WeekArgs;
 use crate::date::{WeekId, format_date, parse_week_id};
+use crate::emit;
 use crate::history::{self, PunchBuckets};
 use crate::lookback;
 use crate::render::{self, CarryMarker};
@@ -315,7 +318,12 @@ fn with_notes(conn: &Connection, view: &mut WeekView, week: WeekId) -> anyhow::R
 
 /// `mlm week [WEEK_ID] [--notes]` (the `action: None` arm; `week target` is
 /// Milestone 8's `week_target::run`, dispatched separately by `main`).
-pub fn run(conn: &Connection, now: DateTime<Local>, args: &WeekArgs) -> anyhow::Result<()> {
+pub fn run<W: Write>(
+    conn: &Connection,
+    now: DateTime<Local>,
+    args: &WeekArgs,
+    out: &mut W,
+) -> anyhow::Result<()> {
     let today = now.date_naive();
     let week = match &args.week_id {
         Some(s) => parse_week_id(s, today)?,
@@ -326,7 +334,7 @@ pub fn run(conn: &Connection, now: DateTime<Local>, args: &WeekArgs) -> anyhow::
     if args.notes {
         with_notes(conn, &mut view, week)?;
     }
-    print!("{}", render_week(&view));
+    emit(out, &render_week(&view))?;
     Ok(())
 }
 
@@ -1204,7 +1212,7 @@ Target:        40h 00m
                 week_id: Some(bad.to_string()),
                 notes: false,
             };
-            let result = run(&conn, today, &args);
+            let result = run(&conn, today, &args, &mut std::io::sink());
             assert!(result.is_err(), "expected error for {bad}");
         }
     }
@@ -1279,7 +1287,7 @@ Target:        40h 00m
             week_id: Some("2026-07".to_string()),
             notes: false,
         };
-        let result = run(&conn, fixed_now(), &args);
+        let result = run(&conn, fixed_now(), &args, &mut std::io::sink());
         assert!(result.is_ok());
         assert_eq!(crate::exit_code(&result), 0);
 
@@ -2023,9 +2031,9 @@ Target:        40h 00m
             week_id: Some("2026-07".into()),
             notes: true,
         };
-        assert!(run(&conn, fixed_now(), &args).is_err());
+        assert!(run(&conn, fixed_now(), &args, &mut std::io::sink()).is_err());
         args.notes = false;
-        assert!(run(&conn, fixed_now(), &args).is_ok());
+        assert!(run(&conn, fixed_now(), &args, &mut std::io::sink()).is_ok());
     }
 
     #[test]
@@ -2051,6 +2059,24 @@ Target:        40h 00m
             week_id: Some("2026-07".into()),
             notes: true,
         };
-        assert!(run(&conn, fixed_now(), &args).is_ok());
+        assert!(run(&conn, fixed_now(), &args, &mut std::io::sink()).is_ok());
+    }
+
+    #[test]
+    fn run_writes_the_rendered_week() {
+        let conn = new_test_db();
+        let args = WeekArgs {
+            action: None,
+            week_id: Some("2026-07".into()),
+            notes: false,
+        };
+        let mut out = Vec::new();
+        run(&conn, fixed_now(), &args, &mut out).unwrap();
+        let expected = render_week(&build_week_view(&conn, wk(2026, 7), fixed_now()).unwrap());
+        assert_eq!(String::from_utf8(out).unwrap(), expected);
+
+        let mut full: &mut [u8] = &mut [];
+        let err = run(&conn, fixed_now(), &args, &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
     }
 }
