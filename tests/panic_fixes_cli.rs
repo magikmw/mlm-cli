@@ -427,4 +427,64 @@ mod unix {
             )]
         );
     }
+
+    // --------------------------------------------- DST boundary minutes
+
+    fn warsaw_start(db: &Path, time: &str, date: &str) -> Output {
+        mlm(db, &["start", time, "--date", date])
+            .env("TZ", "Europe/Warsaw")
+            .output()
+            .expect("failed to run mlm binary")
+    }
+
+    fn assert_stored(date: &str, time: &str, at_utc: &str) {
+        let (_dir, db) = fresh();
+        let o = warsaw_start(&db, time, date);
+        assert_eq!(o.status.code(), Some(0), "{time}: {o:?}");
+        assert_eq!(err(&o), "", "{time}");
+        let rows = punch_rows(&db);
+        assert_eq!(rows.len(), 1, "{time}: {rows:?}");
+        assert_eq!(
+            (rows[0].0.as_str(), rows[0].1.as_str()),
+            (at_utc, date),
+            "{time}"
+        );
+    }
+
+    #[test]
+    fn fall_back_boundary_minutes_store_the_real_instant() {
+        let cases = [
+            ("01:59", "2026-10-24T23:59:00Z"),
+            ("02:00", "2026-10-25T00:00:00Z"),
+            ("02:30", "2026-10-25T00:30:00Z"),
+            ("02:59", "2026-10-25T00:59:00Z"),
+            ("03:00", "2026-10-25T02:00:00Z"),
+            ("03:01", "2026-10-25T02:01:00Z"),
+        ];
+        for (time, at_utc) in cases {
+            assert_stored("2026-10-25", time, at_utc);
+        }
+    }
+
+    #[test]
+    fn spring_forward_edges_store_the_real_instant() {
+        assert_stored("2026-03-29", "01:59", "2026-03-29T00:59:00Z");
+        assert_stored("2026-03-29", "03:00", "2026-03-29T01:00:00Z");
+    }
+
+    #[test]
+    fn spring_forward_gap_minutes_are_rejected() {
+        for time in ["02:00", "02:30", "02:59"] {
+            let (_dir, db) = fresh();
+            let o = warsaw_start(&db, time, "2026-03-29");
+            assert_eq!(o.status.code(), Some(1), "{time}: {o:?}");
+            assert_eq!(
+                err(&o),
+                format!(
+                    "error: local time 2026-03-29 {time}:00 does not exist (spring-forward DST gap)\n"
+                ),
+            );
+            assert!(punch_rows(&db).is_empty(), "{time}");
+        }
+    }
 }
