@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 148
+- **Next entry**: 149
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (DST boundary fix in progress, entry 147), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (fixes merged, final review next, entry 148), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2030,6 +2030,18 @@ SPEC.md and PLAN.md:
     spring. F3 (no way to enter the second pass) is SPEC §2.1 as
     designed. F5-F13 dropped by default: accepted decisions (entries
     139-141) or behavior older than this changeset.
+
+148. **DST boundary fix merged.** `daa2392` merged `--no-ff`
+    (`plans/reports/panic-fixes-fix-2-report.md`). Storage keeps only
+    candidates that read back as the typed wall time, then the
+    earliest; none left is the nonexistent-time error. The cause also
+    hit spring: unix `Local` returned `Single` for the gap's first
+    minute, so `start 02:00` on a spring-forward day stored `01:00Z`
+    instead of failing. Both fixed, with tests at every boundary
+    minute. Gate green: fmt, build, 978 tests, clippy. By hand under
+    Europe/Warsaw: 2026-10-25 02:30 → `00:30Z`, 03:00 → `02:00Z`;
+    2026-03-29 02:00 → gap error, 03:00 → `01:00Z`. The fix agent
+    briefly wrote two punches to the UAT database and removed them.
 
 ## Open questions (still need answers)
 
