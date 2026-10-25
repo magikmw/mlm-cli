@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 145
+- **Next entry**: 146
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (merged on branch, repeated-hour storage bug awaits the user, entry 144), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (merged on branch, storage fix in progress, entry 145), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2005,6 +2005,13 @@ SPEC.md and PLAN.md:
     Europe/Warsaw mlm start 02:30` on 2026-10-25 stores `01:30Z`, not
     `00:30Z`. The AC3 test accepts either pass until the user decides.
     Worktrees and branches removed.
+
+145. **Repeated-hour storage fixed in `panic-fixes`.** The user chose
+    to fix the bug in entry 144 here. Storage picks the earlier of the
+    two instants by comparing them, not by their order, so code matches
+    SPEC §2.1 and the docs already merged. The AC3 test goes back to
+    asserting the first pass. `src/storage.rs` joins the changeset's
+    scope.
 
 ## Open questions (still need answers)
 
