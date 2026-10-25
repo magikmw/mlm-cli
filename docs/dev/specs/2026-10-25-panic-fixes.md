@@ -68,7 +68,8 @@ None.
   §4.2).
 - The check runs after the existing `DURATION` checks, so a malformed
   or negative value keeps its current message. A value too large to
-  parse at all keeps the format message.
+  parse at all keeps the format message. The `week WEEK_ID target`
+  reminder (SPEC §3.7, exit `2`) still comes first.
 
 ## 5. Output write failures
 
@@ -80,7 +81,8 @@ None.
 
   `error: cannot write output: <reason>`
 
-  `<reason>` is the system's message for the failure.
+  `<reason>` is the I/O error's standard text, `(os error N)` suffix
+  included, e.g. `No space left on device (os error 28)`.
 - Lines written before the failure stay written.
 - A failed write to stderr is ignored, at every stderr write site
   (warnings, `error:` lines, the `week WEEK_ID target` reminder). The
@@ -115,6 +117,7 @@ None.
 ## Interaction with the project spec
 
 - §2.1 and §4.1 state how `now` is taken in the repeated hour.
+- §1.2a gains stored oversized targets as a possible issue.
 - §3.7 gains the cap.
 - §6.1 gains the cap error.
 - §6.3 gains the write-failure error and exit `141`.
