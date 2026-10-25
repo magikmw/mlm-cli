@@ -260,7 +260,7 @@ Usage: mlm week target [OPTIONS] [WEEK_ID] <DURATION>
 
 Arguments:
   [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
-  <DURATION>  Target to set: 20h, 33h30m or 45m (human format, never raw minutes)
+  <DURATION>  Target to set: 20h, 33h30m or 45m, up to 168h (human format, never raw minutes)
 
 Options:
   -v, --verbose  Enable debug-level logging

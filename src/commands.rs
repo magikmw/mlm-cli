@@ -7,12 +7,15 @@
 //! milestone). `now` is always injected by the caller (`main`), never
 //! read from a global clock here (contract 6).
 
+use std::io::Write;
+
 use chrono::{DateTime, Local, TimeZone, Utc};
 use rusqlite::Connection;
 
 use crate::anomalies;
 use crate::cli::{DeleteEntryArgs, NoteArgs, PunchArgs};
 use crate::date::{format_date, format_date_with_weekday, resolve_future_checked_date};
+use crate::emit;
 use crate::history::PunchBuckets;
 use crate::lookback::{self, LookbackEntry, LookbackKind};
 use crate::storage::{self, Note, Punch, PunchKind};
@@ -190,25 +193,38 @@ fn validate_entry_id(id: u32, count: usize) -> anyhow::Result<usize> {
     Ok(index)
 }
 
-/// List-mode output for punches (spec §4): `<n>  <kind> <HH:MM>` per
-/// row, 1-based. Pure — never touches storage.
-fn print_punch_list(rows: &[Punch]) {
-    for (i, p) in rows.iter().enumerate() {
-        let local_time = p.at_utc.with_timezone(&Local).time();
-        println!(
-            "{}  {} {}",
-            i + 1,
-            p.kind.as_str(),
-            local_time.format("%H:%M")
-        );
-    }
+/// List-mode text for punches (spec §4): `<n>  <kind> <HH:MM>` per row,
+/// 1-based. Pure, never touches storage.
+fn punch_list_text(rows: &[Punch]) -> String {
+    rows.iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let local_time = p.at_utc.with_timezone(&Local).time();
+            format!(
+                "{}  {} {}\n",
+                i + 1,
+                p.kind.as_str(),
+                local_time.format("%H:%M")
+            )
+        })
+        .collect()
 }
 
-/// List-mode output for notes (spec §4): `<n>  <body>` per row, 1-based.
-/// Pure — never touches storage.
-fn print_note_list(rows: &[Note]) {
-    for (i, n) in rows.iter().enumerate() {
-        println!("{}  {}", i + 1, n.body);
+/// List-mode text for notes (spec §4): `<n>  <body>` per row, 1-based.
+fn note_list_text(rows: &[Note]) -> String {
+    rows.iter()
+        .enumerate()
+        .map(|(i, n)| format!("{}  {}\n", i + 1, n.body))
+        .collect()
+}
+
+/// List mode's text for `date`: the numbered rows, or the
+/// "nothing to delete" line when there are none.
+fn list_or_nothing(text: String, date: chrono::NaiveDate) -> String {
+    if text.is_empty() {
+        format!("nothing to delete for {}.\n", format_date(date))
+    } else {
+        text
     }
 }
 
@@ -281,31 +297,27 @@ fn note_recreate_line(n: &Note, today: chrono::NaiveDate) -> String {
 /// listing from an earlier call (spec §5's stale-id note). On delete,
 /// prints a ready-to-run recreate line (spec §5/§7); the note-body
 /// quoting/footgun/legacy-newline handling for that line lives in
-/// `note_recreate_line`.
-pub fn delete_note(
+/// `note_recreate_line`. All output goes to `out`. The delete stays when
+/// the output fails.
+pub fn delete_note<W: Write>(
     conn: &Connection,
     now: DateTime<Local>,
     args: &DeleteEntryArgs,
+    out: &mut W,
 ) -> anyhow::Result<()> {
     let today = now.date_naive();
     let target_date = resolve_target_date(&args.date, today)?;
     let rows = storage::notes_for_date(conn, target_date)?;
 
     let Some(id) = args.id else {
-        if rows.is_empty() {
-            println!("nothing to delete for {}.", format_date(target_date));
-        } else {
-            print_note_list(&rows);
-        }
+        emit(out, &list_or_nothing(note_list_text(&rows), target_date))?;
         return Ok(());
     };
 
     let index = validate_entry_id(id, rows.len())?;
     let deleted = storage::delete_note(conn, rows[index].id)?;
-    println!(
-        "deleted. to recreate: {}",
-        note_recreate_line(&deleted, today)
-    );
+    let line = note_recreate_line(&deleted, today);
+    emit(out, &format!("deleted. to recreate: {line}\n"))?;
     Ok(())
 }
 
@@ -313,31 +325,27 @@ pub fn delete_note(
 /// §4/§5). Same freshness/no-caching rule as `delete_note`. On delete,
 /// prints a ready-to-run recreate line built from the deleted row's own
 /// `at_utc` converted to local time per-instant (`punch_recreate_line`)
-/// — never `now`'s offset.
-pub fn delete_punch(
+/// — never `now`'s offset. All output goes to `out`. The delete stays
+/// when the output fails.
+pub fn delete_punch<W: Write>(
     conn: &Connection,
     now: DateTime<Local>,
     args: &DeleteEntryArgs,
+    out: &mut W,
 ) -> anyhow::Result<()> {
     let today = now.date_naive();
     let target_date = resolve_target_date(&args.date, today)?;
     let rows = storage::punches_for_date(conn, target_date)?;
 
     let Some(id) = args.id else {
-        if rows.is_empty() {
-            println!("nothing to delete for {}.", format_date(target_date));
-        } else {
-            print_punch_list(&rows);
-        }
+        emit(out, &list_or_nothing(punch_list_text(&rows), target_date))?;
         return Ok(());
     };
 
     let index = validate_entry_id(id, rows.len())?;
     let deleted = storage::delete_punch(conn, rows[index].id)?;
-    println!(
-        "deleted. to recreate: {}",
-        punch_recreate_line(&deleted, today, &Local)
-    );
+    let line = punch_recreate_line(&deleted, today, &Local);
+    emit(out, &format!("deleted. to recreate: {line}\n"))?;
     Ok(())
 }
 
@@ -1287,6 +1295,7 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_note_args(&["--date", "2026-02-13"]),
+            &mut std::io::sink(),
         );
         let err = r.expect_err("expected error");
         assert!(
@@ -1303,6 +1312,7 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_punch_args(&["--date", "2026-02-13"]),
+            &mut std::io::sink(),
         );
         let err = r.expect_err("expected error");
         assert!(
@@ -1319,6 +1329,7 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_note_args(&["--date", "not-a-date"]),
+            &mut std::io::sink(),
         );
         let err = r.expect_err("expected error");
         assert!(
@@ -1334,12 +1345,84 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_punch_args(&["--date", "not-a-date"]),
+            &mut std::io::sink(),
         );
         let err = r.expect_err("expected error");
         assert!(
             err.downcast_ref::<crate::date::DateWeekError>().is_some(),
             "expected DateWeekError, got {err:?}"
         );
+    }
+
+    fn written(out: Vec<u8>) -> String {
+        String::from_utf8(out).expect("utf-8 output")
+    }
+
+    #[test]
+    fn delete_list_and_recreate_lines_reach_the_writer() {
+        let conn = test_db();
+        for (kind, h) in [(PunchKind::Start, 9), (PunchKind::End, 17)] {
+            let at = NaiveTime::from_hms_opt(h, 0, 0).unwrap();
+            storage::insert_punch(&conn, kind, today(), at, &Local).expect("seed");
+        }
+
+        let mut out = Vec::new();
+        delete_punch(&conn, fixed_now(), &delete_punch_args(&[]), &mut out).unwrap();
+        assert_eq!(written(out), "1  start 09:00\n2  end 17:00\n");
+
+        let mut out = Vec::new();
+        let args = delete_punch_args(&["--date", "2026-02-11"]);
+        delete_punch(&conn, fixed_now(), &args, &mut out).unwrap();
+        assert_eq!(written(out), "nothing to delete for 2026-02-11.\n");
+
+        let mut out = Vec::new();
+        delete_punch(&conn, fixed_now(), &delete_punch_args(&["1"]), &mut out).unwrap();
+        assert_eq!(written(out), "deleted. to recreate: mlm start 09:00\n");
+    }
+
+    #[test]
+    fn delete_note_lines_reach_the_writer() {
+        let conn = test_db();
+        let at = fixed_now().with_timezone(&Utc);
+        storage::insert_note(&conn, today(), "first", at).expect("seed");
+        storage::insert_note(&conn, today(), "second", at).expect("seed");
+
+        let mut out = Vec::new();
+        delete_note(&conn, fixed_now(), &delete_note_args(&[]), &mut out).unwrap();
+        assert_eq!(written(out), "1  first\n2  second\n");
+
+        let mut out = Vec::new();
+        let args = delete_note_args(&["--date", "2026-02-11"]);
+        delete_note(&conn, fixed_now(), &args, &mut out).unwrap();
+        assert_eq!(written(out), "nothing to delete for 2026-02-11.\n");
+
+        let mut out = Vec::new();
+        delete_note(&conn, fixed_now(), &delete_note_args(&["1"]), &mut out).unwrap();
+        assert_eq!(written(out), "deleted. to recreate: mlm note 'first'\n");
+    }
+
+    #[test]
+    fn delete_punch_keeps_the_delete_when_output_fails() {
+        let conn = test_db();
+        let at = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+        storage::insert_punch(&conn, PunchKind::Start, today(), at, &Local).expect("seed");
+        let mut full: &mut [u8] = &mut [];
+        let err =
+            delete_punch(&conn, fixed_now(), &delete_punch_args(&["1"]), &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
+        assert!(punches(&conn).is_empty());
+    }
+
+    #[test]
+    fn delete_note_keeps_the_delete_when_output_fails() {
+        let conn = test_db();
+        let at = fixed_now().with_timezone(&Utc);
+        storage::insert_note(&conn, today(), "gone", at).expect("seed");
+        let mut full: &mut [u8] = &mut [];
+        let err =
+            delete_note(&conn, fixed_now(), &delete_note_args(&["1"]), &mut full).unwrap_err();
+        assert!(err.downcast_ref::<crate::OutputError>().is_some());
+        assert!(notes(&conn).is_empty());
     }
 
     /// Regression test for the flag-collision/`--`-swallowing fix (spec
@@ -1434,7 +1517,12 @@ mod tests {
     #[test]
     fn list_mode_empty_date_prints_nothing_to_delete_note() {
         let conn = test_db();
-        let r = delete_note(&conn, fixed_now(), &delete_note_args(&[]));
+        let r = delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&[]),
+            &mut std::io::sink(),
+        );
         assert!(r.is_ok());
         assert!(notes(&conn).is_empty());
     }
@@ -1442,7 +1530,12 @@ mod tests {
     #[test]
     fn list_mode_empty_date_prints_nothing_to_delete_punch() {
         let conn = test_db();
-        let r = delete_punch(&conn, fixed_now(), &delete_punch_args(&[]));
+        let r = delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&[]),
+            &mut std::io::sink(),
+        );
         assert!(r.is_ok());
         assert!(punches(&conn).is_empty());
     }
@@ -1453,7 +1546,12 @@ mod tests {
         start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
         stop(&mut conn, fixed_now(), &stop_args(&["17:00"])).expect("seed");
 
-        let r = delete_punch(&conn, fixed_now(), &delete_punch_args(&[]));
+        let r = delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&[]),
+            &mut std::io::sink(),
+        );
         assert!(r.is_ok());
 
         let rows = punches(&conn);
@@ -1468,7 +1566,12 @@ mod tests {
         note(&mut conn, fixed_now(), &note_args(&["first note"])).expect("seed");
         note(&mut conn, fixed_now(), &note_args(&["second note"])).expect("seed");
 
-        let r = delete_note(&conn, fixed_now(), &delete_note_args(&[]));
+        let r = delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&[]),
+            &mut std::io::sink(),
+        );
         assert!(r.is_ok());
 
         let rows = notes(&conn);
@@ -1556,7 +1659,13 @@ mod tests {
         note(&mut conn, fixed_now(), &note_args(&["first"])).expect("seed");
         note(&mut conn, fixed_now(), &note_args(&["second"])).expect("seed");
 
-        delete_note(&conn, fixed_now(), &delete_note_args(&["1"])).expect("delete");
+        delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["1"]),
+            &mut std::io::sink(),
+        )
+        .expect("delete");
 
         let remaining = notes(&conn);
         assert_eq!(remaining.len(), 1);
@@ -1569,7 +1678,13 @@ mod tests {
         start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
         stop(&mut conn, fixed_now(), &stop_args(&["17:00"])).expect("seed");
 
-        delete_punch(&conn, fixed_now(), &delete_punch_args(&["1"])).expect("delete");
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["1"]),
+            &mut std::io::sink(),
+        )
+        .expect("delete");
 
         let remaining = punches(&conn);
         assert_eq!(remaining.len(), 1);
@@ -1605,10 +1720,22 @@ mod tests {
         let mut conn = test_db();
         note(&mut conn, fixed_now(), &note_args(&["only note"])).expect("seed");
 
-        delete_note(&conn, fixed_now(), &delete_note_args(&["0"])).expect_err("expected error");
+        delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["0"]),
+            &mut std::io::sink(),
+        )
+        .expect_err("expected error");
         assert_eq!(notes(&conn).len(), 1);
 
-        delete_note(&conn, fixed_now(), &delete_note_args(&["2"])).expect_err("expected error");
+        delete_note(
+            &conn,
+            fixed_now(),
+            &delete_note_args(&["2"]),
+            &mut std::io::sink(),
+        )
+        .expect_err("expected error");
         assert_eq!(notes(&conn).len(), 1);
     }
 
@@ -1617,10 +1744,22 @@ mod tests {
         let mut conn = test_db();
         start(&mut conn, fixed_now(), &punch_args(&["09:00"])).expect("seed");
 
-        delete_punch(&conn, fixed_now(), &delete_punch_args(&["0"])).expect_err("expected error");
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["0"]),
+            &mut std::io::sink(),
+        )
+        .expect_err("expected error");
         assert_eq!(punches(&conn).len(), 1);
 
-        delete_punch(&conn, fixed_now(), &delete_punch_args(&["2"])).expect_err("expected error");
+        delete_punch(
+            &conn,
+            fixed_now(),
+            &delete_punch_args(&["2"]),
+            &mut std::io::sink(),
+        )
+        .expect_err("expected error");
         assert_eq!(punches(&conn).len(), 1);
     }
 
@@ -1646,6 +1785,7 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_note_args(&["1", "--date", "2026-02-10"]),
+            &mut std::io::sink(),
         )
         .expect("delete");
 
@@ -1679,6 +1819,7 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_punch_args(&["1", "--date", "2026-02-10"]),
+            &mut std::io::sink(),
         )
         .expect("delete");
 
@@ -1788,12 +1929,14 @@ mod tests {
             &conn,
             fixed_now(),
             &delete_punch_args(&["1", "--date", "2026-01-20"]),
+            &mut std::io::sink(),
         )
         .expect("delete");
         delete_punch(
             &conn,
             fixed_now(),
             &delete_punch_args(&["1", "--date", "2026-01-20"]),
+            &mut std::io::sink(),
         )
         .expect("delete");
 
