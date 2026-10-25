@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 144
+- **Next entry**: 145
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (task plans done, implementing, entry 143), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (merged on branch, repeated-hour storage bug awaits the user, entry 144), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1991,6 +1991,20 @@ SPEC.md and PLAN.md:
     U2 stays out of the docs. README's stale "1.85+" (the crate needs
     1.88) is out of scope. No realign: Task 2 rests on the contracts
     only, and Task 1 changed no pinned string.
+
+144. **`panic-fixes` tasks merged.** Task 2 (docs, `40a44fa`, no
+    report) and Task 1 (code, `54dc3c1`,
+    `plans/reports/panic-fixes-task-1-report.md`) merged `--no-ff`.
+    Merge gate green on `panic-fixes`: fmt, build, 969 tests, clippy.
+    Smoke run matches: cap error exit 1, `168h` accepted, the swapped
+    reminder before the cap, `/dev/full` gives the write error exit 1,
+    `| true` exits 141 silent, help line per contract 3. Task 1 found
+    an older bug: chrono's unix `Local` lists `Ambiguous` with the
+    smaller offset first, so `storage.rs` keeps the second pass for a
+    repeated-hour time, against SPEC §2.1. Confirmed by hand: `TZ=
+    Europe/Warsaw mlm start 02:30` on 2026-10-25 stores `01:30Z`, not
+    `00:30Z`. The AC3 test accepts either pass until the user decides.
+    Worktrees and branches removed.
 
 ## Open questions (still need answers)
 
