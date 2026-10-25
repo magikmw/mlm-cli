@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 143
+- **Next entry**: 144
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `panic-fixes` (plan folded, task plans next, entry 142), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `panic-fixes` (task plans done, implementing, entry 143), then `relative-ids` (entry 137). `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -1975,6 +1975,22 @@ SPEC.md and PLAN.md:
     before its start. Entry 140's claim that option 1 avoids the
     backwards case is wrong for that crossing. U3-U8 dropped by
     default.
+
+143. **`panic-fixes` task plans.** Task 1
+    (`plans/panic-fixes-task-1-code.md`) pins the mechanisms: a helper
+    child holding a pipe's read end for the closed-pipe tests (no
+    `std::io::pipe`, no `libc`), a computed POSIX `TZ` rule for both
+    passes, and an `OutputError` type in `src/lib.rs` that `main`
+    checks at the top level only. Accepted deviations: R1 printing
+    functions take a writer, so 40 existing test calls gain a sink
+    argument with no assertion change; R2 the flush sits after each
+    write, not once in `main`, so no unreachable branch costs coverage;
+    R8 two pipe tests use a fixed past date. Task 2
+    (`plans/panic-fixes-task-2-docs.md`) keeps S10 (README Possible
+    issues mirrors SPEC §1.2a) and S8 (SPEC §7 "plain line output").
+    U2 stays out of the docs. README's stale "1.85+" (the crate needs
+    1.88) is out of scope. No realign: Task 2 rests on the contracts
+    only, and Task 1 changed no pinned string.
 
 ## Open questions (still need answers)
 
