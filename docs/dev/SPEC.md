@@ -594,8 +594,11 @@ The delete line recreates what was deleted:
   echoes its real wall-clock time.
 - A note recreates as `mlm note '<body>'`, the body as one
   single-quoted shell token. Single quotes stop a shell from expanding
-  `$VAR`, `$(...)` or backticks on replay. One token stops a body that
-  starts with `--verbose`, or holds `--`, from being read as flags.
+  `$VAR`, `$(...)` or backticks on replay. One token keeps a body that
+  starts with a flag and goes on past it, such as `--verbose x`, from
+  being read as flags. A body that is exactly one of mlm's flags, or
+  exactly `--`, does not replay. The shell passes the quoted token
+  intact, but mlm's parser still reads it as a flag.
   Each `'` in the body prints as `'"'"'`.
 - `--date YYYY-MM-DD` is added only when the entry's date is not today.
   In a note's line it comes before the body, because `mlm note` reads

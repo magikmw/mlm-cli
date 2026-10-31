@@ -286,8 +286,9 @@ fn push_stint_section(lines: &mut Vec<String>, view: &StatusView) {
     lines.extend(view.stints.iter().map(stint_line));
 }
 
-/// The complete rendered status view (SPEC §7.1): pure, no I/O, no clock. Lines joined by `\n`, exactly one
-/// trailing `\n`, no trailing blank line.
+/// The complete rendered status view (SPEC §7.1): pure, no I/O, no
+/// clock. Lines joined by `\n`, exactly one trailing `\n`, no trailing
+/// blank line.
 pub fn render(view: &StatusView) -> String {
     let mut header_line = view.header.clone();
     if let Some(suffix) = &view.receiving_date_suffix {
@@ -447,11 +448,11 @@ fn overnight_for(
 }
 
 /// Resolution flow, in order: parses `date_arg` against `now`'s local
-/// date and rejects a future date (SPEC §3.5), loads the history through `target_date`'s week,
-/// classifies `target_date`'s punches, accounts `target_date`'s own week
-/// (not today's, §3.5/NOTES decision 26) with today's live minutes in the
-/// current week, and computes the daily-target/EOD hints only when
-/// `target_date` is today.
+/// date and rejects a future date (SPEC §3.5), loads the history
+/// through `target_date`'s week, classifies `target_date`'s punches,
+/// accounts `target_date`'s own week (not today's, §3.5/NOTES decision
+/// 26) with today's live minutes in the current week, and computes the
+/// daily-target/EOD hints only when `target_date` is today.
 pub fn resolve(
     date_arg: Option<&str>,
     now: DateTime<Local>,

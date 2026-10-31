@@ -263,9 +263,19 @@ fn punch_recreate_line<Tz: TimeZone>(p: &Punch, today: chrono::NaiveDate, tz: &T
 /// escapes that POSIX shells don't. That body gets a plain description,
 /// `deleted note (YYYY-MM-DD): <body>`, with the date always shown.
 /// Every other body gets `deleted. to recreate: <note_recreate_line>`.
+///
+/// A body stored before insert-time normalization can hold newlines.
+/// The plain description collapses each `\r`/`\n` run to one space, so
+/// it stays one line.
 fn note_deleted_line(n: &Note, today: chrono::NaiveDate) -> String {
     if n.body.contains('\\') {
-        return format!("deleted note ({}): {}\n", format_date(n.date), n.body);
+        let body = n
+            .body
+            .split(['\r', '\n'])
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("deleted note ({}): {body}\n", format_date(n.date));
     }
     format!("deleted. to recreate: {}\n", note_recreate_line(n, today))
 }
@@ -295,8 +305,7 @@ fn note_recreate_line(n: &Note, today: chrono::NaiveDate) -> String {
 /// `storage::notes_for_date` on every invocation — never a cached
 /// listing from an earlier call (SPEC §3.9's stale-id rule). On delete,
 /// prints the line `note_deleted_line` builds (SPEC §7.4). All output
-/// goes to `out`. The delete stays when
-/// the output fails.
+/// goes to `out`. The delete stays when the output fails.
 pub fn delete_note<W: Write>(
     conn: &Connection,
     now: DateTime<Local>,
@@ -361,15 +370,15 @@ fn resolve_target_date(
 
 /// Shared `start`/`stop` implementation, parameterised by punch kind.
 ///
-/// Validation order (SPEC §3.4a, §6.1): date resolution happens first (a malformed or
-/// future `--date` is a hard error here, before TIME is even looked
-/// at), then TIME is parsed -- required when the resolved date isn't
-/// today (E1/new "required" case exits here, nothing written) -- then
-/// the note body is handed to `storage::insert_punch_with_note`, which
-/// itself validates empty/whitespace bodies *before* opening a
-/// transaction (E5) and wraps the punch+note pair in one transaction so
-/// a failure at either insert rolls back both (§6.1: a rejected note
-/// leaves no orphaned punch).
+/// Validation order (SPEC §3.4a, §6.1): date resolution happens first
+/// (a malformed or future `--date` is a hard error here, before TIME is
+/// even looked at), then TIME is parsed -- required when the resolved
+/// date isn't today (E1/new "required" case exits here, nothing
+/// written) -- then the note body is handed to
+/// `storage::insert_punch_with_note`, which itself validates
+/// empty/whitespace bodies *before* opening a transaction (E5) and wraps
+/// the punch+note pair in one transaction so a failure at either insert
+/// rolls back both (§6.1: a rejected note leaves no orphaned punch).
 ///
 /// Returns the target date and the new punch's row id -- `start` needs
 /// the id to tell its own just-written punch apart from a pre-existing
@@ -1520,6 +1529,20 @@ mod tests {
             line,
             format!("deleted note ({}): a\\b\n", format_date(today()))
         );
+    }
+
+    /// A note stored before insert-time normalization can still hold
+    /// newlines. Its backslash line stays one line.
+    #[test]
+    fn backslash_body_with_legacy_newlines_prints_one_line() {
+        let n = Note {
+            id: 1,
+            date: d(2026, 2, 10),
+            body: "a\\b\r\n\nc\rd".to_string(),
+            created_at_utc: fixed_now().with_timezone(&Utc),
+        };
+        let line = note_deleted_line(&n, today());
+        assert_eq!(line, "deleted note (2026-02-10): a\\b c d\n");
     }
 
     #[test]
