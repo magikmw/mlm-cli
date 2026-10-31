@@ -247,20 +247,32 @@ fn minus_one_date_is_yesterday() {
 }
 
 #[test]
-fn minus_one_week_and_month_are_value_errors() {
-    let (_d, db) = fresh();
-    fails(
-        &db,
-        &["export", "notes", "-w", "-1"],
-        1,
-        "error: invalid WEEK_ID \"-1\": expected YYYY-WW or WW\n",
-    );
-    fails(
-        &db,
-        &["export", "notes", "-m", "-1"],
-        1,
-        "error: invalid MONTH \"-1\": expected YYYY-MM or MM\n",
-    );
+fn minus_one_week_and_month_are_last_week_and_month() {
+    on_stable_today(|today| {
+        let (_d, db) = fresh();
+        let (mon, sun) = WeekId::current(today - Days::new(7)).span();
+        seed_on(&db, mon - Days::new(1), "before");
+        seed_on(&db, mon, "first");
+        seed_on(&db, sun, "last");
+        seed_on(&db, sun + Days::new(1), "after");
+        assert_eq!(
+            ok_stdout(&db, &["export", "notes", "-w", "-1"]),
+            line(mon, "first") + &line(sun, "last")
+        );
+
+        let (_d, db) = fresh();
+        let this_first = today.with_day(1).unwrap();
+        let last = this_first - Days::new(1);
+        let first = last.with_day(1).unwrap();
+        seed_on(&db, first - Days::new(1), "before");
+        seed_on(&db, first, "first");
+        seed_on(&db, last, "last");
+        seed_on(&db, this_first, "after");
+        assert_eq!(
+            ok_stdout(&db, &["export", "notes", "-m", "-1"]),
+            line(first, "first") + &line(last, "last")
+        );
+    });
 }
 
 // --- 6.5 bare and unpadded forms ------------------------------------------
@@ -377,27 +389,27 @@ const VALUE_ERRORS: [(&[&str], &str); 12] = [
     ),
     (
         &["-w", "abc"],
-        "error: invalid WEEK_ID \"abc\": expected YYYY-WW or WW\n",
+        "error: invalid WEEK_ID \"abc\": expected YYYY-WW, WW or -N (N >= 1)\n",
     ),
     (
         &["-m", "2026-003"],
-        "error: invalid MONTH \"2026-003\": expected YYYY-MM or MM\n",
+        "error: invalid MONTH \"2026-003\": expected YYYY-MM, MM or -N (N >= 1)\n",
     ),
     (
         &["-m", "26-03"],
-        "error: invalid MONTH \"26-03\": expected YYYY-MM or MM\n",
+        "error: invalid MONTH \"26-03\": expected YYYY-MM, MM or -N (N >= 1)\n",
     ),
     (
         &["-m", "abc"],
-        "error: invalid MONTH \"abc\": expected YYYY-MM or MM\n",
+        "error: invalid MONTH \"abc\": expected YYYY-MM, MM or -N (N >= 1)\n",
     ),
     (
         &["-m", "2026-"],
-        "error: invalid MONTH \"2026-\": expected YYYY-MM or MM\n",
+        "error: invalid MONTH \"2026-\": expected YYYY-MM, MM or -N (N >= 1)\n",
     ),
     (
         &["-m", "-d"],
-        "error: invalid MONTH \"-d\": expected YYYY-MM or MM\n",
+        "error: invalid MONTH \"-d\": expected YYYY-MM, MM or -N (N >= 1)\n",
     ),
     (
         &["-m", "0"],
@@ -540,8 +552,8 @@ Usage: mlm export notes [OPTIONS]
 
 Options:
   -d, --date <DATE>     Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g. `-1` = yesterday)
-  -w, --week <WEEK_ID>  Week to export: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7)
-  -m, --month <MONTH>   Month to export: YYYY-MM (e.g. 2026-03) or a bare month number (e.g. 3)
+  -w, --week <WEEK_ID>  Week to export: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week)
+  -m, --month <MONTH>   Month to export: YYYY-MM (e.g. 2026-03), a bare month number (e.g. 3), or `-N` for N months before this one (e.g. `-1` = last month)
   -v, --verbose         Enable debug-level logging
   -h, --help            Print help
 ";
