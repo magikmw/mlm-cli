@@ -11,7 +11,7 @@ read only the one you need.
 
 - **Next entry**: 159
 - **Last release**: `v0.4.0`
-- **`main`**: `962ac9f` (`v0.4.0`)
+- **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
 - **Active changeset**: none. `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
