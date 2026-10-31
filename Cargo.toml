@@ -20,6 +20,7 @@ exclude = [
     "clippy.toml",
     "coverage-baseline.json",
     "cliff.toml",
+    "deny.toml",
     "dist-workspace.toml",
     "scripts/",
 ]
