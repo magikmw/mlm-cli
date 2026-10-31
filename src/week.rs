@@ -5,11 +5,6 @@
 //! fulfillment are all legitimately negative (SPEC §5) and nothing here
 //! is ever clamped.
 
-// TODO(integration): drop this once Milestones 9/10/11 consume the module.
-// Until then nothing in the binary references it, so every item is
-// "dead" from the non-test build's point of view.
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, NaiveDate};
@@ -52,11 +47,11 @@ pub trait WeekTargets {
     fn target_override(&self, week: WeekId) -> Option<i64>;
 }
 
-/// One week's fully-computed accounting (PLAN.md interface contract 3).
+/// One week's fully-computed accounting.
 ///
 /// All minute fields are signed and nothing is clamped anywhere (SPEC §5's
 /// closing note). Deliberately carries **no** "is this the current week"
-/// boolean: that comparison is Milestone 9's sole job, a pure function of
+/// boolean: that comparison is `render.rs`'s sole job, a pure function of
 /// `week` and an injected "now" — which is why this module never needs to
 /// know the date at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,13 +71,13 @@ pub struct WeekAccounting {
     /// `target - fulfillment`. Negative means ahead of target.
     pub owed: i64,
     /// `fulfillment - target`; becomes the next week's `carry_in`.
-    /// Algebraically `-owed`; both are stored because contract 3 names both
-    /// and SPEC §7.2's output renders both.
+    /// Algebraically `-owed`; both are stored because SPEC §7.2's output
+    /// renders both.
     pub carry_out: i64,
 }
 
 /// In-memory `WeekData` + `WeekTargets`. Used by this module's tests, and
-/// reusable by Milestones 9/10/11's tests. `history::load_history` is the
+/// reusable by other modules' tests. `history::load_history` is the
 /// loader that fills it from storage, and a failed read there is an error.
 #[derive(Debug, Default, Clone)]
 pub struct WeekLedger {

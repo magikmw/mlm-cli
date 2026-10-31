@@ -1,9 +1,4 @@
 //! `week target` command (SPEC.md §3.7, §2.3, §6.1).
-//!
-//! Wired into `main`'s dispatch by a later milestone (PLAN.md's
-//! Milestone 8 scope note); this module is unit-testable standalone
-//! against an in-memory `Connection` in the meantime.
-#![allow(dead_code)]
 
 use std::io::Write;
 
@@ -18,7 +13,7 @@ use crate::time::{format_minutes, parse_duration};
 /// The largest target `week target` accepts: the hours in a week (168h).
 pub const MAX_TARGET_MINUTES: i64 = 168 * 60;
 
-/// `week target` with a DURATION above `MAX_TARGET_MINUTES` (spec §4).
+/// `week target` with a DURATION above `MAX_TARGET_MINUTES` (SPEC §3.7).
 /// Holds the parsed minutes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetTooLarge(pub i64);
@@ -68,7 +63,7 @@ pub fn get_week_target(conn: &Connection, week_id: &WeekId) -> anyhow::Result<Op
     .map_err(anyhow::Error::from)
 }
 
-/// The success line of `week target` (SPEC §3.5), e.g.
+/// The success line of `week target` (SPEC §3.7), e.g.
 /// `Week 2026-41 target: 20h 00m`.
 pub fn echo_line(week: &WeekId, minutes: i64) -> String {
     format!("Week {week} target: {}", format_minutes(minutes))
@@ -103,7 +98,7 @@ pub fn apply(conn: &Connection, today: NaiveDate, args: &WeekTargetArgs) -> anyh
 }
 
 /// `mlm week target [WEEK_ID] DURATION` (§3.7): writes the override, then
-/// writes one line to `out` (§3.5). The target stays written when the
+/// writes one line to `out` (§7.4). The target stays written when the
 /// output fails.
 pub fn run<W: Write>(
     conn: &Connection,
@@ -199,7 +194,7 @@ mod tests {
         assert_eq!(get_week_target(&conn, &wk(2026, 7)).unwrap(), Some(200));
     }
 
-    // --- echo line (§3.5) ------------------------------------------------
+    // --- echo line (§3.7) ------------------------------------------------
 
     #[test]
     fn echo_line_formats_week_and_duration() {
@@ -421,7 +416,7 @@ mod tests {
         assert_eq!(get_week_target(&conn, &wk(2099, 1)).unwrap(), Some(600));
     }
 
-    // --- cap (panic-fixes spec §4) -------------------------------------
+    // --- cap (SPEC §3.7) -----------------------------------------------
 
     #[test]
     fn cap_boundary_values_are_accepted() {
@@ -493,7 +488,7 @@ mod tests {
         assert_eq!(row_count(&conn), 0);
     }
 
-    // --- output writer (panic-fixes spec §5) ---------------------------
+    // --- output writer (SPEC §6.3) -------------------------------------
 
     #[test]
     fn run_writes_the_echo_line() {

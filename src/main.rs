@@ -9,7 +9,7 @@ fn main() {
     std::process::exit(run());
 }
 
-/// Top-level control flow (PLAN.md interface contract 7). `main` itself
+/// Top-level control flow (SPEC §6.3). `main` itself
 /// returns `()`: a `Result`-returning `main` would print errors via
 /// `Debug` rather than `Display`, so the error path is explicit here.
 fn run() -> i32 {
@@ -22,7 +22,7 @@ fn run() -> i32 {
     };
 
     // --verbose raises the log level to Debug; the default is Warn
-    // (SPEC §4.1). env_logger is initialized here, once, before anything
+    // (SPEC §3). env_logger is initialized here, once, before anything
     // else runs.
     let level = if cli.verbose {
         log::LevelFilter::Debug
@@ -63,15 +63,14 @@ fn dispatch<W: Write>(cli: &Cli, now: DateTime<Local>, out: &mut W) -> anyhow::R
         Command::Stop(a) => commands::stop(&mut conn, now, a),
         Command::Note(a) => commands::note(&mut conn, now, a),
         // `delete note`/`delete punch`: list mode (no id) or delete
-        // mode (id given), per Milestone 14. Both branches share one
+        // mode (id given), per SPEC §3.9. Both branches share one
         // required subcommand enum (`DeleteTarget`, no `Option`
         // wrapper, unlike `Week`'s `action`) so there is no `None` arm.
         Command::Delete(args) => match &args.target {
             DeleteTarget::Note(a) => commands::delete_note(&conn, now, a, out),
             DeleteTarget::Punch(a) => commands::delete_punch(&conn, now, a, out),
         },
-        // `week`/`week target` full dispatch (Milestone 11's wiring
-        // pass): `action: Some(Target(..))` routes to Milestone 8's
+        // `week`/`week target`: `action: Some(Target(..))` routes to
         // `week_target::run`; `action: None` renders the week view.
         Command::Week(args) => match &args.action {
             Some(WeekAction::Target(t)) => week_target::run(&conn, now.date_naive(), t, out),

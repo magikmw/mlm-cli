@@ -6,7 +6,7 @@ name: Sign release artifacts
 # archives (and dist-manifest.json) uploaded to it. This job downloads those
 # assets, signs each of them with minisign, and uploads the resulting `.sig`
 # files back to the same release so cargo-binstall (and humans) can verify
-# them. See SIGNING.md for the full story.
+# them. See docs/SIGNING.md for the full story.
 on:
   workflow_call:
     inputs:

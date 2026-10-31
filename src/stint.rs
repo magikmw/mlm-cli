@@ -3,11 +3,7 @@
 //! parentheses matching.
 //!
 //! Pure logic only: no DB access, no rendering, and no clock reads — the
-//! current instant is injected (PLAN.md contract 6).
-
-// Milestone 5 is built ahead of its consumers (Milestones 9/10/11), so the
-// public surface here has no in-crate caller yet outside the tests.
-#![allow(dead_code)]
+//! current instant is injected.
 
 use chrono::{DateTime, NaiveDate, Utc};
 
@@ -40,8 +36,8 @@ pub struct OrphanedEnd {
     pub punch: Punch,
 }
 
-/// A renderable anomaly, in the two shapes SPEC.md §7.3 defines.
-/// Milestone 5 produces the data; Milestone 9 produces the text.
+/// A renderable anomaly, in the two shapes SPEC.md §7.3 defines. This
+/// module produces the data; `anomalies.rs` produces the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anomaly {
     /// More than one trailing unmatched start (§4.3, E7).
@@ -51,8 +47,7 @@ pub enum Anomaly {
     OrphanedEnd { punch: Punch },
 }
 
-/// Everything this milestone produces for one calendar date
-/// (PLAN.md contract 2).
+/// Everything pairing produces for one calendar date.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DayStints {
     /// Completed stints, ascending by `end` instant (emission order). The
@@ -78,12 +73,12 @@ impl DayStints {
         open.len() > 1 || !orphaned_ends.is_empty()
     }
 
-    /// Cheap O(1) has-any-anomaly signal (Milestone 11's per-row `[!]`).
+    /// Cheap O(1) has-any-anomaly signal (`week`'s per-row `[!]`).
     pub fn has_anomaly(&self) -> bool {
         self.has_anomaly
     }
 
-    /// Renderable-detail anomaly list (Milestone 10's status output).
+    /// Renderable-detail anomaly list (`status`'s output).
     ///
     /// Emission order is fixed: `MultipleOpenStints` first (when more than one
     /// stint is open), then one `OrphanedEnd` per orphan in ascending-instant
@@ -127,7 +122,7 @@ impl DayStints {
 ///
 /// `punches` — all punches for a single date, in any order; the ordering used
 /// for pairing is derived here, not trusted from the caller.
-/// `now` — the injected current instant (PLAN.md contract 6). Never read from
+/// `now` — the injected current instant. Never read from
 /// the system clock inside this module.
 pub fn classify(punches: &[Punch], now: DateTime<Utc>) -> DayStints {
     debug_assert!(
@@ -145,10 +140,9 @@ pub fn classify(punches: &[Punch], now: DateTime<Utc>) -> DayStints {
     sorted.sort_by_key(|q| (q.at_utc, q.kind, q.id));
 
     // Step 2: nearest-match (LIFO) scan, processed one tied-instant group at
-    // a time (§4.3's original step 2, generalized per boundary-stint-pairing
-    // spec §3.2). Every group of size 1 (no tie) reduces to exactly the old
-    // flat scan: a lone `End` has nothing to skip in phase (a) besides
-    // itself, and a lone `Start` only ever gets pushed in phase (b).
+    // a time (SPEC §4.3 step 2). Every group of size 1 (no tie) reduces to
+    // the plain flat scan: a lone `End` has nothing to skip in phase (a)
+    // besides itself, and a lone `Start` only ever gets pushed in phase (b).
     let mut stack: Vec<Punch> = Vec::new();
     let mut completed: Vec<Stint> = Vec::new();
     let mut orphaned_ends: Vec<OrphanedEnd> = Vec::new();
@@ -193,7 +187,7 @@ pub fn classify(punches: &[Punch], now: DateTime<Utc>) -> DayStints {
 
 /// Closes one tied-instant `group` (all punches sharing one `at_utc`)
 /// against `stack` (carried in from strictly earlier groups), per
-/// boundary-stint-pairing spec §3.2: an `End` preferentially closes an
+/// SPEC §4.3 step 2: an `End` preferentially closes an
 /// already-open `Start` from before this instant, before this group's own
 /// `Start`s are pushed and before any of this group's `End`s pair against
 /// each other.
@@ -208,7 +202,7 @@ fn close_group(
     completed: &mut Vec<Stint>,
     orphaned_ends: &mut Vec<OrphanedEnd>,
 ) {
-    // §3.2 step 1: each End in the group, in ascending id order, closes a
+    // Phase (a): each End in the group, in ascending id order, closes a
     // Start carried in from a strictly earlier group — before any of this
     // group's own Starts are pushed.
     let mut unclosed_ends: Vec<Punch> = Vec::new();
@@ -223,12 +217,12 @@ fn close_group(
         }
     }
 
-    // §3.2 step 2: push the group's own Starts (LIFO, id order).
+    // Phase (b): push the group's own Starts (LIFO, id order).
     for punch in group.iter().filter(|q| q.kind == PunchKind::Start) {
         stack.push(*punch);
     }
 
-    // §3.2 step 3: any End that found nothing open before this group now
+    // Phase (c): any End that found nothing open before this group now
     // pops against the stack again, which holds only this group's own
     // just-pushed Starts (or is empty) — same-instant E14 pairing, or an
     // ordinary orphaned-end anomaly.
@@ -246,7 +240,7 @@ fn close_group(
 
 /// Classifies `punches` (one calendar date) same as `classify()`, then
 /// resolves an unambiguous midnight-spanning stint against its immediate
-/// neighbors (boundary-stint-pairing spec §4.1/§4.2).
+/// neighbors (SPEC §4.3.1).
 ///
 /// `prev_punches`/`next_punches` must be the literal adjacent calendar
 /// dates' punches — `punches[0].date.pred_opt()`/`.succ_opt()` — never
@@ -332,7 +326,7 @@ pub fn classify_at(
 
 /// Returns `true` when `earlier_open_count` is 1, `later` has exactly one
 /// orphaned end, and that orphan is `later_punches`'s chronologically first
-/// punch (boundary-stint-pairing spec §4.1's three-part gate). `false`
+/// punch (SPEC §4.3.1's three-part gate). `false`
 /// otherwise — no splice.
 ///
 /// Takes `later_punches` raw (not just the already-computed `later`)
@@ -594,11 +588,11 @@ mod tests {
         assert_eq!(d.completed_minutes(), 0);
     }
 
-    // --- §3.2: tied-instant-group scan (boundary-stint-pairing) ---------
+    // --- tied-instant-group scan (SPEC §4.3 step 2) ----------------------
 
     #[test]
     fn tied_end_and_start_closes_earlier_open_start() {
-        // Spec §3.2's worked example: an `end` at a tied instant must
+        // An `end` at a tied instant must
         // preferentially close a `start` carried in from strictly earlier,
         // before pairing with the same-instant `start`.
         let d = classify(
@@ -678,7 +672,7 @@ mod tests {
     fn open_stint_in_the_future_clamps_to_zero_minutes() {
         // Reachable today: SPEC.md §3.2 imposes no chronology check at insert,
         // so `mlm start 23:00` typed at 09:00 leaves a future open start. A
-        // negative elapsed time would read as a bug (plan §7.3).
+        // negative elapsed time would read as a bug.
         let d = classify(&[p(1, "23:00", Start)], at("09:00"));
 
         assert_eq!(d.open.len(), 1);
@@ -898,7 +892,7 @@ mod tests {
         assert_eq!(d1.completed_minutes() + d2.completed_minutes(), 0);
     }
 
-    // --- T11, T12: contract-2 and §2.4 invariants -----------------------
+    // --- T11, T12: DayStints and §2.4 invariants ------------------------
 
     #[test]
     fn has_anomaly_matches_anomalies_nonempty() {
@@ -926,7 +920,7 @@ mod tests {
         }
     }
 
-    // --- classify_at: boundary-stint-pairing spec §4.1/§4.2 --------------
+    // --- classify_at: SPEC §4.3.1 ----------------------------------------
 
     #[test]
     fn splice_next_direction_closes_open_into_completed() {
@@ -1129,7 +1123,7 @@ mod tests {
         let day1 = date();
         let day2 = day1.succ_opt().unwrap();
         let punches = vec![p_on(1, day1, "22:00", Start)];
-        // next's first instant is a tied End+Start group: per §3.2 it
+        // next's first instant is a tied End+Start group: per SPEC §4.3 step 2 it
         // zero-pairs internally (nothing open before it on day2's own
         // timeline) before orphaned_ends is ever populated, so this shape
         // never reaches the splice check as a genuine orphan at all.

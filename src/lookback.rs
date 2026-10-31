@@ -621,7 +621,7 @@ mod tests {
         assert_eq!(entries[1].finding.age_days, 4);
     }
 
-    // Yesterday is inside the window (SPEC §3.1).
+    // Yesterday is inside the window (SPEC §7.1).
     #[test]
     fn lookback_includes_age_one_single_open_start() {
         let conn = test_db();

@@ -1,18 +1,13 @@
-//! Shared rendering helpers for `status` (Milestone 10) and `week`
-//! (Milestone 11): the §7.1/§7.2 week headline, the stop-hint phrases and
-//! the carry marker line. Pure functions only — no DB access, no CLI
-//! wiring, no `chrono::Local::now()` (PLAN.md contract 6: "now" is
-//! always an injected parameter).
+//! Shared rendering helpers for `status` and `week`: the §7.1/§7.2 week
+//! headline, the stop-hint phrases and the carry marker line. Pure
+//! functions only — no DB access, no CLI wiring, no
+//! `chrono::Local::now()` ("now" is always an injected parameter).
 //!
 //! This module is the single place that decides wording and sign
 //! handling for both consumers, so that they never grow their own
-//! diverging copies (see plans/milestone-9-shared-rendering.md). The
-//! per-date anomaly facts and lines live in `anomalies.rs`, and the
-//! lookback finding types in `lookback.rs`. Both are re-exported here.
-
-// Milestone 9 is built ahead of its consumers (Milestones 10/11), so
-// the public surface here has no in-crate caller yet outside the tests.
-#![allow(dead_code)]
+//! diverging copies. The per-date anomaly facts and lines live in
+//! `anomalies.rs`, and the lookback finding types in `lookback.rs`. Both
+//! are re-exported here.
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, Utc};
 
@@ -82,7 +77,7 @@ fn current_week_headline(acct: &WeekAccounting, today: NaiveDate) -> String {
 ///
 /// The current week reads `acct`'s live-inclusive `fulfillment` and
 /// `target` (see `current_week_headline`). Every other week reads its
-/// signed `owed`. `today` is the injected "now" date (PLAN.md contract 6),
+/// signed `owed`. `today` is the injected "now" date,
 /// so the weekday in the deadline phrase is always *today's*, never that of
 /// whatever date the caller happens to be displaying (§7.1, F11).
 pub fn week_headline(acct: &WeekAccounting, today: NaiveDate) -> String {
@@ -188,7 +183,7 @@ pub fn stop_time_hint_closes(start: NaiveTime, next: Option<NaiveTime>) -> Strin
     )
 }
 
-/// Data behind the carry-in anomaly marker (SPEC §3.3).
+/// Data behind the carry-in anomaly marker (SPEC §7.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CarryMarker {
     /// Number of earlier weeks with an anomaly, at least 1.

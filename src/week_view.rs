@@ -1,13 +1,12 @@
-//! `mlm week [WEEK_ID] [--notes]` — the rendering half of Milestone 11 (SPEC.md
-//! §3.6, §7.2, §7.3).
+//! `mlm week [WEEK_ID] [--notes]` rendering (SPEC.md §3.6, §7.2, §7.3).
 //!
-//! Split per the milestone plan: [`render_week`] is a pure function
-//! (`WeekView` in, `String` out — no DB, no clock) so every §7.2/§7.3
-//! layout rule is a byte-exact unit test; [`run`] is the thin command
-//! wiring that resolves the week id, builds the view from storage +
-//! Milestone 5/6/9, and prints it.
+//! [`render_week`] is a pure function (`WeekView` in, `String` out — no
+//! DB, no clock) so every §7.2/§7.3 layout rule is a byte-exact unit
+//! test; [`run`] is the thin command wiring that resolves the week id,
+//! builds the view from storage, pairing, accounting and rendering
+//! helpers, and prints it.
 //!
-//! Landmine notes (plans/reports/milestone-9-review.md):
+//! Landmine notes:
 //! - `render::week_headline` takes the whole `WeekAccounting`, so the
 //!   current week's headline here and in `status` come from one function.
 //! - Per-row anomaly detection goes through `anomalies::build_facts`
@@ -69,8 +68,8 @@ pub struct WeekRow {
     pub notes: Vec<String>,
 }
 
-/// Everything `render_week` needs, and nothing it can compute itself
-/// (plan §2.1). `owed` is deliberately absent: the headline already
+/// Everything `render_week` needs, and nothing it can compute itself.
+/// `owed` is deliberately absent: the headline already
 /// states the week's standing, so the renderer cannot accidentally
 /// re-render it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,7 +84,7 @@ pub struct WeekView {
     pub fulfillment_minutes: i64,
     pub target_minutes: i64,
     /// Set when earlier weeks hold anomalies that feed this week's
-    /// carry-in (SPEC §3.3). Adds a line above the totals and a `[!]` on
+    /// carry-in (SPEC §7.3). Adds a line above the totals and a `[!]` on
     /// the Carry-in figure.
     pub carry_marker: Option<CarryMarker>,
     /// Monday case: the overnight stint's date when the shown week contains
@@ -317,7 +316,7 @@ fn with_notes(conn: &Connection, view: &mut WeekView, week: WeekId) -> anyhow::R
 }
 
 /// `mlm week [WEEK_ID] [--notes]` (the `action: None` arm; `week target` is
-/// Milestone 8's `week_target::run`, dispatched separately by `main`).
+/// `week_target::run`, dispatched separately by `main`).
 pub fn run<W: Write>(
     conn: &Connection,
     now: DateTime<Local>,
@@ -800,7 +799,7 @@ Target:        40h 00m
         }
     }
 
-    // ---- Group B: rollup construction (contract 4) ----
+    // ---- Group B: rollup construction ----
 
     fn week_dates() -> [NaiveDate; 7] {
         wk(2026, 7).dates()
@@ -827,7 +826,7 @@ Target:        40h 00m
     }
 
     // B2 (superseded E15 -- now the ordinary midnight-splice case,
-    // boundary-stint-pairing spec §4.3)
+    // SPEC §4.3.1)
     #[test]
     fn b2_bucketing_now_splices_across_midnight() {
         use PunchKind::{End, Start};

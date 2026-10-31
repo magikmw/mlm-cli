@@ -1,15 +1,10 @@
 //! Punch and note storage (SPEC.md §2.1, §2.3, §6.1).
 //!
-//! Owns the `Punch`/`PunchKind`/`Note` types (PLAN.md interface contract
-//! 8) and every read/write over the `punches`/`notes` tables. Every
-//! local-to-UTC conversion is generic over `chrono::TimeZone` and takes
-//! the timezone as an explicit parameter — there is no hidden
-//! `chrono::Local` reference and no hidden `Utc::now()` call anywhere in
-//! this module (PLAN.md interface contract 6).
-
-// Milestone 4 is built ahead of its consumers (Milestones 5/7/10/11), so
-// several public items here have no in-crate caller yet outside tests.
-#![allow(dead_code)]
+//! Owns the `Punch`/`PunchKind`/`Note` types and every read/write over
+//! the `punches`/`notes` tables. Every local-to-UTC conversion is generic
+//! over `chrono::TimeZone` and takes the timezone as an explicit
+//! parameter — there is no hidden `chrono::Local` reference and no hidden
+//! `Utc::now()` call anywhere in this module.
 
 use std::fmt;
 
@@ -49,9 +44,9 @@ fn parse_date(s: &str, column: &'static str) -> Result<NaiveDate, StorageError> 
 /// Which side of a stint a punch is (§1.3).
 ///
 /// `Ord` is load-bearing beyond this module: `Start` must order before
-/// `End` so Milestone 5's §4.3 step-1 tie-break at an identical instant
-/// pairs cleanly (E14), and Milestone 5 imports this type directly
-/// (PLAN.md contract 8) rather than declaring its own copy.
+/// `End` so the §4.3 step-1 tie-break at an identical instant pairs
+/// cleanly (E14), and `stint.rs` imports this type directly rather than
+/// declaring its own copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PunchKind {
     Start,
@@ -72,7 +67,7 @@ impl PunchKind {
     /// bypassed by an externally-edited DB file.
     #[allow(
         clippy::should_implement_trait,
-        reason = "named from_str per PLAN.md's pinned public API, not std::str::FromStr"
+        reason = "an inherent from_str returning StorageError, not std::str::FromStr"
     )]
     pub fn from_str(s: &str) -> Result<Self, StorageError> {
         match s {
@@ -86,12 +81,12 @@ impl PunchKind {
     }
 }
 
-/// One stored start/end event, read back (PLAN.md interface contract 1).
+/// One stored start/end event, read back.
 ///
 /// The full row, typed: an ordered instant (UTC), the local calendar date
 /// it was recorded against, a start/end kind, and an insertion-order
-/// tiebreaker (`id`). `Copy` because every field already is, and
-/// Milestone 5's pairing wants to move these around freely.
+/// tiebreaker (`id`). `Copy` because every field already is, and stint
+/// pairing moves these around freely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Punch {
     /// `punches.id`. Surrogate key, monotonically increasing with
@@ -131,8 +126,7 @@ pub struct Note {
     pub created_at_utc: DateTime<Utc>,
 }
 
-/// Failures surfaced by this module (PLAN.md interface contract 7: each
-/// wave-1 milestone owns its own concrete error enum).
+/// Failures surfaced by this module.
 #[derive(Debug)]
 pub enum StorageError {
     /// A `rusqlite` failure (constraint violation, closed connection,
@@ -152,10 +146,10 @@ pub enum StorageError {
     /// was written.
     NonexistentLocalTime { local: NaiveDateTime },
 
-    /// §5 of the delete-punches-notes spec: a delete was attempted
-    /// against an internal id that doesn't exist (already deleted, or
-    /// external DB tampering — SPEC.md §2.2 puts concurrent access out
-    /// of scope, so this is defensive, not a concurrency feature).
+    /// A delete was attempted against an internal id that doesn't exist
+    /// (already deleted, or external DB tampering — SPEC.md §2.2 puts
+    /// concurrent access out of scope, so this is defensive, not a
+    /// concurrency feature).
     /// Nothing was written.
     NotFound { id: i64 },
 }
@@ -247,7 +241,7 @@ fn real_instant<Tz: TimeZone>(
 
 /// Build a `Punch` from a local wall-clock date/time without touching a
 /// DB. Uses the same conversion path `insert_punch` uses, so hand-built
-/// fixtures (Milestone 5's tests) cannot drift from what real storage
+/// fixtures (`stint.rs`'s tests) cannot drift from what real storage
 /// produces.
 pub fn punch_from_local<Tz: TimeZone>(
     id: i64,
@@ -289,7 +283,7 @@ pub fn insert_punch<Tz: TimeZone>(
 /// Collapse every maximal run of `\r`/`\n` in `s` to exactly one ASCII
 /// space; every other character (including other whitespace such as
 /// space/tab, and Unicode line separators U+2028/U+2029) passes through
-/// untouched (spec §2). Intended to run on an already-trimmed body, so it
+/// untouched (SPEC §2.3). Intended to run on an already-trimmed body, so it
 /// only ever needs to handle *embedded* runs, not leading/trailing ones.
 fn normalize_newlines(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -388,8 +382,8 @@ fn punch_from_row(
 
 /// All punches for a local calendar date, sorted by instant; ties at an
 /// identical instant are broken first by kind (`start` before `end`), then
-/// by `id` (insertion order) — SPEC.md §4.3 step 1 / PLAN.md interface
-/// contract 10. Empty `Vec`, never an error, for a date with no rows.
+/// by `id` (insertion order) — SPEC.md §4.3 step 1. Empty `Vec`, never
+/// an error, for a date with no rows.
 pub fn punches_for_date(conn: &Connection, date: NaiveDate) -> Result<Vec<Punch>, StorageError> {
     let mut stmt = conn.prepare(
         "SELECT id, at_utc, \"date\", kind FROM punches WHERE \"date\" = ?1 \
@@ -405,8 +399,7 @@ pub fn punches_for_date(conn: &Connection, date: NaiveDate) -> Result<Vec<Punch>
 }
 
 /// All punches whose local `date` falls within `[from, to]` inclusive,
-/// same ordering contract as `punches_for_date` extended across dates
-/// (PLAN.md interface contract 10, for Milestones 6/11).
+/// same ordering contract as `punches_for_date` extended across dates.
 pub fn punches_in_range(
     conn: &Connection,
     from: NaiveDate,
@@ -539,8 +532,7 @@ pub fn delete_note(conn: &Connection, id: i64) -> Result<Note, StorageError> {
 }
 
 /// The earliest local date with any punch or note data, across all
-/// history. `None` if the database is empty (PLAN.md interface contract
-/// 10, for Milestones 6/11).
+/// history. `None` if the database is empty.
 pub fn earliest_data_date(conn: &Connection) -> Result<Option<NaiveDate>, StorageError> {
     let min: Option<String> = conn.query_row(
         "SELECT MIN(d) FROM ( \
@@ -1256,9 +1248,8 @@ mod tests {
         assert_eq!(after[0].date, d(2026, 3, 30));
 
         // 2026-03-28T11:00Z -> 2026-03-30T10:00Z: 48 hours minus the 1-hour
-        // DST offset change = 47, not the plan's stated 46 (arithmetic slip
-        // in plans/milestone-4-punch-note-storage.md §7.6 D1 — verified by
-        // direct subtraction of the two asserted instants above).
+        // DST offset change = 47 (direct subtraction of the two asserted
+        // instants above).
         let gap = after[0].at_utc - before[0].at_utc;
         assert_eq!(gap.num_hours(), 47);
     }
@@ -1587,7 +1578,7 @@ mod tests {
         assert!(result.is_err(), "CHECK constraint should reject 'START'");
     }
 
-    // --- earliest_data_date / punches_in_range (contract 10) --------------
+    // --- earliest_data_date / punches_in_range ----------------------------
 
     #[test]
     fn earliest_data_date_is_none_for_empty_database() {

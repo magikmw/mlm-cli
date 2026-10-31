@@ -2,13 +2,9 @@
 //! §4.2, §6.1).
 //!
 //! Pure string-in/value-out logic: no database, no CLI, no calendar
-//! dates. Every duration in this project is a plain `i64` minute count
-//! (PLAN.md interface contract 11) and every duration shown to a user
-//! goes through [`format_minutes`] — there is no second formatter.
-
-// These are the wave-1 building blocks consumed by later milestones
-// (4, 7, 8, 9, 10, 11); nothing in `main` calls them yet.
-#![allow(dead_code)]
+//! dates. Every duration in this project is a plain `i64` minute count,
+//! and every duration shown to a user goes through [`format_minutes`]
+//! (SPEC §4.2). There is no second formatter.
 
 use chrono::NaiveTime;
 
@@ -127,7 +123,7 @@ pub enum TimeParseError {
     },
     /// No `TIME` given where one was required: `--date` resolved to a
     /// day other than today, so "default to now" has no meaning
-    /// (backdated-punches spec §3). This is a "missing input" error,
+    /// (SPEC §3.4a). This is a "missing input" error,
     /// not a parse failure -- it carries no offending string.
     Required,
 }
@@ -331,7 +327,7 @@ mod tests {
     #[test]
     fn accepts_a_minute_component_of_sixty_or_more() {
         // DURATION is a magnitude, not a wall-clock offset, so the `m`
-        // component is not capped at 59 (plan §1.3, flagged decision).
+        // component is not capped at 59.
         assert_eq!(parse_duration("1h90m").unwrap(), 150);
         assert_eq!(parse_duration("90m").unwrap(), 90);
     }
@@ -367,7 +363,7 @@ mod tests {
         assert_eq!(format_minutes(parse_duration("33h30m").unwrap()), "33h 30m");
     }
 
-    // --- error surface (contract 7: Display + std::error::Error) ---
+    // --- error surface (Display + std::error::Error) ---
 
     #[test]
     fn errors_render_as_a_single_ascii_line() {
