@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 156
+- **Next entry**: 157
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (implementing, entry 155). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (tasks merged, entry 156). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2119,6 +2119,15 @@ SPEC.md and PLAN.md:
     (`plans/relative-ids-task-2-docs.md`): SPEC F16-F17, E35-E38, E10,
     E24, E29 rewritten; R2 (help-row padding quoted in §3.7) checked at
     merge. Both go to implementation in parallel.
+
+156. **`relative-ids` tasks merged.** Task 2 `6a87f0f` (SPEC, README;
+    E36 week floor given as numbers, report
+    `plans/reports/relative-ids-task-2-report.md`), Task 1 `24d1799`
+    (code, tests; shipped as planned, no report). Gate on the
+    integration branch green: fmt, build, 1018 tests, clippy; coverage
+    99.517%. E36's `-53540`/`-53541` match the shipped test. Binary
+    spot checks match the contracts. Worktrees removed. Phase 14 next
+    (`returning`); phase 13 awaits the user's model choice.
 
 ## Open questions (still need answers)
 
