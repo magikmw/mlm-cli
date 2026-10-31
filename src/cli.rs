@@ -6,7 +6,7 @@ use std::io::Write;
 use clap::error::{ContextKind, ContextValue};
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-/// The `status`/`week` long-help glossary (SPEC §4.2).
+/// The `status`/`week` long-help glossary (SPEC §3.5).
 pub const GLOSSARY: &str = "\
 Glossary:
   worked
@@ -40,8 +40,8 @@ Glossary:
       Two stints whose times cross, such as 09:00-12:00 and 10:00-11:00.
       The overlap counts twice in the totals until you delete a punch.
   orphaned end
-      An end punch with no start before it. It adds no minutes. Add a
-      start before it, or delete it.
+      An end punch with no open start to pair with. It adds no minutes.
+      Add a start before it, or delete it.
   so far, started yesterday
       A stint line ending `so far, started yesterday, not counted until
       stopped` marks a start still open from yesterday, listed on
@@ -162,7 +162,7 @@ pub struct NoteArgs {
 }
 
 // ---------------------------------------------------------------------------
-// `delete note|punch` (Milestone 14).
+// `delete note|punch` (SPEC §3.9).
 // ---------------------------------------------------------------------------
 
 /// `mlm delete note|punch [ID] [--date DATE]`. Mirrors `WeekArgs`'
@@ -193,19 +193,18 @@ pub enum DeleteTarget {
 
 /// Shared `[ID] [--date DATE]` shape for `delete note` and
 /// `delete punch`. Unlike `PunchArgs`/`NoteArgs`, there is no
-/// free-text trailing positional on this struct, so the
-/// backdated-punches spec §2.1 ordering footgun (`--date` must
-/// precede free note text or be silently absorbed into it) does not
+/// free-text trailing positional on this struct, so the SPEC §3.4a
+/// ordering footgun (`--date` must precede free note text or be
+/// silently absorbed into it) does not
 /// apply to parsing these arguments: once clap has consumed (at most)
 /// one token into `id`, every remaining token is still scanned
 /// normally for named flags, `--date`/`-d` included, regardless of
 /// where it appears relative to `id`.
 #[derive(Args, Debug)]
 pub struct DeleteEntryArgs {
-    /// 1-based position from the most recent listing for this date
-    /// (run with no ID to list instead of deleting). Position 0 and
-    /// anything past the current count are rejected once the app
-    /// resolves this against a fresh listing, not here.
+    /// Position in this date's list, numbered from 1, taken fresh when
+    /// this runs (run with no ID to see it). 0 or a number past the list
+    /// is rejected.
     // `allow_negative_numbers = true` is required despite the `u32`
     // value_parser: verified empirically against clap 4.6.6 that,
     // without it, a bare `-1` positional here is rejected as
@@ -224,8 +223,7 @@ pub struct DeleteEntryArgs {
 }
 
 // ---------------------------------------------------------------------------
-// `week` / `week target` (Milestone 8; the `action: None` non-subcommand
-// arm is Milestone 11's to render, per PLAN.md's "canonical shape" note).
+// `week` / `week target` (SPEC §3.6, §3.7).
 // ---------------------------------------------------------------------------
 
 /// `mlm week [WEEK_ID] [--notes]` and `mlm week target [WEEK_ID] DURATION`
@@ -427,7 +425,7 @@ fn rename_args_context(err: &mut clap::Error) {
 }
 
 /// A one-token `week target` whose token parses as a WEEK_ID is missing
-/// its DURATION (relative-ids spec §3). Returns the error bare
+/// its DURATION (SPEC §3.7). Returns the error bare
 /// `mlm week target` gives, by parsing `args` again without the token.
 /// No WEEK_ID is a valid DURATION, which needs an `h` or `m` suffix.
 fn lone_week_id_failure(
@@ -631,7 +629,7 @@ mod tests {
         ));
     }
 
-    // --- Milestone 7: start/stop/note parse shape -----------------------
+    // --- start/stop/note parse shape ------------------------------------
 
     fn start_args(cli: Cli) -> PunchArgs {
         match cli.command {
@@ -722,7 +720,7 @@ mod tests {
         );
     }
 
-    /// Locks down the §2.1 clap footgun: once `--date` appears after
+    /// Locks down the SPEC §3.4a clap footgun: once `--date` appears after
     /// NOTE tokens have started, clap's trailing_var_arg no longer
     /// re-scans for named flags, so `--date -1` is silently absorbed
     /// into the note body instead of being parsed as the date flag.
@@ -756,7 +754,7 @@ mod tests {
         );
     }
 
-    /// Same §2.1 clap footgun as `date_flag_after_note_text_is_absorbed_into_the_note_body`,
+    /// Same SPEC §3.4a clap footgun as `date_flag_after_note_text_is_absorbed_into_the_note_body`,
     /// but for `note`: `NoteArgs.body` has the identical
     /// `trailing_var_arg = true, allow_hyphen_values = true` shape as
     /// `PunchArgs.note`, so it carries the identical risk and needs its
@@ -813,10 +811,9 @@ mod tests {
         assert_eq!(a.id, None);
     }
 
-    /// Direct regression test for the milestone-14 plan §5 claim: unlike
-    /// `PunchArgs`/`NoteArgs`, `DeleteEntryArgs` has no free-text trailing
-    /// positional for `--date` to be swallowed into, so `id`/`--date`
-    /// parse identically regardless of order.
+    /// Unlike `PunchArgs`/`NoteArgs`, `DeleteEntryArgs` has no free-text
+    /// trailing positional for `--date` to be swallowed into, so
+    /// `id`/`--date` parse identically regardless of order.
     #[test]
     fn delete_id_and_date_parse_the_same_regardless_of_order() {
         let a = delete_note_args(delete_target(
@@ -850,7 +847,7 @@ mod tests {
         assert!(matches!(delete_target(cli), DeleteTarget::Punch(_)));
     }
 
-    /// Rejecting `0` is `commands.rs`'s job (Task 3), not clap's -- this
+    /// Rejecting `0` is `commands.rs`'s job, not clap's -- this
     /// test only pins clap's own permissiveness for a bare `u32` field.
     #[test]
     fn delete_id_zero_is_accepted_by_clap() {
@@ -861,7 +858,7 @@ mod tests {
     }
 
     /// Negative/non-numeric/overflow id rejected at the clap level
-    /// (milestone-14 plan, Task 2 acceptance criteria).
+    /// (SPEC §3.9).
     #[test]
     fn delete_negative_id_is_rejected_by_clap() {
         let err = parse(&["mlm", "delete", "note", "-1"]).unwrap_err();
@@ -869,7 +866,7 @@ mod tests {
     }
 
     /// Negative/non-numeric/overflow id rejected at the clap level
-    /// (milestone-14 plan, Task 2 acceptance criteria).
+    /// (SPEC §3.9).
     #[test]
     fn delete_non_numeric_id_is_rejected_by_clap() {
         let err = parse(&["mlm", "delete", "note", "abc"]).unwrap_err();
@@ -877,7 +874,7 @@ mod tests {
     }
 
     /// Negative/non-numeric/overflow id rejected at the clap level
-    /// (milestone-14 plan, Task 2 acceptance criteria). `4294967296` is
+    /// (SPEC §3.9). `4294967296` is
     /// `u32::MAX + 1`.
     #[test]
     fn delete_id_past_u32_max_is_rejected_by_clap() {
@@ -1058,7 +1055,7 @@ mod tests {
         assert!(text.contains("Usage:"), "{text}");
     }
 
-    // --- relative WEEK_ID (relative-ids spec §3) ---------------------------
+    // --- relative WEEK_ID (SPEC §3.6) -------------------------------------
 
     #[test]
     fn week_positional_takes_negative_numbers_verbatim() {

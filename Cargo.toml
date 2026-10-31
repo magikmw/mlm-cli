@@ -14,9 +14,7 @@ categories = ["command-line-utilities"]
 # `cargo install`-ing the tool, just noise in the published package.
 exclude = [
     "AGENTS.md",
-    "NOTES.md",
-    "PLAN.md",
-    "plans/",
+    "docs/dev/",
     ".githooks/",
     ".github/",
     "clippy.toml",
@@ -42,7 +40,7 @@ rusqlite_migration = "2.6.0"
 chrono-tz = "0.10.4"
 tempfile = "3.27.0"
 
-# cargo-binstall verifies release artifacts against this key; see SIGNING.md.
+# cargo-binstall verifies release artifacts against this key; see docs/SIGNING.md.
 # The matching private key lives only as the MINISIGN_SECRET_KEY GitHub
 # Actions secret, never in this repo.
 [package.metadata.binstall.signing]

@@ -103,10 +103,7 @@ pub enum DbError {
         path: Option<PathBuf>,
         source: rusqlite_migration::Error,
     },
-    /// Statement execution failure. Reserved for later milestones'
-    /// queries, declared here so they extend rather than redefine
-    /// `DbError` (contract 7). Constructed from Milestone 4 onward.
-    #[allow(dead_code, reason = "declared for Milestone 4+ query call sites")]
+    /// Statement execution failure.
     Query(rusqlite::Error),
 }
 
@@ -745,7 +742,7 @@ mod tests {
         }
     }
 
-    // T17 — PLAN.md Milestone 3 AC: apply_migrations works path-free.
+    // T17 — apply_migrations works path-free.
     #[test]
     fn apply_migrations_works_against_an_in_memory_connection() {
         let mut conn = Connection::open_in_memory().expect("open in memory");
@@ -760,7 +757,7 @@ mod tests {
         assert_eq!(count(&conn, "punches"), 1);
     }
 
-    // T18 — PLAN.md Milestone 3 AC: MLM_DB_PATH is honored.
+    // T18 — MLM_DB_PATH is honored.
     #[test]
     fn db_path_resolution_prefers_a_non_empty_env_override() {
         let overridden =

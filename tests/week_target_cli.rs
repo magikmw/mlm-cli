@@ -194,6 +194,13 @@ fn long_help_carries_glossary() {
             "{args:?}"
         );
         assert!(flat.contains("counted on the day it started"), "{args:?}");
+        assert!(
+            flat.contains(
+                "An end punch with no open start to pair with. It adds no minutes. \
+                 Add a start before it, or delete it."
+            ),
+            "{args:?}"
+        );
     }
 }
 

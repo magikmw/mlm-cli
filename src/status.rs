@@ -1,7 +1,7 @@
 //! `status` command: resolution (I/O + arithmetic) and rendering (pure)
 //! (SPEC.md §3.5, §7.1, §7.3, §7.4).
 //!
-//! Split into three layers (plans/milestone-10-status-command.md §1):
+//! Split into three layers:
 //! - [`resolve`] does all I/O and arithmetic, producing an owned
 //!   [`StatusView`].
 //! - [`render`] is a pure `&StatusView -> String` function with no
@@ -10,8 +10,7 @@
 //!   propagates the error on `Err` (`main`'s existing `exit_code` maps
 //!   that to a nonzero exit and an stderr message, SPEC.md §6.3).
 //!
-//! Two landmines from Milestone 9's independent review are handled
-//! deliberately here, not incidentally:
+//! Two landmines are handled deliberately here, not incidentally:
 //! - `render::status_week_line`/`week_headline` take a
 //!   `&week::WeekAccounting` (named fields) instead of positional
 //!   minutes. Every call in this module goes through the single
@@ -149,8 +148,8 @@ pub struct OvernightLine {
     pub duration_minutes: i64,
 }
 
-/// Everything `render` needs, already computed and in final form
-/// (plans/milestone-10-status-command.md §1). `render` makes no
+/// Everything `render` needs, already computed and in final form.
+/// `render` makes no
 /// decisions beyond layout and section omission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusView {
@@ -200,7 +199,7 @@ pub struct StatusView {
 /// (§7.1's "Day total:" / "Week NN:" lines line up).
 const LABEL_WIDTH: usize = render::LABEL_WIDTH;
 
-/// L3: the day-total line (plans/milestone-10-status-command.md §3.4).
+/// L3: the day-total line (SPEC §7.1).
 /// Today's total includes live minutes and reads `(incl. ongoing)`. An
 /// earlier date keeps `(+ ongoing)` or `(+ unclosed)` with no live credit.
 fn day_total_line(view: &StatusView) -> String {
@@ -287,8 +286,7 @@ fn push_stint_section(lines: &mut Vec<String>, view: &StatusView) {
     lines.extend(view.stints.iter().map(stint_line));
 }
 
-/// The complete rendered status view (plans/milestone-10-status-command.md
-/// §3.1): pure, no I/O, no clock. Lines joined by `\n`, exactly one
+/// The complete rendered status view (SPEC §7.1): pure, no I/O, no clock. Lines joined by `\n`, exactly one
 /// trailing `\n`, no trailing blank line.
 pub fn render(view: &StatusView) -> String {
     let mut header_line = view.header.clone();
@@ -332,7 +330,7 @@ fn week_line(acct: &WeekAccounting, today: NaiveDate) -> String {
 }
 
 /// Builds stint rows from `DayStints`, sorted by start time ascending
-/// (plans/milestone-10-status-command.md §3.7). A stable sort preserves
+/// (SPEC §7.1). A stable sort preserves
 /// each side's own relative order (completed by end instant, open by
 /// start instant) for the rare tie at an identical start time.
 fn build_stint_lines(day: &DayStints, open_stint_age: OpenStintAge) -> Vec<StintLine> {
@@ -448,9 +446,8 @@ fn overnight_for(
     })
 }
 
-/// Resolution flow (plans/milestone-10-status-command.md §2.2, exact
-/// order): parses `date_arg` against `now`'s local date and rejects a
-/// future date (§4.5), loads the history through `target_date`'s week,
+/// Resolution flow, in order: parses `date_arg` against `now`'s local
+/// date and rejects a future date (SPEC §3.5), loads the history through `target_date`'s week,
 /// classifies `target_date`'s punches, accounts `target_date`'s own week
 /// (not today's, §3.5/NOTES decision 26) with today's live minutes in the
 /// current week, and computes the daily-target/EOD hints only when
@@ -522,8 +519,7 @@ pub fn resolve(
 // ---------------------------------------------------------------------------
 
 /// `mlm status [DATE]` (SPEC.md §3.5). Writes the rendered view to
-/// `out` on success (§7.4: only `status`/`week` produce stdout output);
-/// a hard error propagates for `main`'s shared `exit_code` path to print
+/// `out` on success; a hard error propagates for `main`'s shared `exit_code` path to print
 /// to stderr and exit nonzero (§6.3).
 pub fn run<W: Write>(
     conn: &Connection,
@@ -857,7 +853,7 @@ mod tests {
         view.stints = vec![StintLine {
             start: t(23, 10),
             end: StintEnd::Now,
-            duration_minutes: 635, // 10h 35m, spec §4's own example
+            duration_minutes: 635, // 10h 35m, SPEC §7.1's own example
             spans_to_next_day: false,
             open_stint_age: Some(OpenStintAge::Yesterday),
         }];
@@ -1609,7 +1605,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // midnight-spanning splice (boundary-stint-pairing spec §4.3):
+    // midnight-spanning splice (SPEC §4.3.1):
     // `resolve` and `history::load_history` bucket neighbor-date punches
     // and call `stint::classify_at` instead of `stint::classify`.
     // -----------------------------------------------------------------
