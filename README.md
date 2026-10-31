@@ -21,7 +21,10 @@ date plus a short note of what you did, stored in SQLite.
   text, one per line, ready for a report or another tool
 - `delete note`/`delete punch` — list a date's entries and delete one
   by number; prints a ready-to-run command to recreate what was
-  deleted
+  deleted. The command uses POSIX single quotes, so check it before
+  running it in another shell such as Windows cmd or PowerShell. A
+  note mlm cannot quote safely prints with no command, and you retype
+  it yourself
 - Everything stored locally in SQLite — no account, no external
   service
 - Cross-platform: Linux (x86_64 and ARM64), Windows (MSVC), and macOS
@@ -76,9 +79,12 @@ too, signature-verified (see [`docs/SIGNING.md`](docs/SIGNING.md)).
 ### From source
 
 To build the same optimized, thin-LTO release binary the GitHub
-releases ship, rather than `cargo install`ing from crates.io:
+releases ship, rather than `cargo install`ing from crates.io, clone
+the repository and build inside it:
 
 ```sh
+git clone https://github.com/magikmw/mlm-cli.git
+cd mlm-cli
 cargo install cargo-dist
 dist build --artifacts=local --target <your-triple>
 ```
@@ -295,10 +301,11 @@ and the overlapping hour counts twice in the day total:
 The `week` row for that date gets `[!]` as well.
 
 Today's plain `status` (no `DATE`, or today's own date given
-explicitly) also checks dates 2 to 14 days old and appends a block for
+explicitly) also checks dates 2 to 14 days old and prints a block for
 every date it finds with an unclosed start, oldest first, so a
-forgotten `stop` from last week still shows up today. The block names
-the date:
+forgotten `stop` from last week still shows up today. These blocks
+print above the stint list, after any `[!]` lines for today itself.
+The block names the date:
 
 ```
 [!] unclosed start on Fri 2026-09-25 at 09:00 (5 days ago)
@@ -347,8 +354,8 @@ Week 2026-41:  08h 00m left to 08h 00m by end of Monday (fulfillment 00h 00m / t
   22:00-now    (15h 30m so far, started yesterday, not counted until stopped)
 ```
 
-If an earlier week has a flagged date, the last line of the page names
-it:
+If an earlier week has a flagged date, one more line names it. It is
+the last of the `[!]` and `[i]` lines, above the stint list:
 
 ```
 [!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
@@ -713,14 +720,18 @@ $ mlm delete note 1 --date 2026-09-10
 deleted. to recreate: mlm note --date 2026-09-10 'fixed migration runner bug'
 ```
 
-A body with a backslash in it gets no recreate command, because no
-quoting replays a backslash the same way in every shell. The line names
-the date and the body instead:
+The recreate command quotes the note with POSIX single quotes. Check
+it before you run it in another shell, because Windows cmd and
+PowerShell quote differently. When mlm cannot quote a note safely, it
+prints the date and the note with no recreate command:
 
 ```sh
 $ mlm delete note 1 --date 2026-09-11
 deleted note (2026-09-11): path C:\dir\file
 ```
+
+Retype that note with `mlm note --date 2026-09-11 '...'`, quoted the
+way your own shell needs.
 
 **Stale-id caveat**: `ID` is always resolved against a fresh listing
 at the moment you run `delete`, not whatever listing you last looked
@@ -746,11 +757,13 @@ deleted. to recreate: mlm stop 13:00
 ## Build (local dev)
 
 Plain `cargo`, no `dist` needed — a debug build, for iterating on the
-code itself:
+code itself. Run it inside a clone of the repository:
 
 ```sh
+git clone https://github.com/magikmw/mlm-cli.git
+cd mlm-cli
 cargo build
-MLM_DB_PATH=/tmp/mlm-dev.db cargo run -- start 9:00 "working on mlm"
+MLM_DB_PATH=/tmp/mlm-dev.db cargo run -- start 09:00 "working on mlm"
 MLM_DB_PATH=/tmp/mlm-dev.db cargo run -- status
 ```
 

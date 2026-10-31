@@ -754,8 +754,9 @@ mod tests {
         );
     }
 
-    /// Same SPEC §3.4a clap footgun as `date_flag_after_note_text_is_absorbed_into_the_note_body`,
-    /// but for `note`: `NoteArgs.body` has the identical
+    /// Same SPEC §3.4a clap footgun as
+    /// `date_flag_after_note_text_is_absorbed_into_the_note_body`, but
+    /// for `note`: `NoteArgs.body` has the identical
     /// `trailing_var_arg = true, allow_hyphen_values = true` shape as
     /// `PunchArgs.note`, so it carries the identical risk and needs its
     /// own lock-down rather than relying on `start`'s test to stand in
