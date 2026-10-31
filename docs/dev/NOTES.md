@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 162
+- **Next entry**: 163
 - **Last release**: `v0.4.0`
 - **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: `doc-drift` (locked, entry 161). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `doc-drift` (tasks merged, entry 162). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2188,6 +2188,17 @@ SPEC.md and PLAN.md:
     Phases 5-8 collapse into the spec's §6: two tasks with disjoint
     files, every fix already stated at text level by the sweep, the
     review and the spec, so no separate task plans. Phase 10 skipped.
+
+162. **`doc-drift` tasks merged.** Task 2 `7819faf` (docs; F6 banners
+    in their own commit; report `plans/reports/doc-drift-task-2-report.md`,
+    four small additions kept). Task 1 `1813a38` (code; R1 fixed, F8,
+    F9, F20 rule over `src/`, seven false dead-code allows removed,
+    package excludes `docs/dev/`; report
+    `plans/reports/doc-drift-task-1-report.md`). Its open questions
+    (bare `§N` comments, test-plan labels, an unbuilt `DbError::Query`)
+    are dropped under the triage rules. Gate green: fmt, build, 1023
+    tests, clippy; `cargo package --list` has nothing under `docs/dev/`.
+    Phase 14 next.
 
 ## Open questions (still need answers)
 
