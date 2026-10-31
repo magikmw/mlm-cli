@@ -1,5 +1,7 @@
 # panic-fixes — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Baseline**: `main` at `dd91952`
 - **Changeset**: `panic-fixes` at `5ec515c` (clone `/tmp/cd-scratch/panic-fixes-final`, HEAD verified)
 - **Spec**: `docs/dev/specs/2026-10-25-panic-fixes.md`, SPEC §1.2a, §2.1, §3.7, §4.1, §6.1, §6.3, §7 intro, §8.2 E32-E34

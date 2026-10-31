@@ -1,5 +1,7 @@
 # Boundary & context disclosure cues — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: `v0.3.3` (commit `f04e77c`).
 
 **Status**: locked — adversarially reviewed:

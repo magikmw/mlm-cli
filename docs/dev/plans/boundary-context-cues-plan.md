@@ -1,5 +1,7 @@
 # Plan: boundary-context-cues
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-09-20-boundary-context-cues.md` (locked).
 
 ## Ladder-altitude check

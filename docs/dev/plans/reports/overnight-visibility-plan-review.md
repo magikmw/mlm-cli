@@ -1,5 +1,7 @@
 # Review: overnight-visibility plan
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/overnight-visibility-plan.md`. Spec (source of truth): `docs/dev/specs/2026-10-04-overnight-visibility.md`. Spec review: `docs/dev/plans/reports/overnight-visibility-spec-review.md`.
 
 ## Findings

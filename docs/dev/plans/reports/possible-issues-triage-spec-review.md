@@ -1,5 +1,7 @@
 # Possible-issues triage spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec under review: `docs/dev/specs/2026-10-03-possible-issues-triage.md` (draft, baseline `main` @ be85617).
 Checked against `src/status.rs`, `src/stint.rs`, `src/render.rs`, `src/week.rs`, `src/week_view.rs`, `src/commands.rs`, `src/week_target.rs`, `src/cli.rs`, `src/main.rs`, `src/date.rs`, `src/storage.rs`, SPEC.md, README.md, NOTES.md entry 96 and the validation report.
 

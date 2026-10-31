@@ -1,5 +1,7 @@
 # Task 3 plan: `status` per-date anomalies and the shared lookback
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 ## Re-alignment note (phase 9)
 
 This plan was originally written before Task 1's and Task 2's plans

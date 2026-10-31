@@ -1,5 +1,7 @@
 # Consistency report: open-punch-visibility task plans
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Scope: cross-document drift between the changeset plan, the locked
 spec, the six task plans, and the current source they describe. Not a
 review of any single document's own correctness.

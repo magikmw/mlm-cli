@@ -1,5 +1,7 @@
 # live-eod plan review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: docs/dev/plans/live-eod-plan.md against the locked spec
 docs/dev/specs/2026-10-03-live-eod.md, src/status.rs, src/stint.rs,
 docs/dev/SPEC.md, README.md, AGENTS.md.

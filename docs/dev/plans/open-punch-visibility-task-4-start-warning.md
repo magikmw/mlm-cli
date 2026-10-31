@@ -1,5 +1,7 @@
 # Task 4 plan: `start` stale-start warning (`src/commands.rs`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 **Update note**: this plan was originally written before Task 2's and
 Task 3's own plans existed, on assumed signatures for both
 (`docs/dev/plans/open-punch-visibility-task-2-render.md`,

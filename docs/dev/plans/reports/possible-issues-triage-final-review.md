@@ -1,5 +1,7 @@
 # Final review: possible-issues-triage
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Baseline: `be85617` (`main`)
 - Changeset: `possible-issues-triage` at `d50fa2d` (clone tip verified)
 - Clone: `/tmp/cd-scratch/possible-issues-triage-final`

@@ -1,5 +1,7 @@
 # Round 4 review — boundary-context-cues-plan.md
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Re-verified against current source (`src/status.rs`, `src/render.rs`,
 `src/stint.rs`, `src/week.rs`) and the locked spec
 (`docs/dev/specs/2026-09-20-boundary-context-cues.md`), re-deriving

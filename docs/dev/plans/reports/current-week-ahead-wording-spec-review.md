@@ -1,5 +1,7 @@
 # Review: 2026-09-24-current-week-ahead-wording.md
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Adversarial review of the design spec against the actual source it
 describes. Baseline: `v0.3.6` (matches HEAD's recent commits).
 

@@ -1,5 +1,7 @@
 # Task 2 plan: Anomaly rendering and fix-line wording
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Low-level plan for Task 2 of changeset `open-punch-visibility`.
 
 **Re-aligned** to the changeset plan's phase-9 update (NOTES.md entry

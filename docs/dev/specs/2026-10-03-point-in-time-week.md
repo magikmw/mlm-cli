@@ -1,5 +1,7 @@
 # Point-in-time week line — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `efd97e4` (`v0.3.6` plus the
 unreleased `open-punch-visibility` and `live-eod` changesets).
 **Status**: adversarially reviewed 2026-10-03

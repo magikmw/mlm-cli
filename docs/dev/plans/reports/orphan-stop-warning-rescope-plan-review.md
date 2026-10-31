@@ -1,5 +1,7 @@
 # Review: orphan-stop-warning plan (rescoped)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/orphan-stop-warning-plan.md` at `44f8537`.
 Spec: `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (locked).
 

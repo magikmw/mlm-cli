@@ -1,5 +1,7 @@
 # overnight-visibility fix pass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Branch `ov-fixpass`, created from the `overnight-visibility` tip `ca58e72`
 (the worktree started on an older base, so the branch was cut fresh from
 the integration tip).

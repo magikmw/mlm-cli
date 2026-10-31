@@ -1,5 +1,7 @@
 # orphan-stop-warning — spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (branch
 `orphan-stop-warning`, baseline `4c451d7` confirmed as `main`'s head)
 against `src/commands.rs`, `src/lookback.rs`, `src/anomalies.rs`,

@@ -1,5 +1,7 @@
 # Final review: week-notes
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Tip `a1c315b` (clone HEAD matched). Baseline `3bcff42`.
 
 ## Verification

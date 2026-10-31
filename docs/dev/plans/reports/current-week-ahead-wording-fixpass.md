@@ -1,5 +1,7 @@
 # Fix pass — current-week-ahead-wording
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Actioned the triaged findings from
 `current-week-ahead-wording-fresh-eyes.md`. Docs only, no `src/`
 changes.

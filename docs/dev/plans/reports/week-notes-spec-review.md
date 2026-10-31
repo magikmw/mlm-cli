@@ -1,5 +1,7 @@
 # week-notes spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Spec under review: `docs/dev/specs/2026-10-24-week-notes.md` (untracked draft)
 - Source baseline: branch `week-notes` = `main` = `3bcff42`
 - Clap probes: replica of `WeekArgs` + `WeekTargetArgs` with a `notes: bool` (`-n`/`--notes`) flag, clap 4.6.6, built in `/tmp/cd-scratch/week-notes-spec`

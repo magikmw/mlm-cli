@@ -1,5 +1,7 @@
 # Task 1 plan — code: `render.rs` + `status.rs`
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 ## What I read
 
 - `docs/dev/plans/status-wording-fixes-plan.md` (locked, one review round folded in) — full.

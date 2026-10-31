@@ -1,5 +1,7 @@
 # Final review: changeset `boundary-context-cues`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 **Scope reviewed**: `git diff 5b18ed1..boundary-context-cues` — the
 whole changeset diff from `main`'s pre-changeset baseline to the branch
 tip (`c28977d`, the merge of `worktree-agent-aadafdd8c6defb4ce`).

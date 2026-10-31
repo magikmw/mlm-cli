@@ -1,5 +1,7 @@
 # export notes — fresh-eyes run
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: /tmp/cd-sandbox/export-notes/ (artifact `mlm`, `README.md`). Today was Sat 2026-10-24 (week 2026-43).
 All runs used `MLM_DB_PATH=/tmp/cd-sandbox/export-notes/test.db` unless noted (scratch DBs `big.db`, `typo.db`, `typo2.db`, `nodir/`, `nodir2/` also inside the sandbox).
 

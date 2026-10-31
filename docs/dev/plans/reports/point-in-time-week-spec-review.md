@@ -1,5 +1,7 @@
 # point-in-time-week spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec: `docs/dev/specs/2026-10-03-point-in-time-week.md` (called "spec" below).
 Checked against `src/status.rs`, `src/week_view.rs`, `src/render.rs`, `src/week.rs`,
 `src/stint.rs`, `docs/dev/SPEC.md`, `docs/dev/NOTES.md`, `README.md`.

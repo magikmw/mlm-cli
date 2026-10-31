@@ -1,5 +1,7 @@
 # Plan: open-punch-visibility
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 **Status**: adversarially reviewed 2026-09-26
 (`docs/dev/plans/reports/open-punch-visibility-plan-review.md`,
 ship-with-followups, 5 findings, folded — NOTES.md entry 78).

@@ -1,5 +1,7 @@
 # Review: panic-fixes plan
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/panic-fixes-plan.md` at `02f5b17` (branch `panic-fixes`).
 Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (locked). Also read NOTES.md entries 138-141, `docs/dev/plans/reports/panic-fixes-spec-review.md`, `docs/dev/plans/reports/unwrap-audit-review.md` F1, SPEC.md §1.2a, §2.1, §3.7, §4.1, §6-§6.3, README.md's `week target` section, and the source named below.
 

@@ -1,5 +1,7 @@
 # Plan review: point-in-time-week
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/point-in-time-week-plan.md`. Spec: `docs/dev/specs/2026-10-03-point-in-time-week.md` (locked). Reviewed against the working tree on branch `point-in-time-week`.
 
 Spec coverage check: every spec requirement maps to a plan line. §2 live/required/figures map to plan:42-76 and contracts 1-7. §3.1-3.4 map to contracts 1-5 and 8. §4 SPEC/README sweep maps to Task 2 (plan:223-231). §5/§6 map to contract 9. §7 test list maps to acceptance bullets (plan:169-201), each one present. Both week-accounting builders are named (plan:44-47). File ownership is disjoint (plan:212-214, 272). No file the change must touch is unowned, except the two process files in F9. The findings below are the defects.

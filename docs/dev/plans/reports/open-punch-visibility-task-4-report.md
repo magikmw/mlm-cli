@@ -1,5 +1,7 @@
 # Task 4 report: `start` stale-start warning + `render::Anomalies` cleanup
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Worktree branch: `worktree-agent-a2eb9012afd3a0808`.
 Commit: none — the pre-commit coverage-ratchet gate blocked the commit
 (see "Blocked" below). All changes are staged but uncommitted.

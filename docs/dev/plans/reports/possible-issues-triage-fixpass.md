@@ -1,5 +1,7 @@
 # Fix pass: possible-issues-triage
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Branch: `pit-fixpass`, created from `possible-issues-triage` at `5211698`. The dispatched worktree was not based on that tip (it sat on an unrelated branch), so I made the task branch from the tip rather than rebasing.
 - Gates: `cargo fmt`, `cargo build`, `cargo test` (726 unit plus integration, 0 failed), `cargo clippy --all-targets -- -D warnings` all clean.
 - Smoke runs used `MLM_DB_PATH=/tmp/fp-s1.db`. They cover the swapped-order message, the future `status` error (exit 1), and `week target --help`. The `week 'foo$(id)'` token cannot go through the shell wrapper here, so an integration test covers it.

@@ -1,5 +1,7 @@
 # Task 2 low-level plan: docs (`README.md` + `docs/dev/SPEC.md`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset: `status-wording-fixes`.
 
 ## Read in full before writing this plan

@@ -1,5 +1,7 @@
 # Adversarial review — `open-punch-visibility-plan.md`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed against the locked spec
 (`docs/dev/specs/2026-09-26-open-punch-visibility.md`) and the current
 source (`src/stint.rs`, `src/render.rs`, `src/status.rs`,

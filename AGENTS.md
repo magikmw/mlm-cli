@@ -27,7 +27,9 @@ Remaining stretch ideas (not implemented):
 `mlm` is both a library (`src/lib.rs`) and a thin binary (`src/main.rs`)
 in the same package, specifically so `examples/`/`tests/` can reuse the
 real logic instead of re-deriving it — new top-level modules go in
-`src/lib.rs`'s `pub mod` list.
+`src/lib.rs`'s `pub mod` list. `src/lib.rs` also holds the exit-code
+mapping (`exit_code`: 0, 1, or 141 for a broken stdout pipe),
+`OutputError` and `emit`, which every stdout write goes through.
 
 - `src/cli.rs` — clap arg definitions (`Cli`, `Command`, per-command args)
 - `src/db.rs` — SQLite connection + schema/migrations, app-data path
@@ -35,8 +37,11 @@ real logic instead of re-deriving it — new top-level modules go in
 - `src/time.rs` — TIME/DURATION parsing and the one duration formatter
 - `src/date.rs` — DATE/WEEK_ID/MONTH parsing, `WeekId`, and a month's
   first and last day
-- `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note insert+read,
-  one ranged week-target-override read, and one ranged note read
+- `src/storage.rs` — `Punch`/`PunchKind`/`Note`, punch/note inserts,
+  the per-date reads (`punches_for_date` and `notes_for_date`, which
+  `delete` uses and `status` uses for its notes), the deletes
+  (`delete_punch`, `delete_note`), the ranged punch read, one ranged
+  week-target-override read, and one ranged note read
   (`notes_in_range`, an inclusive date range in, a flat `Vec<Note>`
   out, ascending by date, insertion order within a date) that
   `week --notes` and `export notes` call
@@ -64,7 +69,8 @@ real logic instead of re-deriving it — new top-level modules go in
   `src/week_view.rs` — per-command wiring over the above
 - `src/export.rs` — `mlm export notes`, which resolves the range, makes
   one ranged note read and prints one line per note
-- `src/main.rs` — CLI entry point: parses args, dispatches, exit code
+- `src/main.rs` — CLI entry point: parses args, dispatches, prints the
+  `error:` line and exits with `mlm::exit_code`'s code
 - `examples/seed_test_data.rs` — dev-only test-data generator (below)
 
 ## Documentation
@@ -86,9 +92,10 @@ detail, so it's not what this rule forbids).
 
 - Keep platform paths going through `directories`, don't hardcode
   `~/.local/share` or `%APPDATA%` anywhere else.
-- Target platforms: Linux and Windows (MSVC). `rusqlite` uses the
-  `bundled` feature so SQLite compiles from source — no external
-  system dependency needed on either platform.
+- Target platforms: Linux (x86_64 and ARM64), Windows (MSVC), and
+  macOS (Intel and Apple Silicon). `rusqlite` uses the `bundled`
+  feature so SQLite compiles from source — no external system
+  dependency needed on any of them.
 - Cargo.lock is committed (this ships a binary).
 
 ## Verifying changes

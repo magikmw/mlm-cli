@@ -1,5 +1,7 @@
 # panic-fixes fix 2 — DST boundary minutes
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 ## Base
 
 - Worktree started on `main` (`962ac9f`), not on `panic-fixes`
