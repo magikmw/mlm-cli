@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 163
+- **Next entry**: 164
 - **Last release**: `v0.4.0`
 - **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: `doc-drift` (tasks merged, entry 162). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `doc-drift` (triaged, fix pass out, entry 163). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2199,6 +2199,30 @@ SPEC.md and PLAN.md:
     are dropped under the triage rules. Gate green: fmt, build, 1023
     tests, clippy; `cargo package --list` has nothing under `docs/dev/`.
     Phase 14 next.
+
+### 163. doc-drift fresh-eyes and final review triaged
+
+- Final review ran on Opus, ship-with-followups, three low findings
+  (`doc-drift-final-review.md`).
+- The user chose to fix four fresh-eyes items, all README:
+  - (1) a clone step in "From source" and "Build (local dev)"
+  - (2) the dev example uses `09:00`
+  - (3) the delete recreate line gets a general quoting note, not a
+    backslash-specific one. The line uses POSIX single quotes, other
+    shells (Windows cmd, PowerShell) quote differently, and a note mlm
+    cannot quote safely prints with no recreate line. The user's call,
+    because more than backslashes can break replay depending on the shell.
+  - (9) the old-start blocks and the carry-in line print above the stint
+    list, not after it
+- The other nine fresh-eyes findings are dropped as pre-existing behavior.
+- Final review (a), a body that is exactly one of mlm's flags: SPEC §7.4's
+  sentence is narrowed to say those bodies do not replay. No `--` in the
+  recreate line. The shell passes the quoted body intact, but mlm's parser
+  still reads a bare `-h` as a flag.
+- Final review (b): the backslash fallback collapses newlines so it
+  stays one line.
+- Final review (c): four doc comments rewrapped.
+- One fix-pass dispatch covers all of it.
 
 ## Open questions (still need answers)
 
