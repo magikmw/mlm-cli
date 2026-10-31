@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 165
+- **Next entry**: 166
 - **Last release**: `v0.4.0`
 - **`main`**: doc-drift merge (`v0.4.0` + six unreleased changesets)
-- **Active changeset**: none. `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `deny-check` (spec draft, entry 165). `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2237,6 +2237,17 @@ SPEC.md and PLAN.md:
   newline.
 - The spec, the sweep report and every `doc-drift-*` report are bannered.
 - `doc-drift` merged to `main` `--no-ff`, unreleased.
+
+### 165. deny-check brainstorm
+
+- The user wants a scan that pauses a release without breaking the
+  release flow. `cargo deny` is dependency scanning, not SAST. CodeQL
+  default setup already covers SAST on GitHub.
+- Scope: `advisories` (vulnerable, unmaintained, yanked) and `licenses`
+  (allowlist taken from the current lockfile), as a `[y/N]` pause in
+  `scripts/prep_release.sh` before the version bump.
+- Out: `bans`, `sources`, and a scheduled CI job.
+- Phase 14 skipped, because nothing user-visible changes.
 
 ## Open questions (still need answers)
 
