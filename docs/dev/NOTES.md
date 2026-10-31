@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 157
+- **Next entry**: 158
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (tasks merged, entry 156). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (final review running, entry 157). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2128,6 +2128,13 @@ SPEC.md and PLAN.md:
     99.517%. E36's `-53540`/`-53541` match the shipped test. Binary
     spot checks match the contracts. Worktrees removed. Phase 14 next
     (`returning`); phase 13 awaits the user's model choice.
+
+157. **`relative-ids` fresh-eyes triaged; final review on Opus.**
+    Fresh-eyes (`plans/reports/relative-ids-fresh-eyes.md`, 13
+    findings, `returning` tier): user said fix none, save none. Each was
+    an already-decided rule or behavior that existed before the
+    changeset. Final review dispatched on Opus (user's choice), clone
+    `/tmp/cd-scratch/relative-ids-final` at `0580e6f`.
 
 ## Open questions (still need answers)
 
