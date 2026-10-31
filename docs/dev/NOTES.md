@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 165
+- **Next entry**: 168
 - **Last release**: `v0.4.0`
-- **`main`**: doc-drift merge (`v0.4.0` + six unreleased changesets)
-- **Active changeset**: none. `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **`main`**: deny-check merge (`v0.4.0` + seven unreleased changesets)
+- **Active changeset**: none. `deny-check` (entry 167), `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -25,7 +25,7 @@ Phase 0 profile (`coordinating-development`), set in entry 65:
 | Doc root | `docs/dev/` — `SPEC.md`, `NOTES.md`, `specs/`, `plans/`, `plans/reports/` |
 | Decision log | this file, numbered entries |
 | Model tier | Sonnet everywhere; escalation needs in-the-moment approval |
-| Release | `scripts/prep_release.sh` (reversible bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running |
+| Release | `scripts/prep_release.sh` (dependency check, reversible bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running. The check needs `cargo-deny` 0.19 and the network, and pauses on a finding |
 | Branches | one per changeset, one per task merged `--no-ff` into it, changeset to `main` at release |
 | Changeset id | topic slug, not a number |
 | Spec location | `docs/dev/specs/<date>-<slug>.md` |
@@ -2237,6 +2237,53 @@ SPEC.md and PLAN.md:
   newline.
 - The spec, the sweep report and every `doc-drift-*` report are bannered.
 - `doc-drift` merged to `main` `--no-ff`, unreleased.
+
+### 165. deny-check brainstorm
+
+- The user wants a scan that pauses a release without breaking the
+  release flow. `cargo deny` is dependency scanning, not SAST. CodeQL
+  default setup already covers SAST on GitHub.
+- Scope: `advisories` (vulnerable, unmaintained, yanked) and `licenses`
+  (allowlist taken from the current lockfile), as a `[y/N]` pause in
+  `scripts/prep_release.sh` before the version bump.
+- Out: `bans`, `sources`, and a scheduled CI job.
+- Phase 14 skipped, because nothing user-visible changes.
+
+### 166. deny-check spec review folded, locked
+
+- The user added CodeQL's one open alert (`ci.yml` has no `permissions`)
+  to scope, fixed with a top-level `contents: read`. Entry 165 predates
+  that call.
+- Review: 16 findings (`deny-check-spec-review.md`), all folded:
+  - the advisory keys are named, and `unsound` fails too
+  - stdin that is not a terminal stops without prompting, so a piped `y`
+    does not continue
+  - `read` at end of input and the check's exit code are guarded against
+    `set -e`
+  - the check runs with `--locked`, so a stop leaves `Cargo.lock` as it
+    was
+  - `deny.toml` joins the package `exclude`, so Task 1 owns `Cargo.toml`
+    for that line
+  - `unused-allowed-license = "allow"`
+  - findings 3 and 9-13 become known issues: a tool error prompts like a
+    finding, prep needs the network, a fix needs a branch, `y` leaves no
+    record, `release.sh` alone skips the check, and the alert closes at
+    the next release push
+  - the script header names the prerequisite, and the coordinator updates
+    the NOTES phase-0 release row at close-out
+- Locked. One task. Phases 5-10 collapse into spec §7. Phase 14 skipped.
+
+### 167. deny-check closed out and merged to main
+
+- Task 1 merged (`e9dc56d`), gate green: 1024 tests, `cargo deny --locked
+  check advisories licenses` clean, `deny.toml` out of the package,
+  `ci.yml` at `contents: read`.
+- The user skipped phase 13 for this changeset. Phase 14 was skipped at
+  lock.
+- The phase-0 release row names the dependency check and its
+  prerequisite.
+- The spec and reports are bannered. `deny-check` merged to `main`
+  `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 
