@@ -10,7 +10,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 160
+- **Next entry**: 161
 - **Last release**: `v0.4.0`
 - **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
 - **Active changeset**: `doc-drift` (entry 159). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
@@ -2163,6 +2163,22 @@ SPEC.md and PLAN.md:
     already reviewed the ground; one review covers both. SAST scanning
     (cargo-deny pause in `prep_release.sh`) waits until this lands in
     `main`.
+
+160. **`doc-drift` spec review folded**
+    (`plans/reports/doc-drift-spec-review.md`, 17 findings). F4 now
+    takes `src/commands.rs` as the source of truth over the archived
+    delete spec (R1, R2), with §8.2 entries (R3). F20 is a rule plus
+    grep, not a site list (R4). F2's dev command sets `MLM_DB_PATH`
+    (R7). F8 keeps the rejection rule (R12); F9 changes the first
+    sentence only (R11). F6 skips this changeset's own docs; F7 puts
+    reports in the close-out step (R9, R10). `Cargo.toml` and
+    `sign-artifacts.yml` join Task 1 for the `SIGNING.md` path, and
+    the `exclude` list moves to `docs/dev/`, since
+    `cargo package --list` showed the published crate ships every
+    archived spec (R13). R5, R6, R8, R14-R17 wording folded. R1's
+    doubled prefix (`deleted. to recreate: deleted note (...)...`)
+    goes to the user: documenting it is in scope, fixing it is a
+    behavior change.
 
 ## Open questions (still need answers)
 
