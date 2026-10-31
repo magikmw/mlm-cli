@@ -1,11 +1,7 @@
 # mlm — specification
 
-Formal spec, built incrementally from `NOTES.md` decisions. Sections
-land one at a time for review — this doc grows over several passes,
-not all at once.
-
-Status: **draft, complete through section 8, post-adversarial-review
-fixes applied**.
+Formal spec of `mlm`'s current behavior. Each changeset folds what it
+settles into this doc, so it describes the code as shipped.
 
 ## 1. Overview
 
@@ -39,7 +35,7 @@ Deliberately out of scope: future features not committed to, not
 things known to be broken or confusing today. See §1.2a for that.
 
 - Editing a punch/note after entry (deleting is implemented — `mlm
-  delete note|punch`; the correction path is delete-then-recreate, not
+  delete note|punch`, §3.9; the correction path is delete-then-recreate, not
   in-place edit).
 - Project tagging on notes/stints.
 - Terminal dashboard (ratatui) — deps are in, UI is not.
@@ -137,7 +133,7 @@ left to whatever the conversion library happens to do by default:
 
 ### 2.2 Migrations
 
-A `schema_migrations` table (or equivalent) tracks applied versions.
+SQLite's `user_version` pragma holds the applied schema version.
 Uses the [`rusqlite_migration`](https://docs.rs/rusqlite_migration)
 crate — ordered SQL migrations embedded in the binary, applies
 whatever's pending on `connect()` — instead of a hand-rolled runner.
@@ -158,7 +154,7 @@ anything, but no explicit WAL/busy-timeout tuning is planned.
 | `date` | `TEXT NOT NULL` | local calendar date, `YYYY-MM-DD`, computed app-side at insert from `at_utc` + local timezone — not a generated column (see §2.1) |
 | `kind` | `TEXT NOT NULL CHECK (kind IN ('start', 'end'))` | |
 
-Index on `date` (and probably `at_utc` for ordering within a date).
+Composite index `idx_punches_date_at_utc_id` on `(date, at_utc, id)`.
 
 **`notes`** — one row per work-log entry.
 
@@ -168,6 +164,9 @@ Index on `date` (and probably `at_utc` for ordering within a date).
 | `date` | `TEXT NOT NULL` | local calendar date, `YYYY-MM-DD` — a note is attached to a day, not an instant, so no `at_utc` here |
 | `body` | `TEXT NOT NULL` | free text, trimmed of leading/trailing whitespace before storage (§6.1); embedded `\r`/`\n` are collapsed to a single space rather than preserved verbatim, so a stored body is always exactly one line (this collapse never affects whether a body counts as empty — that check happens first, against the pre-normalization text, and rejects a whitespace-only body, including one that's only newlines, before either step touches it, §6.1); project-name prefix stays *in* the text (no `project` column — that's the deferred stretch, adding it later is a plain migration); no length cap or charset restriction beyond that newline collapse — the plain-ASCII rule in §7 is about layout characters in *rendered* output, not what a user can type into a note |
 | `created_at_utc` | `TEXT NOT NULL` | minute-granular like every other stored instant (§4.1) — not a source of sub-minute precision. Two notes inserted in the same minute are disambiguated by `id ASC` as the actual tiebreaker; this column orders coarsely, `id` breaks remaining ties |
+
+Composite index `idx_notes_date_created_at_utc_id` on `(date,
+created_at_utc, id)`.
 
 **`week_targets`** — sparse overrides only; a week with no row uses
 the default target (40h = 2400 minutes).
@@ -260,7 +259,8 @@ Accepted for any `TIME` argument, 24h only (§1.2):
 Insert a `start` punch, for today unless `--date` says otherwise
 (§3.4a).
 
-- `TIME` optional (§3.1). Defaults to now.
+- `TIME` optional (§3.1) for today, where it defaults to now. When
+  `--date` names another day, `TIME` is required (§3.4a).
 - `NOTE` optional, free text — if given, also inserts a note row for
   the target date in the same call (convenience for "starting work on
   X").
@@ -296,6 +296,11 @@ today (`-1` = yesterday, N a positive integer, `-0` rejected).
   as the flag.
 - Malformed `--date`, or one resolving to a future date: hard error
   (§6.1).
+- On `start` and `stop`, a `--date` that resolves to a day other than
+  today requires `TIME`, since that day has no "now" to default to.
+  Omitting it is a hard error (§6.1). The date is checked first, so a
+  malformed or future `--date` keeps its own error even with `TIME`
+  missing. `--date` naming today keeps `TIME` optional.
 
 ### 3.5 `mlm status [DATE]`
 
@@ -329,7 +334,8 @@ future; to view a future week, run mlm week WEEK_ID`.
 `mlm status --help` and `mlm week --help` end with a short glossary of
 the terms the week line and the markers use. Short `-h` does not carry
 it, and its help line gains clap's `(see more with '--help')` suffix.
-Three entries precede the `[!], [i]` one. The first is `so far, started
+This paragraph covers the three entries just before the `[!], [i]`
+one. The first is `so far, started
 yesterday`, for the overnight stint line (§7.1): a start still open
 from yesterday, listed on today's page and not counted until stopped.
 The second is `spans to next day, continues previous day's stint`, for
@@ -553,6 +559,70 @@ These are usage errors from the argument parser, with exit `2` (§6.3):
 - `-d, --date <DATE>`: ``Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g. `-1` = yesterday)``
 - `-w, --week <WEEK_ID>`: ``Week to export: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week)``
 - `-m, --month <MONTH>`: ``Month to export: YYYY-MM (e.g. 2026-03), a bare month number (e.g. 3), or `-N` for N months before this one (e.g. `-1` = last month)``
+
+### 3.9 `mlm delete note|punch [ID] [--date DATE]`
+
+List a date's notes or punches, or delete one of them by its position
+in that list. `delete` has the alias `del`, `note` the alias `n` and
+`punch` the alias `p`, so `mlm del p 2` works. `delete` requires a
+subcommand. There is no edit command (§1.2). A correction is a delete
+and then a recreate, so a delete prints the command that recreates
+what it removed.
+
+- `--date`/`-d DATE`: the date to work on, in the `DATE` forms of
+  §3.4a, defaulting to today. A malformed or future date is a hard
+  error (§6.1). `delete` takes no free text, so `--date` may come
+  before or after `ID`. `mlm delete note 2 --date -1` and
+  `mlm delete note --date -1 2` are the same command.
+- No `ID`: list mode. It prints the date's entries numbered from `1`
+  (§7.4) and changes nothing. A date with no entries prints
+  `nothing to delete for <YYYY-MM-DD>.` Either way the exit is `0`.
+- `ID` given: delete mode. It deletes the entry at that position,
+  prints one line (§7.4) and exits `0`.
+
+Notes list in insertion order (`created_at_utc ASC, id ASC`, §2.3),
+the order `status` shows them in. Punches list by instant. At one
+instant a `start` comes before an `end`, and `id` breaks any tie left,
+the order §4.3 pairs in.
+
+The delete line recreates what was deleted:
+
+- A punch recreates as `mlm start HH:MM` or `mlm stop HH:MM`. An `end`
+  punch recreates with `stop`, the command that writes one. `HH:MM` is
+  the punch's own instant in local time, converted with that instant's
+  offset (§2.1), so a punch on the far side of a DST change from today
+  echoes its real wall-clock time.
+- A note recreates as `mlm note '<body>'`, the body as one
+  single-quoted shell token. Single quotes stop a shell from expanding
+  `$VAR`, `$(...)` or backticks on replay. One token stops a body that
+  starts with `--verbose`, or holds `--`, from being read as flags.
+  Each `'` in the body prints as `'"'"'`.
+- `--date YYYY-MM-DD` is added only when the entry's date is not today.
+  In a note's line it comes before the body, because `mlm note` reads
+  everything after its first note word as note text (§3.4a).
+- A note whose body holds a backslash gets no recreate command, since
+  no single-quoting replays `\` the same way in POSIX shells and in
+  fish. The line is `deleted note (<YYYY-MM-DD>): <body>` alone, and
+  it shows the date even for today (§7.4).
+
+`ID` resolves against a listing taken fresh when the command runs,
+never one from an earlier run. If entries were added or removed since
+the user last listed, a number can point at a different entry than it
+did then. The worst case deletes the entry now at that position, never
+a missing one. Listing again right before deleting avoids it.
+
+An `ID` of `0`, or one past the date's count, is a hard error with exit
+`1`, and nothing is deleted (§6.1). A value that is not a `u32`, such
+as `-1`, `abc` or `4294967296`, never reaches the command. The
+argument parser rejects it as a usage error with exit `2` (§6.3).
+
+Deleting the entries on the earliest date with data moves the date the
+carry walk starts from (§2.4). Every later week's carry-in can change
+on the next `status` or `week`, and that is accepted.
+
+`mlm delete note --help` and `mlm delete punch --help` list `ID` as
+this:
+``Position in this date's list, numbered from 1, taken fresh when this runs (run with no ID to see it). 0 or a number past the list is rejected``.
 
 ## 4. Time/duration semantics
 
@@ -793,10 +863,11 @@ and still exits `0`.
 - Malformed `DATE` (`YYYY-MM-DD`, or a `-N` shorthand where accepted):
   wrong shape, an invalid calendar date (`2026-02-30`), or a malformed
   `-N` (non-integer, `-0`).
-- `--date`/`-d` on `start`/`stop`/`note` resolving to a date later than
-  today (§3.4a), or `status`'s `DATE` argument (§3.5) resolving to one.
-  The first three never write into the future, and `status` is no
-  preview of a future date. `status DATE` uses the same message shape and
+- `--date`/`-d` on `start`/`stop`/`note` or `delete note|punch`
+  resolving to a date later than today (§3.4a, §3.9), or `status`'s
+  `DATE` argument (§3.5) resolving to one. The first three never write
+  into the future, `delete` has nothing there to list or delete, and
+  `status` is no preview of a future date. `status DATE` uses the same message shape and
   exit code as the `--date` case, and adds `; to view a future week, run
   mlm week WEEK_ID` to it. `mlm week WEEK_ID` for a future week is
   not an error (§7.2). `mlm export notes` checks no range against today,
@@ -863,6 +934,10 @@ and still exits `0`.
 
   `got` is the parsed value in the standard format (§4.2). `168h`
   itself is accepted.
+- `start` or `stop` with no `TIME` and a `--date` that names another
+  day (§3.4a):
+
+  `TIME is required when --date targets a day other than today`
 - Malformed `TIME` boundary: `24:00` is rejected, not accepted as a
   next-day-midnight alias — valid range is `00:00` through `23:59`.
 - A `TIME` that falls in a DST spring-forward gap (§2.1) — no real
@@ -874,12 +949,12 @@ and still exits `0`.
   a migration erroring partway): fatal, the command aborts — there's
   no reasonable partial-success state to fall back to. This is
   distinct from first run: a missing app-data directory or db file is
-  expected and handled silently (`db.rs` already creates the
-  directory and runs migrations from empty — see `src/db.rs` in the
-  scaffold), not a failure case.
+  expected and handled silently (`db.rs` creates the directory and
+  runs migrations from empty), not a failure case.
 - A storage read failure in `status`, `mlm week` or `mlm export notes`,
   on any of the reads they make (the earliest data week, the target
-  overrides, the punches behind the carry walk, for `mlm week --notes`
+  overrides, the punches behind the carry walk, for `status` its date's
+  notes and, for today, the lookback punch read, for `mlm week --notes`
   the shown week's notes, and for `mlm export notes` its one ranged
   note read). The command prints `error:` and the storage error text to
   stderr, prints nothing to stdout, and exits `1`. `mlm week` never
@@ -888,6 +963,21 @@ and still exits `0`.
   list. Plain `mlm week` makes no note read.
 - `mlm week WEEK_ID target DURATION`, the week id before `target`
   (§3.7). It is rejected with the one-line message there and exit `2`.
+- `mlm delete note|punch ID` with an `ID` that the date's fresh listing
+  does not hold (§3.9). Nothing is deleted and the exit is `1`. Below,
+  `<count>` is the number of entries the date holds. An `ID` of `0`
+  prints this:
+
+  `id must be 1 or greater (got 0); <count> entries for this date`
+
+  An `ID` past the count prints this:
+
+  `id <id> is out of range; only <count> entries for this date`
+
+  Both say `entry` when `<count>` is `1` and `entries` otherwise. A
+  date with no entries has a count of `0`, so `1` there prints
+  `id 1 is out of range; only 0 entries for this date`. The `0` check
+  comes first.
 
 ### 6.2 Not errors
 
@@ -1458,6 +1548,7 @@ Week 2026-43 (2026-10-19 - 2026-10-25)
   Thu 2026-10-22   08h 52m
   Fri 2026-10-23   08h 40m
   Sat 2026-10-24   08h 13m
+      - refactored the parser
   Sun 2026-10-25   00h 00m
 
 [!] needs a look: run mlm status DATE for details and fixes
@@ -1502,7 +1593,7 @@ date with open starts (oldest first, §7.1), then the yesterday hint. The
 carry-in marker line comes last (§7.1).
 
 Two fix-command details shape the wording throughout: `mlm delete
-punch --date D` only lists and numbers that date's punches (§7.4) —
+punch --date D` only lists and numbers that date's punches (§3.9) —
 deleting takes a second run naming the number, so the hint says so.
 `mlm stop HH:MM --date D` pairs by time (§4.3): an end before the open
 start becomes a new orphaned end, and with several open starts it
@@ -1671,6 +1762,45 @@ narrow, deliberate exception to the write-command-silence rule above
 rather than a repeal of it. List mode prints that date's numbered
 entries (or `nothing to delete for <date>.` when there are none), and a
 successful delete prints a ready-to-run recreate command.
+
+`delete`'s lines (§3.9) all go to stdout. List mode prints one line per
+entry, the number, two spaces, then the entry. A punch reads
+`<n>  <kind> <HH:MM>`, with `kind` `start` or `end`:
+
+```
+1  start 09:00
+2  end 13:00
+```
+
+A note reads `<n>  <body>`:
+
+```
+1  fixed migration runner bug
+2  reviewed open PRs
+```
+
+A date with no entries prints one line:
+
+```
+nothing to delete for 2026-09-10.
+```
+
+A delete prints one line. With today 2026-09-12:
+
+```
+deleted. to recreate: mlm stop 13:00
+deleted. to recreate: mlm start 09:00 --date 2026-09-10
+deleted. to recreate: mlm note --date 2026-09-10 'fixed migration runner bug'
+deleted. to recreate: mlm note 'it'"'"'s done'
+```
+
+A note body with a backslash prints the date and the body alone, with
+no `deleted. to recreate:` prefix and no trailing `...`. The date shows
+even for today:
+
+```
+deleted note (2026-09-12): path C:\dir\file
+```
 
 `start` gains one more narrow exception, on stderr only. After a
 successful write, it runs the same 14-day lookback `status` uses for
@@ -2111,4 +2241,18 @@ or less directly.
   `mlm week -x` and `mlm week --bogus` are usage errors from the
   argument parser, exit `2`, with nothing on stdout. `mlm week -1.5`
   reaches the `WEEK_ID` parser instead and fails as in E35.
+- **E39** - `delete` `ID` of `0` (§3.9, §6.1): with two notes on a date,
+  `mlm delete note 0 --date D` prints
+  `error: id must be 1 or greater (got 0); 2 entries for this date`,
+  exits `1` and deletes nothing. With one punch on today,
+  `mlm delete punch 0` prints
+  `error: id must be 1 or greater (got 0); 1 entry for this date`.
+- **E40** - `delete` `ID` past the count (§3.9, §6.1): with two notes on
+  a date, `mlm delete note 3 --date D` prints
+  `error: id 3 is out of range; only 2 entries for this date`, exits `1`
+  and deletes nothing. With one entry the line ends `only 1 entry for
+  this date`, and on an empty date `mlm delete punch 1` prints
+  `error: id 1 is out of range; only 0 entries for this date`.
+  `mlm delete punch -1`, `abc` and `4294967296` are usage errors from
+  the argument parser instead, exit `2`.
 
