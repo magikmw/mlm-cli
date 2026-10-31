@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 152
+- **Next entry**: 153
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (spec draft, entry 151). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (spec review folded, entry 152; lock pending). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2071,6 +2071,18 @@ SPEC.md and PLAN.md:
     1)` and the `MONTH` twin, offset errors `week offset is out of
     range` and `month offset is out of range`, help lines in the `DATE`
     style. Baseline `main` at `77fb19f`; branch `relative-ids`.
+
+152. **`relative-ids` spec review folded**
+    (`plans/reports/relative-ids-spec-review.md`, 11 findings). Every
+    §3 shape parses under clap 4.6.6. F1: `mlm week` takes `-N` the way
+    `status` takes `DATE`'s, so `mlm week -1x` and `-x` stay clap
+    errors, exit 2; `week target` and `export notes` already pass
+    hyphen values, so `-1x` there is exit 1. Parity with `DATE` is the
+    user's stated rule. F2: `-N` is out of range when it lands on an id
+    the absolute form rejects (`WEEK_ID` below `1000-01`, `MONTH` below
+    `0000-01`), and `u64` overflow counts too. F3, F4: flipped tests and
+    every stale SPEC/README line listed. U1-U7 go to the user as
+    known-issue candidates before lock.
 
 ## Open questions (still need answers)
 

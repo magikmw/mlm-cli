@@ -1,7 +1,8 @@
 # Relative week and month ids — design spec
 
 **Baseline**: written against `main` at `77fb19f` (`v0.4.0` + `orphan-stop-warning` + `week-notes` + `export-notes` + `panic-fixes`, unreleased).
-**Status**: draft.
+**Status**: draft, spec review folded
+(`docs/dev/plans/reports/relative-ids-spec-review.md`, NOTES.md entry 152).
 **Input**: NOTES.md entry 137, and the user's scope call on
 2026-10-25 to include `week target`.
 
@@ -49,6 +50,13 @@ zeros tolerated (`-01` = `-1`), the same grammar `DATE` uses.
 - `mlm week -1` takes `-1` as `WEEK_ID`, as `mlm status -1` takes it
   as `DATE`. `-n`/`--notes` stays a flag, so `mlm week -1 -n` and
   `mlm week -n -1` both work.
+- `mlm week` passes only `-` plus digits through to the `WEEK_ID`
+  parser, as `mlm status` does for `DATE`. Any other token starting
+  with `-` (`-1x`, `-x`, `--bogus`) stays a parser usage error, exit
+  `2` (SPEC §6.3), as `mlm status -1x` is today.
+- `week target` and `export notes` already pass every value starting
+  with `-` to their parsers, so `-1x` there gets the §4 shape error,
+  exit `1`.
 - `mlm week target -1 35h` sets last week's target. The swapped shape
   `mlm week -1 target 35h` keeps the reminder (SPEC §3.7), echoing
   `-1` as typed.
@@ -70,7 +78,8 @@ Help text:
 
 ## 4. Errors
 
-All exit `1`, `error: ...` on stderr, nothing written.
+All exit `1`, `error: ...` on stderr, nothing written. The `mlm week`
+tokens §3 leaves to the parser keep exit `2`.
 
 | Input | Message |
 |---|---|
@@ -79,15 +88,30 @@ All exit `1`, `error: ...` on stderr, nothing written.
 | `WEEK_ID` `-N` too large to resolve | `invalid WEEK_ID "<input>": week offset is out of range` |
 | `MONTH` `-N` too large to resolve | `invalid MONTH "<input>": month offset is out of range` |
 
-Every other `WEEK_ID` and `MONTH` message is unchanged.
+- `-N` is out of range when it resolves to an id the absolute form
+  rejects. For `WEEK_ID` that is any ISO year below `1000`, so
+  `1000-01` is the earliest week `-N` reaches. For `MONTH` that is any
+  year below `0000`, so `0000-01` is the earliest month.
+- A digit run too large for a `u64` is out of range, as for `DATE`.
+- The two shape messages replace `expected YYYY-WW or WW` and
+  `expected YYYY-MM or MM` everywhere those appear. Every other
+  `WEEK_ID` and `MONTH` message is unchanged.
 
 ## 5. Testing
 
 - `-1`, `-2`, `-01`, and an N crossing a year boundary, for each row of
   the §3 table, against a fixed today
 - week 53 years: `-N` landing on week 53 and stepping over it
-- `-0` and `-1x` give the shape errors; a huge N gives the offset
-  errors
+- `-0` gives the shape errors; `-1x` gives them for `week target`,
+  `-w` and `-m`; `mlm week -1x` and `mlm week -x` exit `2`
+- offset boundaries, mirroring `DATE`'s: the last N that reaches
+  `1000-01` / `0000-01`, the first N past it, and a digit run that
+  overflows `u64`
+- existing tests that assert `-N` is rejected become acceptance tests
+  or move to inputs that stay malformed: `src/date.rs` T57 (`-5`), T59
+  (`-07`, now seven weeks ago), T65 (`-1`), the MONTH bad-shape list
+  and `-1` message test, `src/export.rs`'s `-w -1` test. Every
+  assertion of the old shape messages takes the new text
 - `mlm week -1 -n`, `mlm week -n -1`
 - `mlm week target -1 35h` writes last week's target and echoes its
   normalized id
@@ -97,12 +121,17 @@ Every other `WEEK_ID` and `MONTH` message is unchanged.
 ## 6. User-visible surface
 
 - `README.md`: the `mlm week`, `week target` and `export notes`
-  sections gain the `-N` form with an example.
+  sections gain the `-N` form with an example. The non-goals bullet
+  on `+N`/`-N` relative week notation (README.md:42-43) becomes a
+  `+N`-only bullet.
 - `--help` per §3.
 
 ## Interaction with the project spec
 
 - §1.2 drops the relative week non-goal and names `+N` as one.
 - §3.6, §3.7 and §3.8 gain the `-N` form.
-- §6.1's `WEEK_ID` and `MONTH` bullets gain the new messages.
+- §3.8's sentence saying `-w -1` and `-m -1` reach their own errors
+  is rewritten, and its quoted `-w`/`-m` help lines take the §3 text.
+- §6.1's `WEEK_ID` bullet gains both `WEEK_ID` messages. Its `MONTH`
+  bullet's shape message is replaced, and the offset message added.
 - §8 gains happy-path and error flows.
