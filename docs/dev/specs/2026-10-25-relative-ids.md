@@ -1,8 +1,9 @@
 # Relative week and month ids — design spec
 
 **Baseline**: written against `main` at `77fb19f` (`v0.4.0` + `orphan-stop-warning` + `week-notes` + `export-notes` + `panic-fixes`, unreleased).
-**Status**: draft, spec review folded
-(`docs/dev/plans/reports/relative-ids-spec-review.md`, NOTES.md entry 152).
+**Status**: locked 2026-10-31 after one review
+(`docs/dev/plans/reports/relative-ids-spec-review.md`, folded in NOTES.md
+entries 152-153; lock in entry 153).
 **Input**: NOTES.md entry 137, and the user's scope call on
 2026-10-25 to include `week target`.
 
@@ -60,6 +61,10 @@ zeros tolerated (`-01` = `-1`), the same grammar `DATE` uses.
 - `mlm week target -1 35h` sets last week's target. The swapped shape
   `mlm week -1 target 35h` keeps the reminder (SPEC §3.7), echoing
   `-1` as typed.
+- `mlm week target` with one token that is a valid `WEEK_ID` and not a
+  valid `DURATION` (`-1`, `7`, `2026-07`) is a missing `DURATION`. It
+  prints the same usage error as bare `mlm week target`, exit `2`
+  (SPEC §6.3), not `invalid duration`.
 
 Help text:
 
@@ -87,6 +92,8 @@ tokens §3 leaves to the parser keep exit `2`.
 | bad `MONTH` shape, `-0` included | `invalid MONTH "<input>": expected YYYY-MM, MM or -N (N >= 1)` |
 | `WEEK_ID` `-N` too large to resolve | `invalid WEEK_ID "<input>": week offset is out of range` |
 | `MONTH` `-N` too large to resolve | `invalid MONTH "<input>": month offset is out of range` |
+| `WEEK_ID` `+` followed by digits | the `WEEK_ID` shape message, then `; a future week takes YYYY-WW or WW` |
+| `MONTH` `+` followed by digits | the `MONTH` shape message, then `; a future month takes YYYY-MM or MM` |
 
 - `-N` is out of range when it resolves to an id the absolute form
   rejects. For `WEEK_ID` that is any ISO year below `1000`, so
@@ -116,6 +123,11 @@ tokens §3 leaves to the parser keep exit `2`.
 - `mlm week target -1 35h` writes last week's target and echoes its
   normalized id
 - `mlm week -1 target 35h` prints the reminder, exit `2`
+- `mlm week target -1`, `7` and `2026-07` alone give the missing
+  `DURATION` usage error, exit `2`; `mlm week target 35h` still sets
+  this week
+- `+1` for `WEEK_ID` (all three commands) and `MONTH` gives the hint
+  suffix
 - `--help` lines per §3
 
 ## 6. User-visible surface

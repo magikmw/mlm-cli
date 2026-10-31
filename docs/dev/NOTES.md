@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 153
+- **Next entry**: 154
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (spec review folded, entry 152; lock pending). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (spec locked, entry 153). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2083,6 +2083,16 @@ SPEC.md and PLAN.md:
     `0000-01`), and `u64` overflow counts too. F3, F4: flipped tests and
     every stale SPEC/README line listed. U1-U7 go to the user as
     known-issue candidates before lock.
+
+153. **`relative-ids` locked.** User triage of U1-U7: U6 fixed, so a
+    `+` plus digits `WEEK_ID` or `MONTH` gets the shape message plus
+    `; a future week takes YYYY-WW or WW` (month twin). U4 fixed, so a
+    lone `week target` token that is a valid `WEEK_ID` and not a valid
+    `DURATION` gives clap's missing-`DURATION` usage error, exit 2, as
+    bare `week target` does. U1-U3, U5, U7 are non-issues and not
+    filed. Phase 14 runs (user-visible surface), tier `returning`.
+    Expected two tasks (code, docs), so phases 5-7 collapse and 10 is
+    skipped.
 
 ## Open questions (still need answers)
 
