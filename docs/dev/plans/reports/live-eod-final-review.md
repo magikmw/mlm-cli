@@ -1,5 +1,7 @@
 # live-eod final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Scope**: `c9e980b..live-eod` (code in `src/status.rs`; docs in `docs/dev/SPEC.md`, `README.md`, `docs/dev/NOTES.md`)
 - **Against**: `docs/dev/specs/2026-10-03-live-eod.md` (locked), `docs/dev/plans/live-eod-plan.md` incl. "Review folds (phase 7)"
 - **Date**: 2026-10-03 (Saturday), real clock

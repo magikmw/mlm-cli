@@ -1,5 +1,7 @@
 # mlm fresh-eyes report — status/week wording
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: `/tmp/claude-659200001/mlm-fresh-eyes-sandbox/`, binary `mlm 0.3.5`, scratch DB via `MLM_DB_PATH`. Real system date during this session: Wed 2026-09-23.
 
 ## Scenarios — what you ran, what it printed

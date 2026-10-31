@@ -1,5 +1,7 @@
 # Task 2 report: Anomaly rendering and fix-line wording
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Worktree branch: `worktree-agent-a40b1f9b82a311c94`.
 Commit: `13a6248`.
 

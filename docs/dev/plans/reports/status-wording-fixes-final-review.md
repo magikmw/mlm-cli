@@ -1,5 +1,7 @@
 # Final review: status-wording-fixes
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Diff reviewed: `v0.3.5..status-wording-fixes` (full changeset, both
 Task 1 and Task 2 merges plus the NOTES.md log commit). Spec:
 `docs/dev/specs/2026-09-23-status-wording-fixes.md`. Plan:

@@ -1,5 +1,7 @@
 # Adversarial review — `docs/dev/specs/2026-09-20-boundary-context-cues.md`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Baseline checked: `v0.3.3` / commit `f04e77c`, against `src/status.rs`,
 `src/render.rs`, `src/week_view.rs`, `src/stint.rs`,
 `docs/dev/SPEC.md`.

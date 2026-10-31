@@ -1,5 +1,7 @@
 # live-eod spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Target: docs/dev/specs/2026-10-03-live-eod.md (branch live-eod, baseline main c9e980b, confirmed by `git log main`).
 
 ## Findings

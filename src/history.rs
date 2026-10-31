@@ -1,4 +1,4 @@
-//! Shared history loader for `status` and `mlm week` (SPEC §2.4, §3.4).
+//! Shared history loader for `status` and `mlm week` (SPEC §2.4).
 //!
 //! One earliest-date read, one ranged punch read and one ranged target
 //! read feed the week ledger and hand back the bucketed punches, so every

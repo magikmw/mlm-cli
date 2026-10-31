@@ -1,5 +1,7 @@
 # Task 5 plan: `week` row markers and footer (`src/week_view.rs`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 ## What was read
 
 - `docs/dev/plans/open-punch-visibility-plan.md` (full changeset plan,

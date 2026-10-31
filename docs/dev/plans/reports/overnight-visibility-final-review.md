@@ -1,5 +1,7 @@
 # overnight-visibility final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Baseline 6edd67b, tip c2ec743 (clone HEAD matches). Verdict: ship.
 
 ## Verification (run in the clone)

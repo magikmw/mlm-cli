@@ -1,5 +1,7 @@
 # Plan review: orphan-stop-warning
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: `docs/dev/plans/orphan-stop-warning-plan.md` at `116c92c`, against the locked spec `docs/dev/specs/2026-10-24-orphan-stop-warning.md`, NOTES.md 111-114, and the source on branch `orphan-stop-warning`.
 
 The plan's "Current shape" claims check out against source:

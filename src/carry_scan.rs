@@ -1,5 +1,5 @@
 //! Scan of earlier weeks for anomalies feeding the carry-in marker
-//! (SPEC §3.3).
+//! (SPEC §7.3).
 
 use std::collections::BTreeSet;
 

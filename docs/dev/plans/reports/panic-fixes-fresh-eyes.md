@@ -1,5 +1,7 @@
 # panic-fixes — fresh-eyes user run
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: /tmp/cd-sandbox/panic-fixes/ (`mlm` + `README.md`). `MLM_DB_PATH` pointed at
 scratch DBs inside the sandbox (t.db, dst*.db, e*.db, day.db). Today = Sun 2026-10-25,
 system zone CET (the DST change day itself in Europe/Warsaw).

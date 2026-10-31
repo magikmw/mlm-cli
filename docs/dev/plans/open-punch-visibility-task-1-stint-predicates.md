@@ -1,5 +1,7 @@
 # Task 1 plan: Anomaly predicates (`src/stint.rs`)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset: open-punch-visibility. Parent plan:
 `docs/dev/plans/open-punch-visibility-plan.md`. Spec:
 `docs/dev/specs/2026-09-26-open-punch-visibility.md` (locked).

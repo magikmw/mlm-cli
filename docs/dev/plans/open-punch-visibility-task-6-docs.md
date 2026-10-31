@@ -1,5 +1,7 @@
 # Task 6 plan — Docs (open-punch-visibility)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 ## What I read
 
 - `docs/dev/plans/open-punch-visibility-plan.md` (full) — changeset

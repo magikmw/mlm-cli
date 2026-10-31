@@ -1,5 +1,7 @@
 # orphan-stop-warning — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Baseline**: `v0.4.0` (`4c451d7`)
 - **Branch**: `orphan-stop-warning`, tip `f687365` (clone HEAD verified)
 - **Clone**: `/tmp/cd-scratch/orphan-stop-warning-final`

@@ -1,5 +1,7 @@
 # open-punch-visibility — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Range**: `v0.3.6..open-punch-visibility` (tip `3b4d345`)
 - **Changeset spec**: `docs/dev/specs/2026-09-26-open-punch-visibility.md`
 - **Living spec**: `docs/dev/SPEC.md`

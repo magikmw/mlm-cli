@@ -1,5 +1,7 @@
 # Task 1 low-level plan: `status`/`render` — span suffix, header suffix, backdated caption, Day total match, carry-in wiring
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Changeset: `boundary-context-cues`. This changeset has exactly one task
 — no siblings to hand work to or receive it from.
 

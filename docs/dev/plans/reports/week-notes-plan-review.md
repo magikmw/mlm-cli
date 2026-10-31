@@ -1,5 +1,7 @@
 # week-notes plan review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Plan: `docs/dev/plans/week-notes-plan.md` (untracked)
 - Locked spec: `docs/dev/specs/2026-10-24-week-notes.md`
 - Source baseline: branch `week-notes` = `3bcff42`

@@ -7,15 +7,10 @@
 //! §3.6 (`WEEK_ID` argument forms), §3.8 (`MONTH` argument forms), §6.1
 //! (hard errors).
 
-// Milestone 2 lands this module ahead of its consumers (Milestones 4, 6,
-// 8, 9, 10, 11). Everything here is exercised by the unit tests below;
-// the `main.rs` call sites arrive with those later milestones.
-#![allow(dead_code)]
-
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 
 // ---------------------------------------------------------------------------
-// Errors (PLAN.md contract 7, local to this milestone)
+// Errors (SPEC §6.1)
 // ---------------------------------------------------------------------------
 
 /// Which argument kind failed to parse.
@@ -47,7 +42,7 @@ pub enum Cause {
     /// bare `WW`'s year comes from `today`).
     NoSuchIsoWeek { iso_year: i32, weeks_in_year: u32 },
     /// A resolved `DATE` is later than today's local calendar date.
-    /// Only ever paired with `ArgKind::Date` (backdated-punches spec §3).
+    /// Only ever paired with `ArgKind::Date` (SPEC §3.4a, §6.1).
     Future,
 }
 
@@ -109,7 +104,7 @@ impl std::fmt::Display for DateWeekError {
 }
 
 /// Appends `; a future <unit> takes <forms>` when `input` is `+` plus
-/// ASCII digits (relative-ids spec §4).
+/// ASCII digits (SPEC §6.1).
 fn write_future_hint(
     f: &mut std::fmt::Formatter<'_>,
     input: &str,
@@ -151,7 +146,7 @@ pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError> {
     NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| err(Cause::NoSuchCalendarDate))
 }
 
-/// Core `DATE` resolver (backdated-punches spec §2, §4): accepts the
+/// Core `DATE` resolver (SPEC §3.4a, §3.5): accepts the
 /// existing absolute `YYYY-MM-DD` grammar, or a relative `-N` shorthand
 /// (`-` + one or more ASCII digits, N >= 1, leading zeros tolerated)
 /// meaning N days before `today`. No future-date opinion — every command
@@ -159,39 +154,40 @@ pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError> {
 /// `resolve_future_checked_date` instead, which adds that check.
 pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
     let err = |cause| DateWeekError::new(ArgKind::Date, s, cause);
-    if let Some(digits) = s.strip_prefix('-') {
-        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-            let n: u64 = match digits.parse() {
-                Ok(n) => n,
-                // The digit run itself doesn't fit in a u64 -- as
-                // unrepresentable as any other offset chrono can't
-                // handle, so the same Cause applies.
-                Err(_) => return Err(err(Cause::OutOfRange)),
-            };
-            if n == 0 {
-                return Err(err(Cause::Shape));
-            }
-            let resolved = today
-                .checked_sub_days(Days::new(n))
-                .ok_or_else(|| err(Cause::OutOfRange))?;
-            // `parse_date` only ever accepts a 4-digit year (`1000..=9999`
-            // via `has_ymd_shape`'s exactly-10-bytes check), so the two
-            // spellings of DATE must agree on that same domain -- a `-N`
-            // that resolves outside it would write a value `parse_date`
-            // (and therefore the storage read-back path) can never parse
-            // again.
-            if !(MIN_YEAR..=MAX_YEAR).contains(&resolved.year()) {
-                return Err(err(Cause::OutOfRange));
-            }
-            return Ok(resolved);
+    if let Some(digits) = s.strip_prefix('-')
+        && !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        let n: u64 = match digits.parse() {
+            Ok(n) => n,
+            // The digit run itself doesn't fit in a u64 -- as
+            // unrepresentable as any other offset chrono can't
+            // handle, so the same Cause applies.
+            Err(_) => return Err(err(Cause::OutOfRange)),
+        };
+        if n == 0 {
+            return Err(err(Cause::Shape));
         }
+        let resolved = today
+            .checked_sub_days(Days::new(n))
+            .ok_or_else(|| err(Cause::OutOfRange))?;
+        // `parse_date` only ever accepts a 4-digit year (`1000..=9999`
+        // via `has_ymd_shape`'s exactly-10-bytes check), so the two
+        // spellings of DATE must agree on that same domain -- a `-N`
+        // that resolves outside it would write a value `parse_date`
+        // (and therefore the storage read-back path) can never parse
+        // again.
+        if !(MIN_YEAR..=MAX_YEAR).contains(&resolved.year()) {
+            return Err(err(Cause::OutOfRange));
+        }
+        return Ok(resolved);
     }
     parse_date(s)
 }
 
 /// Thin wrapper around [`resolve_date`] adding the future-date rejection
-/// every date-taking command needs: `start`, `stop`, `note` (backdated-punches
-/// spec §3) and `status`, which rejects a future date the same way.
+/// every date-taking command needs: `start`, `stop`, `note` (SPEC §3.4a)
+/// and `status`, which rejects a future date the same way.
 pub fn resolve_future_checked_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
     let date = resolve_date(s, today)?;
     if date > today {
@@ -430,8 +426,8 @@ pub fn parse_week_id(s: &str, today: NaiveDate) -> Result<WeekId, DateWeekError>
 
 /// A calendar month: (calendar year, month 1-12).
 ///
-/// Invariant: `1 <= month <= 12` and `0 <= year <= 9999`, the same
-/// four-digit domain `parse_date` accepts.
+/// Invariant: `1 <= month <= 12` and `0 <= year <= 9999`. That is wider
+/// than `parse_date`'s `1000..=9999`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Month {
     year: i32,
@@ -1196,7 +1192,7 @@ mod tests {
         }
     }
 
-    // --- MONTH (export-notes spec §3, §6) ------------------------------
+    // --- MONTH (SPEC §3.8, §6.1) ----------------------------------------
 
     /// A known-valid month; panics on a typo in the test itself.
     fn mo(y: i32, m: u32) -> Month {
@@ -1310,7 +1306,7 @@ mod tests {
         );
     }
 
-    // --- resolve_date (backdated-punches spec §2, §5) ------------------
+    // --- resolve_date (SPEC §3.4a) --------------------------------------
 
     #[test]
     fn resolve_date_passes_through_absolute_dates() {
@@ -1445,7 +1441,7 @@ mod tests {
         assert!(!msg.contains("week number"), "{msg}");
     }
 
-    // --- relative WEEK_ID / MONTH (relative-ids spec §3-§5) ------------
+    // --- relative WEEK_ID / MONTH (SPEC §3.6, §3.8, §6.1) --------------
 
     #[test]
     fn relative_week_counts_back_from_the_current_week() {

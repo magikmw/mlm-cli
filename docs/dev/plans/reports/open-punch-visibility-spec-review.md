@@ -1,5 +1,7 @@
 # Adversarial review — open-punch-visibility spec draft
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: `docs/dev/specs/2026-09-26-open-punch-visibility.md` against
 baseline `v0.3.6` (`main` at `267060b`), the actual `267060b` commit
 being the tip of `main` per the conversation's git status — confirmed

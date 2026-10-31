@@ -1,5 +1,7 @@
 # Task 1 report: code and tests (`mlm week --notes`)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Changeset: week-notes. Branch `week-notes-task-1`, rebased onto `week-notes` @ `4c43b14` (the worktree started on `main`).
 
 ## Implemented

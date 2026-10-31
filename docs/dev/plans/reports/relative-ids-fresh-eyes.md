@@ -1,5 +1,7 @@
 # relative-ids — fresh-eyes user run
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: /tmp/cd-sandbox/relative-ids/ (`mlm` + `README.md`). DB: `MLM_DB_PATH=/tmp/cd-sandbox/relative-ids/test.db`
 (plus a second scratch DB `t2.db` for one check). Today on the machine: **Sat 2026-10-31, ISO week 2026-44**.
 I had no way to fake the date (`faketime` isn't installed), so "last Monday" was played on a Saturday. The

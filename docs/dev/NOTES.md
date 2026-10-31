@@ -1,7 +1,8 @@
 # Design notes
 
-Running log of background/story before formal spec exists. Not a spec —
-decisions here can (will) change. Formal spec comes later as its own doc.
+Running log of design and process decisions, numbered. Not a spec:
+current behavior lives in `docs/dev/SPEC.md`, and decisions here can
+change.
 
 ## Current state
 
@@ -9,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 159
+- **Next entry**: 165
 - **Last release**: `v0.4.0`
-- **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: none. `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **`main`**: doc-drift merge (`v0.4.0` + six unreleased changesets)
+- **Active changeset**: none. `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -145,7 +146,7 @@ incremental resumming through the day. Motivating the tool.
    possible later but not worth it for MVP — compute at read time.
 5. **Editing/deleting past entries**: deferred, not in MVP. Add-only.
    (Superseded for deleting: `mlm delete note|punch` shipped in 0.3.0,
-   see `docs/dev/specs/2026-09-13-delete-punches-notes.md` — editing
+   see SPEC.md §3.9 — editing
    is still deferred, correction path is delete-then-recreate.)
 6. **Timezone**: no explicit open question raised as blocking; assume
    single-machine local wall-clock time unless it comes up again.
@@ -2146,6 +2147,96 @@ SPEC.md and PLAN.md:
     numbers, as SPEC §3.7 says. Applied by the coordinator (owned doc,
     wording only). Spec, plan and task plans archived. Merged to `main`
     `--no-ff`, unreleased.
+
+159. **`doc-drift` brainstorm.** The user asked to fix the declared
+    MSRV and sweep the live docs for drift. MSRV is 1.95, set by
+    `rusqlite_migration` 2.6.0 (the code itself needs 1.88 for let
+    chains); the user keeps current deps rather than pinning older
+    ones. Merged as `9bc2266` on branch `doc-drift` (renamed from
+    `msrv-fix`). Sweep (`plans/reports/doc-drift-sweep-review.md`):
+    21 findings; user approved F1-F20, F21 dropped. Coordinator picks:
+    banner every archived file including reports (F6), add the note
+    to the `week --notes` example rather than dropping it from export
+    (F13), new SPEC §3.9 for `delete`. Coordinator applied NOTES' own
+    F15 header and the F4 pointer. Spec and the two-task split are in
+    one draft (`specs/2026-10-31-doc-drift.md`), since the sweep
+    already reviewed the ground; one review covers both. SAST scanning
+    (cargo-deny pause in `prep_release.sh`) waits until this lands in
+    `main`.
+
+160. **`doc-drift` spec review folded**
+    (`plans/reports/doc-drift-spec-review.md`, 17 findings). F4 now
+    takes `src/commands.rs` as the source of truth over the archived
+    delete spec (R1, R2), with §8.2 entries (R3). F20 is a rule plus
+    grep, not a site list (R4). F2's dev command sets `MLM_DB_PATH`
+    (R7). F8 keeps the rejection rule (R12); F9 changes the first
+    sentence only (R11). F6 skips this changeset's own docs; F7 puts
+    reports in the close-out step (R9, R10). `Cargo.toml` and
+    `sign-artifacts.yml` join Task 1 for the `SIGNING.md` path, and
+    the `exclude` list moves to `docs/dev/`, since
+    `cargo package --list` showed the published crate ships every
+    archived spec (R13). R5, R6, R8, R14-R17 wording folded. R1's
+    doubled prefix (`deleted. to recreate: deleted note (...)...`)
+    goes to the user: documenting it is in scope, fixing it is a
+    behavior change.
+
+161. **`doc-drift` locked.** User: fix R1. A deleted note whose body
+    holds a backslash prints `deleted note (<date>): <body>` alone,
+    date always shown, no recreate prefix, no `...`. That is the
+    changeset's one behavior change besides the F8/F9 help text.
+    Phase 14 runs (README and `--help` change), tier `returning`.
+    Phases 5-8 collapse into the spec's §6: two tasks with disjoint
+    files, every fix already stated at text level by the sweep, the
+    review and the spec, so no separate task plans. Phase 10 skipped.
+
+162. **`doc-drift` tasks merged.** Task 2 `7819faf` (docs; F6 banners
+    in their own commit; report `plans/reports/doc-drift-task-2-report.md`,
+    four small additions kept). Task 1 `1813a38` (code; R1 fixed, F8,
+    F9, F20 rule over `src/`, seven false dead-code allows removed,
+    package excludes `docs/dev/`; report
+    `plans/reports/doc-drift-task-1-report.md`). Its open questions
+    (bare `§N` comments, test-plan labels, an unbuilt `DbError::Query`)
+    are dropped under the triage rules. Gate green: fmt, build, 1023
+    tests, clippy; `cargo package --list` has nothing under `docs/dev/`.
+    Phase 14 next.
+
+### 163. doc-drift fresh-eyes and final review triaged
+
+- Final review ran on Opus, ship-with-followups, three low findings
+  (`doc-drift-final-review.md`).
+- The user chose to fix four fresh-eyes items, all README:
+  - (1) a clone step in "From source" and "Build (local dev)"
+  - (2) the dev example uses `09:00`
+  - (3) the delete recreate line gets a general quoting note, not a
+    backslash-specific one. The line uses POSIX single quotes, other
+    shells (Windows cmd, PowerShell) quote differently, and a note mlm
+    cannot quote safely prints with no recreate line. The user's call,
+    because more than backslashes can break replay depending on the shell.
+  - (9) the old-start blocks and the carry-in line print above the stint
+    list, not after it
+- The other nine fresh-eyes findings are dropped as pre-existing behavior.
+- Final review (a), a body that is exactly one of mlm's flags: SPEC §7.4's
+  sentence is narrowed to say those bodies do not replay. No `--` in the
+  recreate line. The shell passes the quoted body intact, but mlm's parser
+  still reads a bare `-h` as a flag.
+- Final review (b): the backslash fallback collapses newlines so it
+  stays one line.
+- Final review (c): four doc comments rewrapped.
+- One fix-pass dispatch covers all of it.
+
+### 164. doc-drift closed out and merged to main
+
+- Fix pass merged (`cf15855`), gate green, 1024 tests.
+- The SPEC flag-body sentence sits in §3.9, not §7.4 as the final review
+  cited.
+- The fix pass found one more pre-existing case. A v0.1.0-era note with a
+  newline and no backslash still takes the recreate path. A debug build
+  trips its `debug_assert!`. A release build prints a recreate line across
+  several lines, which still replays in a POSIX shell. Dropped under the
+  edge-case rule, because only notes stored before v0.1.1 can hold a
+  newline.
+- The spec, the sweep report and every `doc-drift-*` report are bannered.
+- `doc-drift` merged to `main` `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 

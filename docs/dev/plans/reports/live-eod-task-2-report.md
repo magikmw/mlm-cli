@@ -1,5 +1,7 @@
 # live-eod Task 2 report (docs)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Worktree started at f76ad3b (behind). Rebased onto `live-eod` tip f4b139a (fast-forward) before editing.
 
 ## Arithmetic

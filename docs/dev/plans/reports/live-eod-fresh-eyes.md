@@ -1,3 +1,5 @@
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 ## Scenarios — what you ran, what it printed
 
 Run on Saturday 2026-10-03 around 17:00 local, fresh DB per scenario (week 2026-40).

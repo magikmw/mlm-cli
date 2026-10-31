@@ -1,5 +1,7 @@
 # export-notes plan review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: `docs/dev/plans/export-notes-plan.md` (untracked, branch `export-notes`, HEAD `d29091b`) against the locked spec `docs/dev/specs/2026-10-24-export-notes.md`.
 
 Source checked: `src/cli.rs`, `src/date.rs`, `src/lib.rs`, `src/main.rs`, `src/storage.rs` (`notes_in_range`), `src/week_view.rs`, `tests/` (all files, with `week_target_cli.rs`, `week_notes_cli.rs`, `ascii_sweep.rs`, `orphan_stop_cli.rs` read closely), `.githooks/pre-commit`, `docs/dev/SPEC.md` §1.2, §3, §6, §7, §8, `README.md`, `AGENTS.md`, `docs/dev/NOTES.md` entries 125-133 and "Triaging review findings", and the spec review `docs/dev/plans/reports/export-notes-spec-review.md`.

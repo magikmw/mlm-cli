@@ -1,5 +1,7 @@
 # relative-ids spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Spec: `docs/dev/specs/2026-10-25-relative-ids.md` (branch `relative-ids` at `6eb8849`, baseline `main` `77fb19f`)
 - Method: read the spec, SPEC.md §1.2/§3.6-§3.8/§6.1/§8, README, and the cited source. I built `mlm` into `/tmp/cd-scratch/relids/mlmtarget` and probed it against a scratch db. I also built a clap 4.6.6 harness in `/tmp/cd-scratch/relids/src/main.rs` that copies `WeekArgs`/`WeekTargetArgs` in three variants: `allow_negative_numbers`, `allow_hyphen_values`, and baseline.
 

@@ -1,5 +1,7 @@
 # Plan review — round 3
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/boundary-context-cues-plan.md`
 Spec: `docs/dev/specs/2026-09-20-boundary-context-cues.md`
 Prior review: `docs/dev/plans/reports/boundary-context-cues-plan-review-round2.md` (needs-rework, 4 findings)

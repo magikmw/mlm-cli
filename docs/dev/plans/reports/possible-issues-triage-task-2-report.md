@@ -1,5 +1,7 @@
 # Completion report: possible-issues-triage T2 (overlap anomaly, clean-pair stop hints)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Branch `pit-task-2`. The worktree opened on old `main`, so I rebased it onto `possible-issues-triage` (f8789ee) before starting.
 
 ## Implemented

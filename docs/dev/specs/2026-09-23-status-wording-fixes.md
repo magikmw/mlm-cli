@@ -1,5 +1,7 @@
 # Status/week wording fixes — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `v0.3.5`.
 **Status**: adversarially reviewed twice: spec review 2026-09-23
 (`docs/dev/plans/reports/status-wording-fixes-spec-review.md`,

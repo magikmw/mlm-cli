@@ -1,5 +1,7 @@
 # Completion report: export-notes, Task 1 (code and tests)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/export-notes-task-1-code.md`. Branch `export-notes-task-1`, rebased onto `export-notes` at `4dc095c` before work began (the worktree started from `main`).
 
 ## Implemented

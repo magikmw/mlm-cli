@@ -1,5 +1,7 @@
 # Final review: current-week-ahead-wording
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 **Scope**: full diff `v0.3.6..current-week-ahead-wording`. Spec:
 `docs/dev/specs/2026-09-24-current-week-ahead-wording.md`. Plan:
 `docs/dev/plans/current-week-ahead-wording-plan.md`.

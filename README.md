@@ -21,7 +21,10 @@ date plus a short note of what you did, stored in SQLite.
   text, one per line, ready for a report or another tool
 - `delete note`/`delete punch` — list a date's entries and delete one
   by number; prints a ready-to-run command to recreate what was
-  deleted
+  deleted. The command uses POSIX single quotes, so check it before
+  running it in another shell such as Windows cmd or PowerShell. A
+  note mlm cannot quote safely prints with no command, and you retype
+  it yourself
 - Everything stored locally in SQLite — no account, no external
   service
 - Cross-platform: Linux (x86_64 and ARM64), Windows (MSVC), and macOS
@@ -63,7 +66,7 @@ later.
 cargo install mlm
 ```
 
-Needs a Rust toolchain (1.85+, edition 2024) — install one via
+Needs a Rust toolchain (1.95+, edition 2024) — install one via
 [rustup](https://rustup.rs) if you don't have one. No other system
 dependency: `rusqlite`'s `bundled` feature compiles SQLite from
 source, so this works the same on Linux, Windows (MSVC), and macOS.
@@ -71,14 +74,17 @@ Prebuilt binaries for all five targets (Linux x86_64/ARM64, Windows
 x86_64, macOS Intel/Apple Silicon) are attached to each
 [release](https://github.com/magikmw/mlm-cli/releases) — installable
 directly via [`cargo binstall mlm`](https://github.com/cargo-bins/cargo-binstall)
-too, signature-verified (see [`SIGNING.md`](SIGNING.md)).
+too, signature-verified (see [`docs/SIGNING.md`](docs/SIGNING.md)).
 
 ### From source
 
 To build the same optimized, thin-LTO release binary the GitHub
-releases ship, rather than `cargo install`ing from crates.io:
+releases ship, rather than `cargo install`ing from crates.io, clone
+the repository and build inside it:
 
 ```sh
+git clone https://github.com/magikmw/mlm-cli.git
+cd mlm-cli
 cargo install cargo-dist
 dist build --artifacts=local --target <your-triple>
 ```
@@ -143,7 +149,7 @@ Any other write failure, such as a full disk under `> file`, prints one
 `error: cannot write output: <reason>` line and exits 1. A change the
 command already made, such as a new week target or a deletion, stays.
 
-Every command has a 1 character alias, except `delete` (`del`) and `export` (`ex`).
+Every command has a 1 character alias, except `delete` (`del`) and `export` (`ex`), which have longer ones, and `week target` and `help`, which have none.
 I recommend using a 1 character shell alias for `mlm` too, so it's easy to type (I like to use `m`).
 
 ### `mlm start|s [TIME] [NOTE...] [-d/--date DATE]`
@@ -295,10 +301,26 @@ and the overlapping hour counts twice in the day total:
 The `week` row for that date gets `[!]` as well.
 
 Today's plain `status` (no `DATE`, or today's own date given
-explicitly) also checks dates 2 to 14 days old and appends one such
-line for every date it finds with an unclosed start, oldest first, so a
-forgotten `stop` from last week still shows up today. Yesterday gets
-its own treatment, because an overnight session may still be running. A
+explicitly) also checks dates 2 to 14 days old and prints a block for
+every date it finds with an unclosed start, oldest first, so a
+forgotten `stop` from last week still shows up today. These blocks
+print above the stint list, after any `[!]` lines for today itself.
+The block names the date:
+
+```
+[!] unclosed start on Fri 2026-09-25 at 09:00 (5 days ago)
+    fix: mlm stop HH:MM --date 2026-09-25  (a time after 09:00)
+     or: mlm delete punch --date 2026-09-25  (lists punches; rerun with the start's number)
+```
+
+A date with two or more open starts gets two lines instead:
+
+```
+[!] 2 open stints on Fri 2026-09-25 (5 days ago)
+    fix: see mlm status 2026-09-25
+```
+
+Yesterday gets its own treatment, because an overnight session may still be running. A
 lone start still open from yesterday prints a quiet hint. It is not
 counted until you `stop` it, and it marks no anomaly:
 
@@ -332,8 +354,8 @@ Week 2026-41:  08h 00m left to 08h 00m by end of Monday (fulfillment 00h 00m / t
   22:00-now    (15h 30m so far, started yesterday, not counted until stopped)
 ```
 
-If an earlier week has a flagged date, the last line of the page names
-it:
+If an earlier week has a flagged date, one more line names it. It is
+the last of the `[!]` and `[i]` lines, above the stint list:
 
 ```
 [!] carry-in includes anomalies from 2 earlier weeks, oldest 2026-38 (see mlm week 2026-38)
@@ -425,9 +447,11 @@ Week 2026-35:  Total behind: 02h 10m
 
 Show a week's per-day totals plus its carry-in/worked/fulfillment/
 target summary. `WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-37`),
-a bare week number for the current year (e.g. `37`), or `-N` for N
+a bare week number for the current ISO year (e.g. `37`), or `-N` for N
 weeks before the current one (e.g. `-1` = last week), and defaults to
-the current week. With today in week 2026-37, `mlm week -1` shows week
+the current week. The ISO year can differ from the calendar year
+between 29 December and 3 January, so on 2025-12-30 `mlm week 5` is
+week 2026-05. With today in week 2026-37, `mlm week -1` shows week
 2026-36 (2026-08-31 - 2026-09-06). `-N` counts back across years and
 53-week years, so in week 2026-02 `-2` is `2025-52`. `-0` is not
 accepted, and there is no `+N`, so a future week takes its id. As with
@@ -527,6 +551,7 @@ Week 2026-43 (2026-10-19 - 2026-10-25)
   Thu 2026-10-22   08h 52m
   Fri 2026-10-23   08h 40m
   Sat 2026-10-24   08h 13m
+      - refactored the parser
   Sun 2026-10-25   00h 00m
 
 [!] needs a look: run mlm status DATE for details and fixes
@@ -642,12 +667,16 @@ flag it prints the current week. Give at most one range:
 - `-d`/`--date DATE` — one date, `YYYY-MM-DD` or `-N` for N days
   before today (e.g. `-1` = yesterday). A future date is allowed.
 - `-w`/`--week WEEK_ID` — one week, Monday to Sunday, in the same forms
-  as `week` (`2026-43`, a bare `43` for the current year, or `-1` for
-  last week)
+  as `week` (`2026-43`, a bare `43` for the current ISO year, or `-1`
+  for last week)
 - `-m`/`--month MONTH` — one calendar month, `YYYY-MM` (e.g. `2026-03`),
-  a bare month number for the current year (e.g. `3`), or `-N` for N
+  a bare month number for the current calendar year (e.g. `3`), or `-N` for N
   months before the current one (e.g. `-1` = last month, so in January
   2026 `-m -1` is `2025-12`)
+
+A bare week number uses the ISO year and a bare month number the
+calendar year, so the two differ between 29 December and 3 January. On
+2025-12-30, `-w 1` is `2026-01` and `-m 1` is `2025-01`.
 
 Each line is the note's date, two spaces, then the note. Lines run by
 date, and within a date in the order you entered them:
@@ -691,6 +720,19 @@ $ mlm delete note 1 --date 2026-09-10
 deleted. to recreate: mlm note --date 2026-09-10 'fixed migration runner bug'
 ```
 
+The recreate command quotes the note with POSIX single quotes. Check
+it before you run it in another shell, because Windows cmd and
+PowerShell quote differently. When mlm cannot quote a note safely, it
+prints the date and the note with no recreate command:
+
+```sh
+$ mlm delete note 1 --date 2026-09-11
+deleted note (2026-09-11): path C:\dir\file
+```
+
+Retype that note with `mlm note --date 2026-09-11 '...'`, quoted the
+way your own shell needs.
+
 **Stale-id caveat**: `ID` is always resolved against a fresh listing
 at the moment you run `delete`, not whatever listing you last looked
 at. If notes were added or removed for that date since you last ran
@@ -709,18 +751,23 @@ $ mlm delete punch
 1  start 09:00
 2  end 13:00
 $ mlm delete punch 2
-deleted. to recreate: mlm stop 13:00 --date 2026-09-10
+deleted. to recreate: mlm stop 13:00
 ```
 
 ## Build (local dev)
 
 Plain `cargo`, no `dist` needed — a debug build, for iterating on the
-code itself:
+code itself. Run it inside a clone of the repository:
 
 ```sh
+git clone https://github.com/magikmw/mlm-cli.git
+cd mlm-cli
 cargo build
-cargo run -- start "working on mlm"
+MLM_DB_PATH=/tmp/mlm-dev.db cargo run -- start 09:00 "working on mlm"
+MLM_DB_PATH=/tmp/mlm-dev.db cargo run -- status
 ```
+
+`MLM_DB_PATH` keeps the dev loop off your real database.
 
 ## License
 

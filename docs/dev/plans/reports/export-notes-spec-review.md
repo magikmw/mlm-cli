@@ -1,5 +1,7 @@
 # export-notes spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: `docs/dev/specs/2026-10-24-export-notes.md` (untracked, branch `export-notes`, HEAD `b25bef7`).
 Source checked: `src/cli.rs`, `src/date.rs`, `src/storage.rs`, `src/main.rs`, `src/week_view.rs`, `src/db.rs`, `tests/`, `docs/dev/SPEC.md` §1, §2.3, §3, §6, §7, §8, `docs/dev/NOTES.md` entry 125, `AGENTS.md`, `README.md`.
 

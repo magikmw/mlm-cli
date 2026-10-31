@@ -1,5 +1,7 @@
 # panic-fixes spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Spec: `docs/dev/specs/2026-10-25-panic-fixes.md` (draft, `32b919d`)
 - Tree: branch `panic-fixes`, source identical to `main` at `dd91952`
 - Background read: `unwrap-audit-review.md` F1-F4, `export-notes-final-review.md` F1, NOTES 138-139, SPEC §2.1, §3.7, §4.1, §4.2, §6, §6.1, §6.3

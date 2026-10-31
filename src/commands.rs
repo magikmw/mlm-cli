@@ -2,10 +2,9 @@
 //! §4.1, §6.1, §6.3).
 //!
 //! Each handler is a plain function returning `anyhow::Result<()>`: no
-//! printing of errors, no `process::exit`, no panics (PLAN.md interface
-//! contract 7 — the crate-wide `anyhow` convention established by this
-//! milestone). `now` is always injected by the caller (`main`), never
-//! read from a global clock here (contract 6).
+//! printing of errors, no `process::exit`, no panics (the crate-wide
+//! `anyhow` convention). `now` is always injected by the caller
+//! (`main`), never read from a global clock here.
 
 use std::io::Write;
 
@@ -23,7 +22,7 @@ use crate::time::{TimeParseError, parse_time};
 
 /// Record a start punch for today, optionally with an inline note
 /// (SPEC §3.2), or against another day via `--date`
-/// (backdated-punches spec §4). After a successful write, warns on
+/// (SPEC §3.4a). After a successful write, warns on
 /// stderr about stale open starts in the last 14 days (§7.4) —
 /// best-effort, never turns a successful write into a failed command.
 pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
@@ -40,7 +39,7 @@ pub fn start(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> a
 
 /// Record an end punch for today, optionally with an inline note
 /// (SPEC §3.3 — "same shape as start"), or against another day via
-/// `--date` (backdated-punches spec §4). After a successful write, warns
+/// `--date` (SPEC §3.4a). After a successful write, warns
 /// on stderr about every orphaned end on the written date (§7.4) —
 /// best-effort, like `start`'s warning.
 pub fn stop(conn: &mut Connection, now: DateTime<Local>, args: &PunchArgs) -> anyhow::Result<()> {
@@ -146,7 +145,7 @@ fn orphan_warning_lines(date: chrono::NaiveDate, times: &[chrono::NaiveTime]) ->
 }
 
 /// Record a standalone work-log note (SPEC §3.4), against today or, with
-/// `--date`, a resolved past date (backdated-punches spec §4).
+/// `--date`, a resolved past date (SPEC §3.4a).
 pub fn note(conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs) -> anyhow::Result<()> {
     let today = now.date_naive();
     let target_date = resolve_target_date(&args.date, today)?;
@@ -160,7 +159,7 @@ pub fn note(conn: &mut Connection, now: DateTime<Local>, args: &NoteArgs) -> any
 /// open single-quote, emit a double-quoted literal `'`, reopen the
 /// single-quote). Single quotes, never double: double quotes still let
 /// a shell interpolate `$(...)`/backticks/`$VAR` inside them before the
-/// token reaches `mlm` on replay (spec §5). The output always starts and
+/// token reaches `mlm` on replay (SPEC §3.9). The output always starts and
 /// ends with `'`, even for an empty or already-safe body.
 fn quote_shell_single(body: &str) -> String {
     let mut out = String::with_capacity(body.len() + 2);
@@ -179,8 +178,9 @@ fn quote_shell_single(body: &str) -> String {
 /// Validate a 1-based ephemeral `id` against `count` freshly-fetched
 /// rows for the resolved date; on success, return the corresponding
 /// zero-based index into that `Vec`. `id == 0` and `id > count` are both
-/// application-level hard errors (spec §5) — clap has already rejected
-/// negative/non-numeric/too-large values before this ever runs (Task 2).
+/// application-level hard errors (SPEC §6.1) — clap has already rejected
+/// negative/non-numeric/too-large values before this ever runs (SPEC
+/// §3.9).
 fn validate_entry_id(id: u32, count: usize) -> anyhow::Result<usize> {
     let entry_word = if count == 1 { "entry" } else { "entries" };
     if id == 0 {
@@ -193,7 +193,7 @@ fn validate_entry_id(id: u32, count: usize) -> anyhow::Result<usize> {
     Ok(index)
 }
 
-/// List-mode text for punches (spec §4): `<n>  <kind> <HH:MM>` per row,
+/// List-mode text for punches (SPEC §7.4): `<n>  <kind> <HH:MM>` per row,
 /// 1-based. Pure, never touches storage.
 fn punch_list_text(rows: &[Punch]) -> String {
     rows.iter()
@@ -210,7 +210,7 @@ fn punch_list_text(rows: &[Punch]) -> String {
         .collect()
 }
 
-/// List-mode text for notes (spec §4): `<n>  <body>` per row, 1-based.
+/// List-mode text for notes (SPEC §7.4): `<n>  <body>` per row, 1-based.
 fn note_list_text(rows: &[Note]) -> String {
     rows.iter()
         .enumerate()
@@ -228,7 +228,7 @@ fn list_or_nothing(text: String, date: chrono::NaiveDate) -> String {
     }
 }
 
-/// Build the punch recreate-echo (spec §5/§7): `mlm start|stop
+/// Build the punch recreate-echo (SPEC §7.4): `mlm start|stop
 /// HH:MM[ --date YYYY-MM-DD]`. Converts the deleted row's own stored
 /// `at_utc` to local time per-instant (`p.at_utc.with_timezone(&Local)`)
 /// — never a single offset grabbed once from `now` and reused — so a
@@ -239,12 +239,11 @@ fn list_or_nothing(text: String, date: chrono::NaiveDate) -> String {
 /// for an end-punch is `mlm stop`, not `mlm end` — never reuse
 /// `as_str()` here, match on `kind` explicitly instead.
 ///
-/// Generic over `Tz: chrono::TimeZone` (Finding 5, pre-merge review) so
-/// tests can pin a real IANA zone (e.g. `chrono_tz::Europe::Warsaw`) and
-/// exercise an actual DST transition instead of hardcoding
-/// `chrono::Local`, which is UTC on every CI runner and would make a
-/// DST-crossing test tautological. The real call site (`delete_punch`)
-/// passes `chrono::Local` explicitly — production behavior unchanged.
+/// Generic over `Tz: chrono::TimeZone` so tests can pin a real IANA zone
+/// (e.g. `chrono_tz::Europe::Warsaw`) and exercise an actual DST
+/// transition instead of hardcoding `chrono::Local`, which is UTC on
+/// every CI runner and would make a DST-crossing test tautological. The
+/// real call site (`delete_punch`) passes `chrono::Local`.
 fn punch_recreate_line<Tz: TimeZone>(p: &Punch, today: chrono::NaiveDate, tz: &Tz) -> String {
     let verb = match p.kind {
         PunchKind::Start => "start",
@@ -258,30 +257,40 @@ fn punch_recreate_line<Tz: TimeZone>(p: &Punch, today: chrono::NaiveDate, tz: &T
     line
 }
 
-/// Build the note recreate-echo (spec §5/§7): `mlm note[ --date
-/// YYYY-MM-DD] '<quoted body>'`, `--date` always preceding the body
-/// (backdated-punches spec §2.1 ordering footgun — this printed string
-/// is fed back into `mlm note`, which does have that ordering
-/// requirement, even though `delete`'s own args don't). Milestone 13's
-/// newline-normalization guarantees a body written from this point
-/// forward never contains `\n`/`\r` (a `debug_assert!` below is a cheap
-/// tripwire for that invariant, not a runtime branch). Fallback (spec
-/// §5): a body containing a literal `\` cannot be quoted identically
-/// across shells — verified that fish's single-quote parsing recognizes
-/// `\\`/`\'` escapes that POSIX shells don't inside `'...'`, so a
-/// backslash would silently corrupt or break on replay under fish. For
-/// that one case, print a plain description instead of a quoted command
-/// — `deleted note (2026-09-10): <first line of body>...`.
+/// The line `delete note` prints for the deleted row (SPEC §7.4), newline
+/// included. A body holding a literal `\` cannot be quoted identically
+/// across shells, because fish's single-quote parsing honors `\\`/`\'`
+/// escapes that POSIX shells don't. That body gets a plain description,
+/// `deleted note (YYYY-MM-DD): <body>`, with the date always shown.
+/// Every other body gets `deleted. to recreate: <note_recreate_line>`.
+///
+/// A body stored before insert-time normalization can hold newlines.
+/// The plain description collapses each `\r`/`\n` run to one space, so
+/// it stays one line.
+fn note_deleted_line(n: &Note, today: chrono::NaiveDate) -> String {
+    if n.body.contains('\\') {
+        let body = n
+            .body
+            .split(['\r', '\n'])
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("deleted note ({}): {body}\n", format_date(n.date));
+    }
+    format!("deleted. to recreate: {}\n", note_recreate_line(n, today))
+}
+
+/// Build the note recreate command (SPEC §7.4): `mlm note[ --date
+/// YYYY-MM-DD] '<quoted body>'`. `--date` always precedes the body,
+/// because `mlm note` absorbs a trailing `--date` into the note text
+/// (SPEC §3.4a). The insert path collapses newlines into spaces, so a
+/// body never holds `\n`/`\r`, and the `debug_assert!` below guards that.
 fn note_recreate_line(n: &Note, today: chrono::NaiveDate) -> String {
     debug_assert!(
         !n.body.contains(['\n', '\r']),
-        "note body contained a newline at echo time -- Milestone 13's insert-path \
+        "note body contained a newline at echo time -- the insert path's \
          normalization should make this impossible"
     );
-    if n.body.contains('\\') {
-        let first_line = n.body.lines().next().unwrap_or("");
-        return format!("deleted note ({}): {first_line}...", format_date(n.date));
-    }
     let mut line = "mlm note".to_string();
     if n.date != today {
         line.push_str(&format!(" --date {}", format_date(n.date)));
@@ -291,14 +300,12 @@ fn note_recreate_line(n: &Note, today: chrono::NaiveDate) -> String {
     line
 }
 
-/// List (no `ID`) or delete (`ID` given) that date's notes (spec §4/§5).
+/// List (no `ID`) or delete (`ID` given) that date's notes (SPEC §3.9).
 /// `ID` is always resolved against a freshly re-run
 /// `storage::notes_for_date` on every invocation — never a cached
-/// listing from an earlier call (spec §5's stale-id note). On delete,
-/// prints a ready-to-run recreate line (spec §5/§7); the note-body
-/// quoting/footgun/legacy-newline handling for that line lives in
-/// `note_recreate_line`. All output goes to `out`. The delete stays when
-/// the output fails.
+/// listing from an earlier call (SPEC §3.9's stale-id rule). On delete,
+/// prints the line `note_deleted_line` builds (SPEC §7.4). All output
+/// goes to `out`. The delete stays when the output fails.
 pub fn delete_note<W: Write>(
     conn: &Connection,
     now: DateTime<Local>,
@@ -316,13 +323,12 @@ pub fn delete_note<W: Write>(
 
     let index = validate_entry_id(id, rows.len())?;
     let deleted = storage::delete_note(conn, rows[index].id)?;
-    let line = note_recreate_line(&deleted, today);
-    emit(out, &format!("deleted. to recreate: {line}\n"))?;
+    emit(out, &note_deleted_line(&deleted, today))?;
     Ok(())
 }
 
-/// List (no `ID`) or delete (`ID` given) that date's punches (spec
-/// §4/§5). Same freshness/no-caching rule as `delete_note`. On delete,
+/// List (no `ID`) or delete (`ID` given) that date's punches (SPEC
+/// §3.9). Same freshness/no-caching rule as `delete_note`. On delete,
 /// prints a ready-to-run recreate line built from the deleted row's own
 /// `at_utc` converted to local time per-instant (`punch_recreate_line`)
 /// — never `now`'s offset. All output goes to `out`. The delete stays
@@ -351,7 +357,7 @@ pub fn delete_punch<W: Write>(
 
 /// Shared date-resolution step for `note()` and `punch()`: `None` means
 /// "today"; `Some` is resolved (and future-checked) via
-/// `resolve_future_checked_date` (backdated-punches spec §3/§4).
+/// `resolve_future_checked_date` (SPEC §3.4a).
 fn resolve_target_date(
     date: &Option<String>,
     today: chrono::NaiveDate,
@@ -364,16 +370,15 @@ fn resolve_target_date(
 
 /// Shared `start`/`stop` implementation, parameterised by punch kind.
 ///
-/// Validation order (backdated-punches spec §3, extending §4.1's
-/// existing rule): date resolution happens first (a malformed or
-/// future `--date` is a hard error here, before TIME is even looked
-/// at), then TIME is parsed -- required when the resolved date isn't
-/// today (E1/new "required" case exits here, nothing written) -- then
-/// the note body is handed to `storage::insert_punch_with_note`, which
-/// itself validates empty/whitespace bodies *before* opening a
-/// transaction (E5) and wraps the punch+note pair in one transaction so
-/// a failure at either insert rolls back both (§6.1: a rejected note
-/// leaves no orphaned punch).
+/// Validation order (SPEC §3.4a, §6.1): date resolution happens first
+/// (a malformed or future `--date` is a hard error here, before TIME is
+/// even looked at), then TIME is parsed -- required when the resolved
+/// date isn't today (E1/new "required" case exits here, nothing
+/// written) -- then the note body is handed to
+/// `storage::insert_punch_with_note`, which itself validates
+/// empty/whitespace bodies *before* opening a transaction (E5) and wraps
+/// the punch+note pair in one transaction so a failure at either insert
+/// rolls back both (§6.1: a rejected note leaves no orphaned punch).
 ///
 /// Returns the target date and the new punch's row id -- `start` needs
 /// the id to tell its own just-written punch apart from a pre-existing
@@ -907,7 +912,7 @@ mod tests {
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
-    // --- backdated punches (backdated-punches spec §5) ------------------
+    // --- backdated punches (SPEC §3.4a) ---------------------------------
 
     // Successful backdated punch with explicit TIME.
     #[test]
@@ -1126,7 +1131,7 @@ mod tests {
         assert!(notes_for(&conn, d(2026, 2, 13)).is_empty());
     }
 
-    // --- stop's own date-error paths (backdated-punches spec §5) --------
+    // --- stop's own date-error paths (SPEC §3.4a) -----------------------
     //
     // Every existing malformed-date/future-date/missing-TIME test above
     // exercises only `start`, even though `stop` shares the same
@@ -1184,7 +1189,7 @@ mod tests {
         assert!(punches(&conn).is_empty());
     }
 
-    // --- backdated note (backdated-punches spec §5) ---------------------
+    // --- backdated note (SPEC §3.4a) ------------------------------------
 
     #[test]
     fn backdated_note_stored_against_resolved_date() {
@@ -1205,11 +1210,11 @@ mod tests {
         assert!(notes(&conn).is_empty(), "nothing written against today");
     }
 
-    // --- retroactive week recompute (backdated-punches spec §3.1) -------
+    // --- retroactive week recompute (SPEC §3.4a) ------------------------
     //
-    // §3.1 calls this the whole point of the feature: backdating a punch
-    // into an already-"closed" past week must change that week's, and a
-    // later week's, owed/carry figures on the next status view. Nothing
+    // This is the whole point of backdating: a punch backdated into an
+    // already-"closed" past week must change that week's, and a later
+    // week's, owed/carry figures on the next status view. Nothing
     // above proves this -- every test up to here only inspects rows via
     // `punches_for`/`notes_for`, never a computed week figure. This
     // drives `status::resolve` (src/status.rs) directly against the same
@@ -1224,8 +1229,8 @@ mod tests {
     // 2026-06 (Mon 2026-02-02 .. Sun 2026-02-08) sits between 2026-05 and
     // the current week 2026-07, so it is already "closed" (in the past,
     // per `render::week_framing`) both before and after the backdated
-    // punch lands -- exactly the "already-closed past week" §3.1
-    // describes, not the current week's own live-updating figure.
+    // punch lands -- an already-closed past week, not the current week's
+    // own live-updating figure.
     #[test]
     fn backdated_punch_retroactively_changes_a_later_closed_weeks_owed() {
         let mut conn = test_db();
@@ -1286,7 +1291,7 @@ mod tests {
         assert_ne!(before.week_line, after.week_line);
     }
 
-    // --- delete: list/delete handlers (Milestone 14) ---------------------
+    // --- delete: list/delete handlers (SPEC §3.9) -----------------------
 
     #[test]
     fn delete_note_future_date_is_rejected() {
@@ -1425,8 +1430,8 @@ mod tests {
         assert!(notes(&conn).is_empty());
     }
 
-    /// Regression test for the flag-collision/`--`-swallowing fix (spec
-    /// §5): the underlying bug is position-dependent, so the body must
+    /// Regression test for the flag-collision/`--`-swallowing fix (SPEC
+    /// §7.4): the underlying bug is position-dependent, so the body must
     /// have the flag-lookalike as its *leading* token, not mid-sentence
     /// (a mid-sentence one would pass identically with or without the
     /// fix and prove nothing). There is no stdout-capture fixture in this
@@ -1497,12 +1502,9 @@ mod tests {
 
     /// A note body containing a literal backslash cannot be quoted
     /// identically across shells (fish's single-quote parsing recognizes
-    /// `\\`/`\'` escapes inside `'...'` that POSIX shells don't), so
-    /// `note_recreate_line` must fall back to the plain-description
-    /// format instead of emitting a quoted command that would silently
-    /// corrupt or fail to parse on replay under fish. Uses a raw string
-    /// literal to be unambiguous about containing one real backslash
-    /// character, not an escaped pair.
+    /// `\\`/`\'` escapes inside `'...'` that POSIX shells don't), so the
+    /// delete line is a plain description, not a recreate command. Uses
+    /// a raw string literal to hold one real backslash per `\`.
     #[test]
     fn backslash_body_falls_back_to_plain_description() {
         let conn = test_db();
@@ -1510,8 +1512,49 @@ mod tests {
         let id = storage::insert_note(&conn, d(2026, 2, 10), body, fixed_now().with_timezone(&Utc))
             .expect("insert");
         let deleted = storage::delete_note(&conn, id).expect("delete");
-        let line = note_recreate_line(&deleted, today());
-        assert_eq!(line, format!("deleted note (2026-02-10): {body}..."));
+        let line = note_deleted_line(&deleted, today());
+        assert_eq!(line, format!("deleted note (2026-02-10): {body}\n"));
+    }
+
+    #[test]
+    fn backslash_body_today_still_shows_its_date() {
+        let n = Note {
+            id: 1,
+            date: today(),
+            body: r"a\b".to_string(),
+            created_at_utc: fixed_now().with_timezone(&Utc),
+        };
+        let line = note_deleted_line(&n, today());
+        assert_eq!(
+            line,
+            format!("deleted note ({}): a\\b\n", format_date(today()))
+        );
+    }
+
+    /// A note stored before insert-time normalization can still hold
+    /// newlines. Its backslash line stays one line.
+    #[test]
+    fn backslash_body_with_legacy_newlines_prints_one_line() {
+        let n = Note {
+            id: 1,
+            date: d(2026, 2, 10),
+            body: "a\\b\r\n\nc\rd".to_string(),
+            created_at_utc: fixed_now().with_timezone(&Utc),
+        };
+        let line = note_deleted_line(&n, today());
+        assert_eq!(line, "deleted note (2026-02-10): a\\b c d\n");
+    }
+
+    #[test]
+    fn plain_body_deleted_line_keeps_recreate_prefix() {
+        let n = Note {
+            id: 1,
+            date: today(),
+            body: "plain".to_string(),
+            created_at_utc: fixed_now().with_timezone(&Utc),
+        };
+        let line = note_deleted_line(&n, today());
+        assert_eq!(line, "deleted. to recreate: mlm note 'plain'\n");
     }
 
     #[test]
@@ -1691,8 +1734,8 @@ mod tests {
         assert_eq!(remaining[0].kind, PunchKind::End);
     }
 
-    /// Finding 8 (pre-merge review): "1 entries" reads wrong -- singular
-    /// count must say "entry", plural counts still say "entries".
+    /// "1 entries" reads wrong -- a singular count must say "entry",
+    /// plural counts still say "entries".
     #[test]
     fn validate_entry_id_pluralizes_entry_count_correctly() {
         let err_one = validate_entry_id(0, 1).expect_err("expected error");
@@ -1828,12 +1871,9 @@ mod tests {
         assert_eq!(remaining.len(), 1);
     }
 
-    /// Finding 5 (pre-merge review): the previous version of this test
-    /// hardcoded `chrono::Local`, which is UTC (zero offset, no DST) on
-    /// every CI runner -- making the assertion tautological, since it
-    /// just re-derived the same `with_timezone(&Local)` expression the
-    /// implementation itself uses. `punch_recreate_line` is now generic
-    /// over `Tz: chrono::TimeZone`, so this pins a real IANA zone
+    /// `chrono::Local` is UTC (zero offset, no DST) on every CI runner, so
+    /// a `Local`-based assertion would be tautological. `punch_recreate_line`
+    /// is generic over `Tz: chrono::TimeZone`, so this pins a real IANA zone
     /// (`chrono_tz::Europe::Warsaw`) across its actual 2026 spring-forward
     /// transition (clocks jump from 01:59:59 to 03:00:00 local on
     /// 2026-03-29), mirroring `storage.rs`'s own D1/D2-style DST tests:
@@ -1877,8 +1917,7 @@ mod tests {
     /// before/after `status::resolve` pattern, but in reverse: deleting
     /// the only entry on the currently-earliest tracked date shifts
     /// `storage::earliest_data_date` forward, which changes a later
-    /// week's figures on the next status/week view (spec §5's called-out
-    /// consequence).
+    /// week's figures on the next status/week view.
     #[test]
     fn earliest_data_date_shift_changes_later_status() {
         let mut conn = test_db();
