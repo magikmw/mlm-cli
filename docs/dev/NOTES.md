@@ -1,7 +1,8 @@
 # Design notes
 
-Running log of background/story before formal spec exists. Not a spec —
-decisions here can (will) change. Formal spec comes later as its own doc.
+Running log of design and process decisions, numbered. Not a spec:
+current behavior lives in `docs/dev/SPEC.md`, and decisions here can
+change.
 
 ## Current state
 
@@ -9,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 159
+- **Next entry**: 160
 - **Last release**: `v0.4.0`
 - **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: none. `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `doc-drift` (entry 159). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -145,7 +146,7 @@ incremental resumming through the day. Motivating the tool.
    possible later but not worth it for MVP — compute at read time.
 5. **Editing/deleting past entries**: deferred, not in MVP. Add-only.
    (Superseded for deleting: `mlm delete note|punch` shipped in 0.3.0,
-   see `docs/dev/specs/2026-09-13-delete-punches-notes.md` — editing
+   see SPEC.md §3.9 — editing
    is still deferred, correction path is delete-then-recreate.)
 6. **Timezone**: no explicit open question raised as blocking; assume
    single-machine local wall-clock time unless it comes up again.
@@ -2146,6 +2147,22 @@ SPEC.md and PLAN.md:
     numbers, as SPEC §3.7 says. Applied by the coordinator (owned doc,
     wording only). Spec, plan and task plans archived. Merged to `main`
     `--no-ff`, unreleased.
+
+159. **`doc-drift` brainstorm.** The user asked to fix the declared
+    MSRV and sweep the live docs for drift. MSRV is 1.95, set by
+    `rusqlite_migration` 2.6.0 (the code itself needs 1.88 for let
+    chains); the user keeps current deps rather than pinning older
+    ones. Merged as `9bc2266` on branch `doc-drift` (renamed from
+    `msrv-fix`). Sweep (`plans/reports/doc-drift-sweep-review.md`):
+    21 findings; user approved F1-F20, F21 dropped. Coordinator picks:
+    banner every archived file including reports (F6), add the note
+    to the `week --notes` example rather than dropping it from export
+    (F13), new SPEC §3.9 for `delete`. Coordinator applied NOTES' own
+    F15 header and the F4 pointer. Spec and the two-task split are in
+    one draft (`specs/2026-10-31-doc-drift.md`), since the sweep
+    already reviewed the ground; one review covers both. SAST scanning
+    (cargo-deny pause in `prep_release.sh`) waits until this lands in
+    `main`.
 
 ## Open questions (still need answers)
 
