@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 161
+- **Next entry**: 162
 - **Last release**: `v0.4.0`
 - **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: `doc-drift` (entry 159). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `doc-drift` (locked, entry 161). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2179,6 +2179,15 @@ SPEC.md and PLAN.md:
     doubled prefix (`deleted. to recreate: deleted note (...)...`)
     goes to the user: documenting it is in scope, fixing it is a
     behavior change.
+
+161. **`doc-drift` locked.** User: fix R1. A deleted note whose body
+    holds a backslash prints `deleted note (<date>): <body>` alone,
+    date always shown, no recreate prefix, no `...`. That is the
+    changeset's one behavior change besides the F8/F9 help text.
+    Phase 14 runs (README and `--help` change), tier `returning`.
+    Phases 5-8 collapse into the spec's §6: two tasks with disjoint
+    files, every fix already stated at text level by the sweep, the
+    review and the spec, so no separate task plans. Phase 10 skipped.
 
 ## Open questions (still need answers)
 
