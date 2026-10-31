@@ -583,8 +583,10 @@ Week 2026-36 target: 38h 00m
 `DURATION` is always required, so a lone week id counts as a missing
 duration. `mlm week target -1`, `mlm week target 7` and
 `mlm week target 2026-07` print the same usage error as bare
-`mlm week target` and exit with code 2. A bare number counts as a week
-id, so `mlm week target 40` fails the same way. Write `40h`.
+`mlm week target` and exit with code 2. A bare number that is a valid
+week number counts as a week id, so `mlm week target 40` fails the
+same way. Write `40h`. Any other lone token, such as `0`, `60` or
+`-0`, fails as an invalid duration with exit code 1.
 
 The target is at most 168h, the hours in a week. A larger value fails
 with exit code 1 and leaves the week's target as it was:

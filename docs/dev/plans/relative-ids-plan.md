@@ -1,5 +1,7 @@
 # Plan: relative-ids
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-25-relative-ids.md` (locked). Review: `docs/dev/plans/reports/relative-ids-spec-review.md` (folded, NOTES.md entry 152). Decision log: NOTES.md entries 151-153.
 
 **Altitude**: scope of work only. Task plans choose identifiers and mechanisms.

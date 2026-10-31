@@ -1,5 +1,7 @@
 # Task plan: relative-ids, Task 1 (code and tests)
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 - Changeset plan: `docs/dev/plans/relative-ids-plan.md` (Task 1, contracts 1-8)
 - Spec: `docs/dev/specs/2026-10-25-relative-ids.md` (locked)
 - Branch: `relative-ids` at `13e0f80`

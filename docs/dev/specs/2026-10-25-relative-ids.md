@@ -1,5 +1,7 @@
 # Relative week and month ids — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `77fb19f` (`v0.4.0` + `orphan-stop-warning` + `week-notes` + `export-notes` + `panic-fixes`, unreleased).
 **Status**: locked 2026-10-31 after one review
 (`docs/dev/plans/reports/relative-ids-spec-review.md`, folded in NOTES.md

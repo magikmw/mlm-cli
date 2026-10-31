@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 158
+- **Next entry**: 159
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (final review running, entry 157). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: none. `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2135,6 +2135,17 @@ SPEC.md and PLAN.md:
     an already-decided rule or behavior that existed before the
     changeset. Final review dispatched on Opus (user's choice), clone
     `/tmp/cd-scratch/relative-ids-final` at `0580e6f`.
+
+158. **`relative-ids` reviewed and closed out.** Final review on Opus
+    (`plans/reports/relative-ids-final-review.md`): ship-with-followups.
+    Manual runs matched every contract; a sweep of 42,732 date and
+    offset pairs found no panic and no week below `1000-01`; 11 of 12
+    mutations caught, the survivor equivalent. Reminder echo is safe:
+    only parser-accepted tokens reach it. F1 README said every bare
+    number is a week id under `week target`; now limited to valid week
+    numbers, as SPEC §3.7 says. Applied by the coordinator (owned doc,
+    wording only). Spec, plan and task plans archived. Merged to `main`
+    `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 
