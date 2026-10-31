@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Prep a new mlm release.
 #
-# This script does the *local, reversible* half of a release: bump the
-# version, regenerate the changelog.
+# This script does the *local, reversible* half of a release: check the
+# dependencies, bump the version, regenerate the changelog.
+# The dependency check needs `cargo-deny` 0.19 and the network. A failed
+# or skipped check asks whether to continue.
 # Split with `release.sh` to allow for clean changelog curation until I figure
 # out how to do it better.
 #
@@ -59,7 +61,37 @@ done
 current_version_line="$(grep -m1 '^version[[:space:]]*=' Cargo.toml)"
 echo "Releasing mlm ${new_version} (currently: ${current_version_line})"
 
-# --- 2. Bump the version in Cargo.toml ---------------------------------
+# --- 2. Check dependencies ---------------------------------------------
+
+# Prompt on stderr and continue only on `y`/`Y`. Off a terminal, or at
+# end of input, stop without reading an answer.
+confirm_or_stop() {
+    local answer=""
+    printf '%s continue anyway? [y/N] ' "$1" >&2
+    if ! { [ -t 0 ] && read -r answer; }; then
+        answer=""
+        echo >&2
+    fi
+    case "$answer" in
+        y | Y) ;;
+        *)
+            echo "error: release stopped at dependency check" >&2
+            exit 1
+            ;;
+    esac
+}
+
+if command -v cargo-deny >/dev/null 2>&1; then
+    if cargo deny --locked check advisories licenses; then
+        echo "dependency check: ok"
+    else
+        confirm_or_stop "dependency check found problems."
+    fi
+else
+    confirm_or_stop "dependency check skipped: cargo-deny not found."
+fi
+
+# --- 3. Bump the version in Cargo.toml ---------------------------------
 
 if command -v cargo-set-version >/dev/null 2>&1; then
     cargo set-version "$new_version"
@@ -83,11 +115,11 @@ fi
 # Keep Cargo.lock in sync without touching dependency versions.
 cargo update --workspace --offline 2>/dev/null || cargo update --workspace
 
-# --- 3. Update CHANGELOG.md ----------------------------------------
+# --- 4. Update CHANGELOG.md ----------------------------------------
 
 git-cliff --config cliff.toml --unreleased --tag "$tag" --prepend CHANGELOG.md
 
-# --- 6. Tell the human what to do next -----------------------------------
+# --- 5. Tell the human what to do next -----------------------------------
 
 cat <<EOF
 
