@@ -1,5 +1,7 @@
 # Open-punch visibility and anomaly remedies — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `v0.3.6` (`main` at `267060b`).
 **Amended** 2026-09-30 at phase 15 triage (§3.6 written-date rule and
 warning layout; §1.2 pairing overlap) — NOTES.md entry 82.

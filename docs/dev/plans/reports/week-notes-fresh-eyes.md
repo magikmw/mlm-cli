@@ -1,5 +1,7 @@
 # week --notes: fresh-eyes user run
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: /tmp/cd-sandbox/week-notes/ (`mlm 0.4.0`, README.md). Today Sat 2026-10-24, current week 2026-43.
 I used `MLM_DB_PATH` pointing at a scratch DB inside the sandbox and deleted it afterwards. My first attempt put the DB in a path
 that did not last between shell calls, so the data looked like it had vanished. That was my setup, not the tool, and I

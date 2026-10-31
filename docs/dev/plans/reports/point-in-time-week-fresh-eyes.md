@@ -1,5 +1,7 @@
 # point-in-time-week fresh-eyes report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 The system clock read Sat 2026-10-03 18:27 CEST (week 2026-40, Mon 09-28 to Sun 10-04). I could not reach a Monday-to-Thursday state, so the `by end of <Weekday>` headline form never appeared in my runs. Every current-week screen used the Friday-on form `left to 40h 00m target`.
 
 Databases used: s1 (heavy week), s2 (light week), s3 (owed), s4 (ahead), all inside the scratch dir.

@@ -1,5 +1,7 @@
 # relative-ids — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Baseline: `main` at `77fb19f`
 - Branch: `relative-ids`, tip `0580e6f` (clone `/tmp/cd-scratch/relative-ids-final`, HEAD verified)
 - Spec: `docs/dev/specs/2026-10-25-relative-ids.md` (locked)

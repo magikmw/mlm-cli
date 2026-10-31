@@ -1,5 +1,7 @@
 # Current-week "ahead of target" wording — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `v0.3.6`.
 **Status**: adversarially reviewed 2026-09-24
 (`docs/dev/plans/reports/current-week-ahead-wording-spec-review.md`,

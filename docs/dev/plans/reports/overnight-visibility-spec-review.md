@@ -1,5 +1,7 @@
 # Review: overnight-visibility spec
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec under review: `docs/dev/specs/2026-10-04-overnight-visibility.md` (draft, baseline 6edd67b).
 
 ## Findings

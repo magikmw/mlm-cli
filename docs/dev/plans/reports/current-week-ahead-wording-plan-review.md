@@ -1,5 +1,7 @@
 # Adversarial review — `current-week-ahead-wording-plan.md`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed against: `docs/dev/plans/current-week-ahead-wording-plan.md`,
 `docs/dev/specs/2026-09-24-current-week-ahead-wording.md`,
 `src/render.rs`, `src/status.rs`, `src/week_view.rs`, `README.md`,

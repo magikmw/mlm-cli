@@ -1,5 +1,7 @@
 # Possible-issues triage validation
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Branch `possible-issues-triage` (baseline `main` @ be85617). Date of run Sat 2026-10-03, local clock about 22:40 CEST.
 
 The dispatch named `possible-issues-triage-validation.md`. A write hook refused that name (it only allows `*-review.md` or `*-consistency.md`), so this file carries the `-review` suffix.

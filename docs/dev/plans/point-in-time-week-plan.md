@@ -1,5 +1,7 @@
 # Plan: point-in-time-week
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-10-03-point-in-time-week.md` (locked).
 
 **Altitude note**: this document is scope of work only. No code, no

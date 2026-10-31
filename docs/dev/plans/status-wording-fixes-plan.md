@@ -1,5 +1,7 @@
 # Plan: status-wording-fixes
 
+> **Archived — historical planning record.** Not authoritative. Current spec: `docs/dev/SPEC.md`. Design/process history: `docs/dev/NOTES.md`.
+
 Spec: `docs/dev/specs/2026-09-23-status-wording-fixes.md` (locked).
 
 ## Goal

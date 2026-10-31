@@ -1,5 +1,7 @@
 # live-eod fix pass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Scope**: final-review F1, F2 and fresh-eyes F1, F2, F6, F7, F8, F9, F11, plus the "Known issues" rename.
 - **Base**: worktree started on an older commit (`f76ad3b`); rebased onto `live-eod` at `d435603`.
 - **Commits**: `e2955f2` (code), one docs commit after it.

@@ -1,5 +1,7 @@
 # Panic audit: `unwrap`/`expect` and other panic sources
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Tree: `main` at `dd91952`
 - Scope: `src/**/*.rs` production code, `examples/seed_test_data.rs`
 - Excluded: `#[cfg(test)]` modules (every one runs to end of file, except the

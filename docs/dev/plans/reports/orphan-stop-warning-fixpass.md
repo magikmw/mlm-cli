@@ -1,5 +1,7 @@
 # orphan-stop-warning — fix pass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Input**: `docs/dev/plans/reports/orphan-stop-warning-final-review.md` (F1-F3)
 - **Base**: worktree rebased onto `orphan-stop-warning` tip `a6d2f37` (it was not an ancestor at start)
 - **Files touched**: `docs/dev/SPEC.md`, `README.md`, `tests/orphan_stop_cli.rs`, this report

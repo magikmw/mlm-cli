@@ -1,5 +1,7 @@
 # orphan-stop-warning — spec review, round 2
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed `docs/dev/specs/2026-10-24-orphan-stop-warning.md` at `1b5f29f`
 against `src/stint.rs`, `src/lookback.rs`, `src/anomalies.rs`,
 `src/commands.rs`, `src/render.rs`, `src/storage.rs`, `src/date.rs`,

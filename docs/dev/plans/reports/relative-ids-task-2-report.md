@@ -1,5 +1,7 @@
 # Completion report: relative-ids, Task 2 (docs)
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/relative-ids-task-2-docs.md`.
 
 ## Base

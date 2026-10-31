@@ -1,5 +1,7 @@
 # relative-ids plan review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Plan: `docs/dev/plans/relative-ids-plan.md` (branch `relative-ids` at `8d159cb`)
 - Spec: `docs/dev/specs/2026-10-25-relative-ids.md` (locked)
 - Method: read the plan, the spec, the spec review, NOTES.md 150-153, and the cited source and tests. Built `mlm` from this branch into `/tmp/cd-scratch/relids-plan/mlmtarget` and probed it against a scratch db with `MLM_DB_PATH` and `TZ=UTC`. Built a clap 4.6.6 harness in `/tmp/cd-scratch/relids-plan/src/main.rs` that copies `WeekArgs`/`WeekTargetArgs` with `allow_negative_numbers` on `week_id`, the new help text, and two ways to build the lone-`WEEK_ID` error.

@@ -1,5 +1,7 @@
 # possible-issues-triage: cross-document consistency review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Scope. Changeset plan (`docs/dev/plans/possible-issues-triage-plan.md`, "plan"), spec (`docs/dev/specs/2026-10-03-possible-issues-triage.md`, "spec"), task plans T1-T6 (`docs/dev/plans/possible-issues-triage-task-N-*.md`), current source at `cccfb8f` plus working-tree edits, NOTES.md entries 96-98. Looked for drift between documents only. Nothing was built or run.
 
 ## Findings

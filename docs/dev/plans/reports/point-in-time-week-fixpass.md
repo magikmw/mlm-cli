@@ -1,5 +1,7 @@
 # point-in-time-week fixpass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Closes the listed findings from `point-in-time-week-final-review.md` and `point-in-time-week-fresh-eyes.md`.
 
 ## Base

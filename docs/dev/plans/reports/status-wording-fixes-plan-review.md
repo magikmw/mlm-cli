@@ -1,5 +1,7 @@
 # Adversarial review — status-wording-fixes-plan.md
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed against: `docs/dev/specs/2026-09-23-status-wording-fixes.md` (locked)
 and `src/render.rs`, `src/status.rs`, `src/week.rs`, `src/week_view.rs`,
 `src/commands.rs`, `README.md`, `docs/dev/SPEC.md` as they exist on `main`

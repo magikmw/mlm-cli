@@ -1,5 +1,7 @@
 # point-in-time-week final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Scope**: `git diff efd97e4..point-in-time-week` (code in `src/`, SPEC.md, README.md, NOTES.md)
 - **Spec**: `docs/dev/specs/2026-10-03-point-in-time-week.md` (locked)
 - **Plan**: `docs/dev/plans/point-in-time-week-plan.md` (with review folds)

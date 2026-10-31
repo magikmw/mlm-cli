@@ -1,5 +1,7 @@
 # Fresh-eyes report — open-punch-visibility
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Ran against the built `mlm` binary and its bundled `README.md`, with
 `MLM_DB_PATH` pointed at scratch databases per scenario. No prior
 knowledge of the source used — only `--help` output and the README.

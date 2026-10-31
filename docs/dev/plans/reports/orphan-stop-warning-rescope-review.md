@@ -1,5 +1,7 @@
 # orphan-stop-warning rescope — spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed `docs/dev/specs/2026-10-24-orphan-stop-warning.md` (the rescoped
 draft, NOTES.md entry 117) against branch `orphan-stop-warning`. The
 branch has no source changes over `main` (`git diff main..HEAD -- src

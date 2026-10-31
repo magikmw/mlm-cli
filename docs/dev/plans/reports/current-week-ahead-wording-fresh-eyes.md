@@ -1,5 +1,7 @@
 # Fresh-eyes report — current-week ahead-of-target wording
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Ran the built `mlm` binary and read `README.md` from a clean sandbox
 directory, with `MLM_DB_PATH` pointed at a fresh scratch `.db` file per
 scenario. "Today" for these runs was Thu 2026-09-24, 20:00 local.

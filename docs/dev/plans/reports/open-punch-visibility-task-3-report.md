@@ -1,5 +1,7 @@
 # Task 3 report: `status` per-date anomalies and the shared lookback
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Worktree branch: `worktree-agent-a36256cd014b8216a`.
 Commit: `9f77224`.
 

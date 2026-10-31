@@ -1,5 +1,7 @@
 # export-notes — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - **Baseline**: `main` at `b25bef7`
 - **Branch**: `export-notes` at `11e472d` (clone `/tmp/cd-scratch/export-notes-final`, HEAD verified)
 - **Spec**: `docs/dev/specs/2026-10-24-export-notes.md` §3-§8; SPEC.md §1.2, §3.8, §6.1, §6.2, §7.5, §8 (F15, E28-E31); NOTES.md 125, 133-136

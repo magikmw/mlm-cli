@@ -1,5 +1,7 @@
 # Adversarial review — boundary-context-cues-plan.md
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed against: `docs/dev/plans/boundary-context-cues-plan.md`,
 `docs/dev/specs/2026-09-20-boundary-context-cues.md`, `src/status.rs`,
 `src/render.rs`, `src/stint.rs`, `src/week.rs`, `src/week_view.rs`.

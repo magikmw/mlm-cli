@@ -1,5 +1,7 @@
 # Adversarial review — `docs/dev/specs/2026-09-23-status-wording-fixes.md`
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed against `src/render.rs`, `src/status.rs`, `src/week.rs`, `src/week_view.rs`,
 `src/commands.rs`, `docs/dev/SPEC.md`, `README.md`, `docs/dev/NOTES.md` (entry 61),
 `Cargo.toml`, `.github/workflows/ci.yml`, and the vendored `chrono` 0.4.45 source.

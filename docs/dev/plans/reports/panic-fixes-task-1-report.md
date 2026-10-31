@@ -1,5 +1,7 @@
 # Completion report: panic-fixes Task 1, code and tests
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Plan: `docs/dev/plans/panic-fixes-task-1-code.md`. Branch `worktree-agent-a9fba2f9d87875f9d`, rebased onto `panic-fixes` @ `d54ffe4` (the worktree started from `main`).
 
 ## Implemented

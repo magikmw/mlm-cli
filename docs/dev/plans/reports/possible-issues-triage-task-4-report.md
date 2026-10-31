@@ -1,5 +1,7 @@
 # Report: possible-issues-triage T4, carry-in anomaly scan
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 ## Base
 
 The worktree started on an unrelated branch (tip f76ad3b, not a descendant of `possible-issues-triage`). Branch `pit-task-4` was created from `possible-issues-triage` (f8789ee), so no rebase was needed.

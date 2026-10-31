@@ -1,5 +1,7 @@
 # open-punch-visibility — fix pass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Closes the findings from `open-punch-visibility-final-review.md` and
 `open-punch-visibility-fresh-eyes.md`, per the triage in NOTES.md entry
 82 and the amended changeset spec (§1.2/§3.6 of

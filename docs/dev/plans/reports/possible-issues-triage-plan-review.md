@@ -1,5 +1,7 @@
 # Plan review: possible-issues-triage
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed `docs/dev/plans/possible-issues-triage-plan.md` against the locked spec `docs/dev/specs/2026-10-03-possible-issues-triage.md` and the source on branch `possible-issues-triage`. Line references are to the plan unless a path is given.
 
 ## Findings
