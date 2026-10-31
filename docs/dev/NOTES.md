@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 155
+- **Next entry**: 156
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (plan folded, entry 154). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (implementing, entry 155). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2109,6 +2109,16 @@ SPEC.md and PLAN.md:
     non-issue class the user ruled on in entry 153. U2 (`week target
     40` now a usage error, exit 2, not the format hint) follows the
     user's own lone-token rule.
+
+155. **`relative-ids` task plans.** Task 1 (`plans/relative-ids-task-1-code.md`):
+    new `OffsetOutOfRange` cause, `+` hint at render time, `-N` branch
+    first in both parsers with no week-by-week walk; the week floor
+    checks the ISO year (1000-01 starts 0999-12-30). Lone-`WEEK_ID`
+    `week target` re-parses argv without the token for the exact bare
+    error. D1, D2 are count corrections, no action. Task 2
+    (`plans/relative-ids-task-2-docs.md`): SPEC F16-F17, E35-E38, E10,
+    E24, E29 rewritten; R2 (help-row padding quoted in §3.7) checked at
+    merge. Both go to implementation in parallel.
 
 ## Open questions (still need answers)
 
