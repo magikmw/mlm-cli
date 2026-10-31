@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 154
+- **Next entry**: 155
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (spec locked, entry 153). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `relative-ids` (plan folded, entry 154). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2093,6 +2093,22 @@ SPEC.md and PLAN.md:
     filed. Phase 14 runs (user-visible surface), tier `returning`.
     Expected two tasks (code, docs), so phases 5-7 collapse and 10 is
     skipped.
+
+154. **`relative-ids` plan folded**
+    (`plans/relative-ids-plan.md`, review
+    `plans/reports/relative-ids-plan-review.md`, 13 items). Two tasks,
+    code and docs, disjoint files; phase 10 skipped. F1: clap's
+    negative-number test also passes float shapes, so `mlm week -1.5`
+    reaches the parser and gets the shape error, exit 1, as
+    `mlm status -1.5` does today; spec §3 wording and contract 6
+    corrected. F2: the `+` hint renders from the input in the shape
+    arms, cause stays `Shape`. F3-F7: count fixed, tests added (clap
+    leading-zero parse, lone-token aliases and `-v`, `DATE` `+1`
+    message guard), Task 2 states the lone-token boundary. U1-U6 not
+    filed: U1, U4 follow `DATE` parity, U3 (`+0` hint), U5, U6 are the
+    non-issue class the user ruled on in entry 153. U2 (`week target
+    40` now a usage error, exit 2, not the format hint) follows the
+    user's own lone-token rule.
 
 ## Open questions (still need answers)
 

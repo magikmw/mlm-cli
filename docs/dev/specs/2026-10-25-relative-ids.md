@@ -51,8 +51,10 @@ zeros tolerated (`-01` = `-1`), the same grammar `DATE` uses.
 - `mlm week -1` takes `-1` as `WEEK_ID`, as `mlm status -1` takes it
   as `DATE`. `-n`/`--notes` stays a flag, so `mlm week -1 -n` and
   `mlm week -n -1` both work.
-- `mlm week` passes only `-` plus digits through to the `WEEK_ID`
-  parser, as `mlm status` does for `DATE`. Any other token starting
+- `mlm week` passes tokens the argument parser reads as negative
+  numbers (`-1`, `-1.5`, `-1e3`) to the `WEEK_ID` parser, as
+  `mlm status` does for `DATE`. Only `-` plus digits resolves, so
+  `-1.5` gets the §4 shape error, exit `1`. Any other token starting
   with `-` (`-1x`, `-x`, `--bogus`) stays a parser usage error, exit
   `2` (SPEC §6.3), as `mlm status -1x` is today.
 - `week target` and `export notes` already pass every value starting
