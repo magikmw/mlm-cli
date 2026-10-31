@@ -9,10 +9,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 151
+- **Next entry**: 159
 - **Last release**: `v0.4.0`
 - **`main`**: `962ac9f` (`v0.4.0`)
-- **Active changeset**: `relative-ids` (entry 137, brainstorm next). `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: none. `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2062,6 +2062,90 @@ SPEC.md and PLAN.md:
     `main` calls it. Fix pass `3b60694` merged; gate green: fmt, build,
     983 tests, clippy. Spec, plan and task plans archived. Merged to
     `main` `--no-ff`, unreleased. Next: `relative-ids` (entry 137).
+
+151. **`relative-ids` brainstorm.** Scope from entry 137, plus the
+    user's call to include `week target`, so every `WEEK_ID` takes `-N`
+    and the parser needs no special case. `MONTH` takes `-N` in
+    `export notes --month`. `-0` invalid, grammar as `DATE`'s. No `+N`.
+    Coordinator picks: shape errors `expected YYYY-WW, WW or -N (N >=
+    1)` and the `MONTH` twin, offset errors `week offset is out of
+    range` and `month offset is out of range`, help lines in the `DATE`
+    style. Baseline `main` at `77fb19f`; branch `relative-ids`.
+
+152. **`relative-ids` spec review folded**
+    (`plans/reports/relative-ids-spec-review.md`, 11 findings). Every
+    §3 shape parses under clap 4.6.6. F1: `mlm week` takes `-N` the way
+    `status` takes `DATE`'s, so `mlm week -1x` and `-x` stay clap
+    errors, exit 2; `week target` and `export notes` already pass
+    hyphen values, so `-1x` there is exit 1. Parity with `DATE` is the
+    user's stated rule. F2: `-N` is out of range when it lands on an id
+    the absolute form rejects (`WEEK_ID` below `1000-01`, `MONTH` below
+    `0000-01`), and `u64` overflow counts too. F3, F4: flipped tests and
+    every stale SPEC/README line listed. U1-U7 go to the user as
+    known-issue candidates before lock.
+
+153. **`relative-ids` locked.** User triage of U1-U7: U6 fixed, so a
+    `+` plus digits `WEEK_ID` or `MONTH` gets the shape message plus
+    `; a future week takes YYYY-WW or WW` (month twin). U4 fixed, so a
+    lone `week target` token that is a valid `WEEK_ID` and not a valid
+    `DURATION` gives clap's missing-`DURATION` usage error, exit 2, as
+    bare `week target` does. U1-U3, U5, U7 are non-issues and not
+    filed. Phase 14 runs (user-visible surface), tier `returning`.
+    Expected two tasks (code, docs), so phases 5-7 collapse and 10 is
+    skipped.
+
+154. **`relative-ids` plan folded**
+    (`plans/relative-ids-plan.md`, review
+    `plans/reports/relative-ids-plan-review.md`, 13 items). Two tasks,
+    code and docs, disjoint files; phase 10 skipped. F1: clap's
+    negative-number test also passes float shapes, so `mlm week -1.5`
+    reaches the parser and gets the shape error, exit 1, as
+    `mlm status -1.5` does today; spec §3 wording and contract 6
+    corrected. F2: the `+` hint renders from the input in the shape
+    arms, cause stays `Shape`. F3-F7: count fixed, tests added (clap
+    leading-zero parse, lone-token aliases and `-v`, `DATE` `+1`
+    message guard), Task 2 states the lone-token boundary. U1-U6 not
+    filed: U1, U4 follow `DATE` parity, U3 (`+0` hint), U5, U6 are the
+    non-issue class the user ruled on in entry 153. U2 (`week target
+    40` now a usage error, exit 2, not the format hint) follows the
+    user's own lone-token rule.
+
+155. **`relative-ids` task plans.** Task 1 (`plans/relative-ids-task-1-code.md`):
+    new `OffsetOutOfRange` cause, `+` hint at render time, `-N` branch
+    first in both parsers with no week-by-week walk; the week floor
+    checks the ISO year (1000-01 starts 0999-12-30). Lone-`WEEK_ID`
+    `week target` re-parses argv without the token for the exact bare
+    error. D1, D2 are count corrections, no action. Task 2
+    (`plans/relative-ids-task-2-docs.md`): SPEC F16-F17, E35-E38, E10,
+    E24, E29 rewritten; R2 (help-row padding quoted in §3.7) checked at
+    merge. Both go to implementation in parallel.
+
+156. **`relative-ids` tasks merged.** Task 2 `6a87f0f` (SPEC, README;
+    E36 week floor given as numbers, report
+    `plans/reports/relative-ids-task-2-report.md`), Task 1 `24d1799`
+    (code, tests; shipped as planned, no report). Gate on the
+    integration branch green: fmt, build, 1018 tests, clippy; coverage
+    99.517%. E36's `-53540`/`-53541` match the shipped test. Binary
+    spot checks match the contracts. Worktrees removed. Phase 14 next
+    (`returning`); phase 13 awaits the user's model choice.
+
+157. **`relative-ids` fresh-eyes triaged; final review on Opus.**
+    Fresh-eyes (`plans/reports/relative-ids-fresh-eyes.md`, 13
+    findings, `returning` tier): user said fix none, save none. Each was
+    an already-decided rule or behavior that existed before the
+    changeset. Final review dispatched on Opus (user's choice), clone
+    `/tmp/cd-scratch/relative-ids-final` at `0580e6f`.
+
+158. **`relative-ids` reviewed and closed out.** Final review on Opus
+    (`plans/reports/relative-ids-final-review.md`): ship-with-followups.
+    Manual runs matched every contract; a sweep of 42,732 date and
+    offset pairs found no panic and no week below `1000-01`; 11 of 12
+    mutations caught, the survivor equivalent. Reminder echo is safe:
+    only parser-accepted tokens reach it. F1 README said every bare
+    number is a week id under `week target`; now limited to valid week
+    numbers, as SPEC §3.7 says. Applied by the coordinator (owned doc,
+    wording only). Spec, plan and task plans archived. Merged to `main`
+    `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 

@@ -39,8 +39,9 @@ Not implemented yet:
 - Shell prompt integration (current tracking state in PS1/starship)
 - Non-ISO week conventions
 - 12-hour (AM/PM) time input — 24h only for now
-- `+N`/`-N` relative week notation for `week`'s week-id argument
-  (`status`'s `DATE` argument already accepts `-N`)
+- `+N` relative notation for future weeks and months — a future week
+  takes `YYYY-WW` or `WW`, and a future month `YYYY-MM` or `MM` (`-N`
+  for past ones works, see `week` and `export notes` below)
 
 ### Possible issues
 
@@ -423,9 +424,14 @@ Week 2026-35:  Total behind: 02h 10m
 ### `mlm week|w [WEEK_ID] [-n/--notes]`
 
 Show a week's per-day totals plus its carry-in/worked/fulfillment/
-target summary. `WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-37`)
-or a bare week number for the current year (e.g. `37`), and defaults
-to the current week.
+target summary. `WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-37`),
+a bare week number for the current year (e.g. `37`), or `-N` for N
+weeks before the current one (e.g. `-1` = last week), and defaults to
+the current week. With today in week 2026-37, `mlm week -1` shows week
+2026-36 (2026-08-31 - 2026-09-06). `-N` counts back across years and
+53-week years, so in week 2026-02 `-2` is `2025-52`. `-0` is not
+accepted, and there is no `+N`, so a future week takes its id. As with
+`status`, a token like `-1x` is a usage error with exit code 2.
 
 ```sh
 $ mlm week
@@ -502,8 +508,9 @@ notes `status` shows for that date, in the same order, each printed as
 six spaces, `- ` and the note. Rows without notes stay one line. Every
 total, marker, footer and the Carry-in block print as they do without
 the flag, and a week with no notes prints the same either way. The flag
-goes before or after `WEEK_ID` (`mlm week -n 43`, `mlm week 43 -n`),
-and `week target` does not take it. With today Sat 2026-10-24:
+goes before or after `WEEK_ID` (`mlm week -n 43`, `mlm week 43 -n`,
+`mlm week -1 -n`), and `week target` does not take it. With today Sat
+2026-10-24:
 
 ```sh
 $ mlm week --notes
@@ -536,10 +543,10 @@ If `mlm week -n/--notes` cannot read the week's notes, it prints an
 ### `mlm week|w target [WEEK_ID] DURATION`
 
 Set an absolute target override for a week (default target is 40h
-when no override exists). `WEEK_ID` accepts the same forms as `week`
-and defaults to the current week; `DURATION` uses the human format
-(`20h`, `33h30m`, `45m`), never raw minutes, and is always the last
-token. On success it prints one line with the stored target:
+when no override exists). `WEEK_ID` accepts the same forms as `week`,
+`-N` included, and defaults to the current week; `DURATION` uses the
+human format (`20h`, `33h30m`, `45m`), never raw minutes, and is always
+the last token. On success it prints one line with the stored target:
 
 ```sh
 $ mlm week target 45h
@@ -565,6 +572,22 @@ Target:        45h 00m
 
 The duration echoes in the standard format, so `90m` prints as `01h 30m`.
 
+`-N` sets a past week's target, and the line names the week it
+resolved to. With today in week 2026-37:
+
+```sh
+$ mlm week target -1 38h
+Week 2026-36 target: 38h 00m
+```
+
+`DURATION` is always required, so a lone week id counts as a missing
+duration. `mlm week target -1`, `mlm week target 7` and
+`mlm week target 2026-07` print the same usage error as bare
+`mlm week target` and exit with code 2. A bare number that is a valid
+week number counts as a week id, so `mlm week target 40` fails the
+same way. Write `40h`. Any other lone token, such as `0`, `60` or
+`-0`, fails as an invalid duration with exit code 1.
+
 The target is at most 168h, the hours in a week. A larger value fails
 with exit code 1 and leaves the week's target as it was:
 
@@ -580,6 +603,9 @@ reminder and exit code 2, even when the duration is over the limit:
 $ mlm week 2026-41 target 20h
 error: put WEEK_ID after target: mlm week target 2026-41 20h
 ```
+
+The reminder echoes what you typed, so `mlm week -1 target 35h` prints
+`error: put WEEK_ID after target: mlm week target -1 35h`.
 
 `mlm week target --help` shows the arguments as `[WEEK_ID] <DURATION>`.
 
@@ -616,9 +642,12 @@ flag it prints the current week. Give at most one range:
 - `-d`/`--date DATE` — one date, `YYYY-MM-DD` or `-N` for N days
   before today (e.g. `-1` = yesterday). A future date is allowed.
 - `-w`/`--week WEEK_ID` — one week, Monday to Sunday, in the same forms
-  as `week` (`2026-43`, or a bare `43` for the current year)
-- `-m`/`--month MONTH` — one calendar month, `YYYY-MM` (e.g. `2026-03`)
-  or a bare month number for the current year (e.g. `3`)
+  as `week` (`2026-43`, a bare `43` for the current year, or `-1` for
+  last week)
+- `-m`/`--month MONTH` — one calendar month, `YYYY-MM` (e.g. `2026-03`),
+  a bare month number for the current year (e.g. `3`), or `-N` for N
+  months before the current one (e.g. `-1` = last month, so in January
+  2026 `-m -1` is `2025-12`)
 
 Each line is the note's date, two spaces, then the note. Lines run by
 date, and within a date in the order you entered them:
@@ -637,6 +666,13 @@ redirects straight into a file:
 
 ```sh
 $ mlm export notes --month 2026-10 > october.txt
+```
+
+`-w -1` and `-m -1` always mean the week or month before the current
+one, so one command makes a weekly or monthly report:
+
+```sh
+$ mlm ex n -m -1 > last-month.txt
 ```
 
 ### `mlm delete|del note|n [ID] [-d/--date DATE]`

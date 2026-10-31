@@ -166,12 +166,36 @@ mod tests {
             (ArgKind::Month, Cause::Shape)
         );
         assert_eq!(
-            err(args(None, Some("-1"), None)),
+            err(args(None, Some("-0"), None)),
             (ArgKind::WeekId, Cause::Shape)
+        );
+        assert_eq!(
+            err(args(None, Some("-9999999999999999999999999"), None)),
+            (ArgKind::WeekId, Cause::OffsetOutOfRange)
         );
         assert_eq!(
             err(args(Some("abc"), None, None)),
             (ArgKind::Date, Cause::Shape)
+        );
+    }
+
+    #[test]
+    fn minus_n_week_and_month_ranges() {
+        let today = d(2026, 10, 24);
+        for w in ["-1", "-01"] {
+            assert_eq!(
+                resolve_range(&args(None, Some(w), None), today),
+                Ok((d(2026, 10, 12), d(2026, 10, 18))),
+                "{w}"
+            );
+        }
+        assert_eq!(
+            resolve_range(&args(None, None, Some("-1")), today),
+            Ok((d(2026, 9, 1), d(2026, 9, 30)))
+        );
+        assert_eq!(
+            resolve_range(&args(None, None, Some("-1")), d(2026, 1, 7)),
+            Ok((d(2025, 12, 1), d(2025, 12, 31)))
         );
     }
 

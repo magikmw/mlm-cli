@@ -1,6 +1,6 @@
 //! Calendar dates (`DATE`), ISO week ids (`WEEK_ID`) and calendar months
-//! (`MONTH`): parsing, validation, formatting, week iteration and a
-//! month's first and last day.
+//! (`MONTH`), each with a `-N` relative form: parsing, validation,
+//! formatting, week iteration and a month's first and last day.
 //!
 //! Spec basis: SPEC.md §1.3 (a week is an ISO year + ISO week tuple),
 //! §2.3 (`week_targets.week_id` storage form), §3.5 (`DATE` argument),
@@ -34,6 +34,10 @@ pub enum Cause {
     /// Matched the grammar but a component is outside its legal range
     /// (week `0`, a year outside `1000..=9999`, or a month outside 1-12).
     OutOfRange,
+    /// A `-N` WEEK_ID or MONTH that resolves before the earliest id its
+    /// absolute form accepts (`1000-01` weeks, `0000-01` months), or whose
+    /// digits overflow a u64. `DATE` offsets keep `OutOfRange`.
+    OffsetOutOfRange,
     /// Well-shaped `YYYY-MM-DD` that is not a real calendar date.
     NoSuchCalendarDate,
     /// Well-shaped `YYYY-WW` (or a bare `WW` against a defaulted year)
@@ -76,10 +80,20 @@ impl std::fmt::Display for DateWeekError {
         write!(f, "invalid {} \"{}\": ", name, self.input)?;
         match (&self.arg, &self.cause) {
             (ArgKind::Date, Cause::Shape) => write!(f, "expected YYYY-MM-DD or -N (N >= 1)"),
-            (ArgKind::WeekId, Cause::Shape) => write!(f, "expected YYYY-WW or WW"),
-            (ArgKind::Month, Cause::Shape) => write!(f, "expected YYYY-MM or MM"),
+            (ArgKind::WeekId, Cause::Shape) => {
+                write!(f, "expected YYYY-WW, WW or -N (N >= 1)")?;
+                write_future_hint(f, &self.input, "week", "YYYY-WW or WW")
+            }
+            (ArgKind::Month, Cause::Shape) => {
+                write!(f, "expected YYYY-MM, MM or -N (N >= 1)")?;
+                write_future_hint(f, &self.input, "month", "YYYY-MM or MM")
+            }
             (ArgKind::Month, Cause::OutOfRange) => write!(f, "month must be 1-12"),
-            (ArgKind::Date, Cause::OutOfRange) => write!(f, "date offset is out of range"),
+            (ArgKind::Date, Cause::OutOfRange | Cause::OffsetOutOfRange) => {
+                write!(f, "date offset is out of range")
+            }
+            (ArgKind::WeekId, Cause::OffsetOutOfRange) => write!(f, "week offset is out of range"),
+            (ArgKind::Month, Cause::OffsetOutOfRange) => write!(f, "month offset is out of range"),
             (_, Cause::OutOfRange) => write!(f, "week number must be 1 or greater"),
             (_, Cause::NoSuchCalendarDate) => write!(f, "not a real calendar date"),
             (
@@ -92,6 +106,20 @@ impl std::fmt::Display for DateWeekError {
             (_, Cause::Future) => write!(f, "date is in the future"),
         }
     }
+}
+
+/// Appends `; a future <unit> takes <forms>` when `input` is `+` plus
+/// ASCII digits (relative-ids spec §4).
+fn write_future_hint(
+    f: &mut std::fmt::Formatter<'_>,
+    input: &str,
+    unit: &str,
+    forms: &str,
+) -> std::fmt::Result {
+    if signed_digits(input, '+').is_some() {
+        write!(f, "; a future {unit} takes {forms}")?;
+    }
+    Ok(())
 }
 
 impl std::error::Error for DateWeekError {}
@@ -372,9 +400,13 @@ impl std::fmt::Display for WeekId {
     }
 }
 
-/// Parse a `WEEK_ID` argument (§3.6): full `YYYY-WW` or a bare `WW` whose
-/// year defaults to `today`'s **ISO** year. Unpadded weeks are normalized.
+/// Parse a `WEEK_ID` argument (§3.6): full `YYYY-WW`, a bare `WW` whose
+/// year defaults to `today`'s **ISO** year, or `-N` for N ISO weeks
+/// before `today`'s. Unpadded weeks are normalized.
 pub fn parse_week_id(s: &str, today: NaiveDate) -> Result<WeekId, DateWeekError> {
+    if let Some(digits) = signed_digits(s, '-') {
+        return resolve_week_offset(digits, s, today);
+    }
     let shape_err = || DateWeekError::new(ArgKind::WeekId, s, Cause::Shape);
     let (year, week_str) = match s.split_once('-') {
         Some((y, w)) => {
@@ -439,9 +471,13 @@ impl Month {
     }
 }
 
-/// Parse a `MONTH` argument (§3.8): `YYYY-MM`, `YYYY-M`, or a bare
-/// `M`/`MM` whose year defaults to `today`'s **calendar** year.
+/// Parse a `MONTH` argument (§3.8): `YYYY-MM`, `YYYY-M`, a bare `M`/`MM`
+/// whose year defaults to `today`'s **calendar** year, or `-N` for N
+/// months before `today`'s.
 pub fn parse_month(s: &str, today: NaiveDate) -> Result<Month, DateWeekError> {
+    if let Some(digits) = signed_digits(s, '-') {
+        return resolve_month_offset(digits, s, today);
+    }
     let (year, month) =
         month_parts(s, today).ok_or_else(|| DateWeekError::new(ArgKind::Month, s, Cause::Shape))?;
     Month::new(year, month, s)
@@ -464,6 +500,59 @@ fn month_parts(s: &str, today: NaiveDate) -> Option<(i32, u32)> {
         return None;
     }
     Some((year, month_str.parse().ok()?))
+}
+
+// ---------------------------------------------------------------------------
+// Relative WEEK_ID / MONTH (-N)
+// ---------------------------------------------------------------------------
+
+/// The digits after `sign` when `s` is `sign` followed by one or more
+/// ASCII digits.
+fn signed_digits(s: &str, sign: char) -> Option<&str> {
+    s.strip_prefix(sign)
+        .filter(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// N from a `-N` digit run. `0` is a shape error, and a run too large
+/// for a u64 is out of range.
+fn offset_count(digits: &str, s: &str, arg: ArgKind) -> Result<u64, DateWeekError> {
+    let n: u64 = digits
+        .parse()
+        .map_err(|_| DateWeekError::new(arg, s, Cause::OffsetOutOfRange))?;
+    if n == 0 {
+        return Err(DateWeekError::new(arg, s, Cause::Shape));
+    }
+    Ok(n)
+}
+
+/// The ISO week N weeks before the one containing `today`. Stepping 7N
+/// days back from `today` lands in that week on today's weekday, so no
+/// week-by-week walk is needed.
+fn resolve_week_offset(digits: &str, s: &str, today: NaiveDate) -> Result<WeekId, DateWeekError> {
+    let out_of_range = || DateWeekError::new(ArgKind::WeekId, s, Cause::OffsetOutOfRange);
+    let n = offset_count(digits, s, ArgKind::WeekId)?;
+    let resolved = n
+        .checked_mul(7)
+        .and_then(|days| today.checked_sub_days(Days::new(days)))
+        .ok_or_else(out_of_range)?;
+
+    // ISO year 1000 starts on 0999-12-30, so the floor reads the ISO year.
+    if resolved.iso_week().year() < MIN_YEAR {
+        return Err(out_of_range());
+    }
+    Ok(WeekId::from_date(resolved))
+}
+
+/// The calendar month N months before `today`'s, counted from 0000-01,
+/// the earliest month `Month` holds.
+fn resolve_month_offset(digits: &str, s: &str, today: NaiveDate) -> Result<Month, DateWeekError> {
+    let n = offset_count(digits, s, ArgKind::Month)?;
+    let current = i64::from(today.year()) * 12 + i64::from(today.month0());
+    let target = u64::try_from(current)
+        .ok()
+        .and_then(|m| m.checked_sub(n))
+        .ok_or_else(|| DateWeekError::new(ArgKind::Month, s, Cause::OffsetOutOfRange))?;
+    Month::new((target / 12) as i32, (target % 12) as u32 + 1, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -740,16 +829,14 @@ mod tests {
             "2026-W07", // T54 (§2.3: no `W`)
             "W07",      // T55
             "2026/07",  // T56
-            "-5",       // T57
             "2026-",    // T58
-            "-07",      // T59
             "2026-007", // T60
             "999-07",   // T61
             "20267",    // T62
             "",         // T63
             " 7 ",      // T64
-            "+1",       // T65 (§1.2: no relative notation)
-            "-1",       // T65
+            "+1",       // T65 (no +N)
+            "-1x", "-1.5", "--1", "-", "- 1",
         ] {
             assert_eq!(
                 parse_week_id(input, today).unwrap_err(),
@@ -1150,7 +1237,7 @@ mod tests {
     #[test]
     fn parse_month_rejects_wrong_shapes() {
         for input in [
-            "2026-003", "26-03", "abc", "2026-", "-1", "-d", "", " 3 ", "+1", "2026-1-1",
+            "2026-003", "26-03", "abc", "2026-", "-1x", "-1.5", "-d", "", " 3 ", "+1", "2026-1-1",
             "2026/03", "123", "999-03",
         ] {
             assert_eq!(
@@ -1204,8 +1291,14 @@ mod tests {
     #[test]
     fn month_error_messages_match_the_spec() {
         let msg = |s: &str| parse_month(s, TODAY()).unwrap_err().to_string();
-        assert_eq!(msg("abc"), r#"invalid MONTH "abc": expected YYYY-MM or MM"#);
-        assert_eq!(msg("-1"), r#"invalid MONTH "-1": expected YYYY-MM or MM"#);
+        assert_eq!(
+            msg("abc"),
+            r#"invalid MONTH "abc": expected YYYY-MM, MM or -N (N >= 1)"#
+        );
+        assert_eq!(
+            msg("-0"),
+            r#"invalid MONTH "-0": expected YYYY-MM, MM or -N (N >= 1)"#
+        );
         assert_eq!(msg("13"), r#"invalid MONTH "13": month must be 1-12"#);
         assert_eq!(
             msg("2026-13"),
@@ -1350,6 +1443,189 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(!msg.contains("week number"), "{msg}");
+    }
+
+    // --- relative WEEK_ID / MONTH (relative-ids spec §3-§5) ------------
+
+    #[test]
+    fn relative_week_counts_back_from_the_current_week() {
+        let today = TODAY();
+        for (input, want) in [
+            ("-1", wk(2026, 6)),
+            ("-01", wk(2026, 6)),
+            ("-2", wk(2026, 5)),
+            ("-5", wk(2026, 2)),   // was T57
+            ("-07", wk(2025, 52)), // was T59
+        ] {
+            assert_eq!(parse_week_id(input, today), Ok(want), "input {input}");
+        }
+    }
+
+    #[test]
+    fn relative_week_crosses_the_year_boundary() {
+        assert_eq!(parse_week_id("-1", d(2026, 1, 5)), Ok(wk(2026, 1)));
+        assert_eq!(parse_week_id("-2", d(2026, 1, 5)), Ok(wk(2025, 52)));
+        assert_eq!(parse_week_id("-2", d(2026, 1, 11)), Ok(wk(2025, 52)));
+    }
+
+    #[test]
+    fn relative_week_lands_on_and_steps_over_week_53() {
+        let today = d(2027, 1, 4);
+        assert_eq!(parse_week_id("-1", today), Ok(wk(2026, 53)));
+        assert_eq!(parse_week_id("-2", today), Ok(wk(2026, 52)));
+        assert_eq!(parse_week_id("-3", today), Ok(wk(2026, 51)));
+        assert_eq!(parse_week_id("-1", d(2027, 1, 10)), Ok(wk(2026, 53)));
+    }
+
+    #[test]
+    fn relative_month_counts_back_from_the_current_month() {
+        let today = TODAY();
+        for (input, want) in [
+            ("-1", mo(2026, 1)),
+            ("-01", mo(2026, 1)),
+            ("-2", mo(2025, 12)),
+            ("-14", mo(2024, 12)),
+        ] {
+            assert_eq!(parse_month(input, today), Ok(want), "input {input}");
+        }
+        assert_eq!(parse_month("-1", d(2026, 1, 15)), Ok(mo(2025, 12)));
+
+        // Calendar month, not ISO: 2025-12-30 sits in ISO year 2026.
+        assert_eq!(parse_month("-1", d(2025, 12, 30)), Ok(mo(2025, 11)));
+    }
+
+    #[test]
+    fn relative_minus_zero_is_a_shape_error() {
+        for input in ["-0", "-00"] {
+            assert_eq!(
+                parse_week_id(input, TODAY()),
+                Err(week_err(input, Cause::Shape))
+            );
+            assert_eq!(
+                parse_month(input, TODAY()),
+                Err(month_err(input, Cause::Shape))
+            );
+        }
+    }
+
+    #[test]
+    fn relative_week_floor_is_1000_01() {
+        assert_eq!(parse_week_id("-53540", TODAY()), Ok(wk(1000, 1)));
+        assert_eq!(
+            parse_week_id("-53541", TODAY()),
+            Err(week_err("-53541", Cause::OffsetOutOfRange))
+        );
+
+        // From a Monday, the floor resolves into calendar year 999.
+        let monday = d(2026, 2, 9);
+        assert_eq!(monday - Days::new(53540 * 7), d(999, 12, 30));
+        assert_eq!(parse_week_id("-53540", monday), Ok(wk(1000, 1)));
+    }
+
+    #[test]
+    fn relative_week_never_builds_a_week_below_1000() {
+        let check = |input: &str, today: NaiveDate| match parse_week_id(input, today) {
+            Ok(w) => assert!(w.iso_year() >= MIN_YEAR, "{input} from {today}: {w}"),
+            Err(e) => assert_eq!(e.cause, Cause::OffsetOutOfRange, "{input} from {today}"),
+        };
+        for today in [d(2026, 2, 9), d(2026, 2, 12), d(2026, 2, 15), d(1000, 1, 5)] {
+            for n in 53530..=53560 {
+                check(&format!("-{n}"), today);
+            }
+        }
+        check("-1", d(1000, 1, 1));
+    }
+
+    #[test]
+    fn relative_month_floor_is_0000_01() {
+        assert_eq!(parse_month("-24313", TODAY()), Ok(mo(0, 1)));
+        assert_eq!(
+            parse_month("-24314", TODAY()),
+            Err(month_err("-24314", Cause::OffsetOutOfRange))
+        );
+    }
+
+    #[test]
+    fn relative_offset_overflow_is_out_of_range() {
+        for input in [
+            "-9999999999999999999999999", // fails the u64 parse
+            "-18446744073709551615",      // u64::MAX
+            "-99999999999999",            // past chrono's date range
+        ] {
+            assert_eq!(
+                parse_week_id(input, TODAY()),
+                Err(week_err(input, Cause::OffsetOutOfRange))
+            );
+            assert_eq!(
+                parse_month(input, TODAY()),
+                Err(month_err(input, Cause::OffsetOutOfRange))
+            );
+        }
+    }
+
+    #[test]
+    fn relative_offset_messages_match_the_spec() {
+        let week = parse_week_id("-53541", TODAY()).unwrap_err().to_string();
+        let month = parse_month("-24314", TODAY()).unwrap_err().to_string();
+        assert_eq!(
+            week,
+            r#"invalid WEEK_ID "-53541": week offset is out of range"#
+        );
+        assert_eq!(
+            month,
+            r#"invalid MONTH "-24314": month offset is out of range"#
+        );
+        assert!(!week.contains("week number") && !month.contains("week number"));
+    }
+
+    #[test]
+    fn week_shape_message_names_minus_n() {
+        for input in ["abc", "-0", "-1x"] {
+            assert_eq!(
+                parse_week_id(input, TODAY()).unwrap_err().to_string(),
+                format!(r#"invalid WEEK_ID "{input}": expected YYYY-WW, WW or -N (N >= 1)"#)
+            );
+        }
+    }
+
+    #[test]
+    fn plus_digits_get_the_future_hint() {
+        for input in ["+1", "+0", "+01"] {
+            assert_eq!(
+                parse_week_id(input, TODAY()).unwrap_err().to_string(),
+                format!(
+                    r#"invalid WEEK_ID "{input}": expected YYYY-WW, WW or -N (N >= 1); a future week takes YYYY-WW or WW"#
+                )
+            );
+            assert_eq!(
+                parse_month(input, TODAY()).unwrap_err().to_string(),
+                format!(
+                    r#"invalid MONTH "{input}": expected YYYY-MM, MM or -N (N >= 1); a future month takes YYYY-MM or MM"#
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn other_plus_inputs_get_the_plain_shape_message() {
+        for input in ["+1x", "+", "+-1"] {
+            assert_eq!(
+                parse_week_id(input, TODAY()).unwrap_err().to_string(),
+                format!(r#"invalid WEEK_ID "{input}": expected YYYY-WW, WW or -N (N >= 1)"#)
+            );
+            assert_eq!(
+                parse_month(input, TODAY()).unwrap_err().to_string(),
+                format!(r#"invalid MONTH "{input}": expected YYYY-MM, MM or -N (N >= 1)"#)
+            );
+        }
+    }
+
+    #[test]
+    fn date_plus_one_keeps_its_message() {
+        assert_eq!(
+            resolve_date("+1", TODAY()).unwrap_err().to_string(),
+            r#"invalid DATE "+1": expected YYYY-MM-DD or -N (N >= 1)"#
+        );
     }
 
     // --- resolve_future_checked_date ------------------------------------

@@ -238,9 +238,10 @@ pub struct WeekArgs {
     #[command(subcommand)]
     pub action: Option<WeekAction>,
 
-    /// Week to show: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7).
-    /// Defaults to the current week.
-    #[arg(value_name = "WEEK_ID")]
+    /// Week to show: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or
+    /// `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to
+    /// the current week.
+    #[arg(value_name = "WEEK_ID", allow_negative_numbers = true)]
     pub week_id: Option<String>,
 
     /// Show each date's notes under its row.
@@ -269,13 +270,16 @@ pub enum WeekAction {
 /// optional positional before a required one. `before_help` carries a
 /// hand-written Arguments section instead, and `parse` rewrites the
 /// `<ARGS>` name out of usage errors.
+///
+/// A lone token that parses as a WEEK_ID is a missing DURATION; `parse`
+/// turns it into the same usage error.
 #[derive(Args, Debug)]
 #[command(
     override_usage = "mlm week target [OPTIONS] [WEEK_ID] <DURATION>",
     help_template = "{about-with-newline}\n{usage-heading} {usage}\n\n{before-help}{all-args}",
     before_help = "\
 Arguments:
-  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
+  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to the current week
   <DURATION>  Target to set: 20h, 33h30m or 45m, up to 168h (human format, never raw minutes)"
 )]
 pub struct WeekTargetArgs {
@@ -321,12 +325,13 @@ pub struct ExportNotesArgs {
     #[arg(short, long, value_name = "DATE", allow_hyphen_values = true)]
     pub date: Option<String>,
 
-    /// Week to export: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7)
+    /// Week to export: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7),
+    /// or `-N` for N weeks before this one (e.g. `-1` = last week)
     #[arg(short, long, value_name = "WEEK_ID", allow_hyphen_values = true)]
     pub week: Option<String>,
 
-    /// Month to export: YYYY-MM (e.g. 2026-03) or a bare month number (e.g.
-    /// 3)
+    /// Month to export: YYYY-MM (e.g. 2026-03), a bare month number (e.g.
+    /// 3), or `-N` for N months before this one (e.g. `-1` = last month)
     #[arg(short, long, value_name = "MONTH", allow_hyphen_values = true)]
     pub month: Option<String>,
 }
@@ -375,10 +380,15 @@ impl ParseFailure {
 
 /// `Cli` from raw arguments (argv[0] included).
 pub fn parse(args: &[OsString]) -> Result<Cli, ParseFailure> {
-    command()
+    let cli = command()
         .try_get_matches_from(args)
         .and_then(|matches| Cli::from_arg_matches(&matches))
-        .map_err(|err| classify(args, err))
+        .map_err(|err| classify(args, err))?;
+    let today = chrono::Local::now().date_naive();
+    match lone_week_id_failure(args, &cli, today) {
+        Some(failure) => Err(failure),
+        None => Ok(cli),
+    }
 }
 
 fn classify(args: &[OsString], mut err: clap::Error) -> ParseFailure {
@@ -414,6 +424,47 @@ fn rename_args_context(err: &mut clap::Error) {
     if let Some(value) = renamed {
         err.insert(ContextKind::InvalidArg, value);
     }
+}
+
+/// A one-token `week target` whose token parses as a WEEK_ID is missing
+/// its DURATION (relative-ids spec §3). Returns the error bare
+/// `mlm week target` gives, by parsing `args` again without the token.
+/// No WEEK_ID is a valid DURATION, which needs an `h` or `m` suffix.
+fn lone_week_id_failure(
+    args: &[OsString],
+    cli: &Cli,
+    today: chrono::NaiveDate,
+) -> Option<ParseFailure> {
+    let token = lone_target_token(cli).filter(|t| is_week_token(t, today))?;
+    let rest = without_last(args, token);
+    command()
+        .try_get_matches_from(&rest)
+        .err()
+        .map(|err| classify(&rest, err))
+}
+
+/// The token of a one-token `week target`.
+fn lone_target_token(cli: &Cli) -> Option<&str> {
+    let Command::Week(WeekArgs {
+        action: Some(WeekAction::Target(target)),
+        ..
+    }) = &cli.command
+    else {
+        return None;
+    };
+    match target.split() {
+        (None, token) => Some(token),
+        (Some(_), _) => None,
+    }
+}
+
+/// `args` without its last element equal to `token`.
+fn without_last(args: &[OsString], token: &str) -> Vec<OsString> {
+    let mut rest = args.to_vec();
+    if let Some(i) = rest.iter().rposition(|a| a == token) {
+        rest.remove(i);
+    }
+    rest
 }
 
 /// Detects `week WEEK_ID target DURATION` by token shape over the raw
@@ -1005,6 +1056,122 @@ mod tests {
         let (kind, text) = clap_text(super::parse(&os(&["mlm", "week", "7", "foo"])).unwrap_err());
         assert_eq!(kind, clap::error::ErrorKind::ArgumentConflict);
         assert!(text.contains("Usage:"), "{text}");
+    }
+
+    // --- relative WEEK_ID (relative-ids spec §3) ---------------------------
+
+    #[test]
+    fn week_positional_takes_negative_numbers_verbatim() {
+        for tok in [
+            "-1",
+            "-01",
+            "-07",
+            "-2",
+            "-0",
+            "-1.5",
+            "-1e3",
+            "-99999999999999999999",
+        ] {
+            let a = week_view_args(parse(&["mlm", "week", tok]).unwrap());
+            assert_eq!(a.week_id.as_deref(), Some(tok));
+            assert!(!a.notes, "{tok}");
+        }
+    }
+
+    #[test]
+    fn week_minus_n_works_with_flags_in_either_order() {
+        for (args, notes) in [
+            (&["mlm", "week", "-1", "-n"][..], true),
+            (&["mlm", "week", "-n", "-1"], true),
+            (&["mlm", "w", "-1", "--notes"], true),
+            (&["mlm", "week", "-v", "-1"], false),
+            (&["mlm", "week", "-1", "-v"], false),
+        ] {
+            let a = week_view_args(parse(args).unwrap());
+            assert_eq!(a.week_id.as_deref(), Some("-1"), "{args:?}");
+            assert_eq!(a.notes, notes, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn week_non_numeric_hyphen_tokens_stay_usage_errors() {
+        for tok in ["-1x", "-x", "--bogus"] {
+            let failure = super::parse(&os(&["mlm", "week", tok])).unwrap_err();
+            assert_eq!(failure.exit_code(), 2, "{tok}");
+            let (kind, _) = clap_text(failure);
+            assert_eq!(kind, clap::error::ErrorKind::UnknownArgument, "{tok}");
+        }
+    }
+
+    #[test]
+    fn swapped_accepts_a_relative_week() {
+        let args = ["mlm", "week", "-1", "target", "35h"];
+        assert_eq!(
+            swapped(&args),
+            Some("error: put WEEK_ID after target: mlm week target -1 35h".to_string())
+        );
+        let failure = super::parse(&os(&args)).unwrap_err();
+        assert!(
+            matches!(failure, ParseFailure::SwappedWeekTarget(_)),
+            "{failure:?}"
+        );
+        assert_eq!(failure.exit_code(), 2);
+    }
+
+    fn lone(args: &[&str], today: chrono::NaiveDate) -> Option<ParseFailure> {
+        let cli = Cli::try_parse_from(args).unwrap();
+        lone_week_id_failure(&os(args), &cli, today)
+    }
+
+    #[test]
+    fn lone_week_id_after_target_is_a_missing_duration() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 4).unwrap();
+        let (_, bare) = clap_text(super::parse(&os(&["mlm", "week", "target"])).unwrap_err());
+        for args in [
+            &["mlm", "week", "target", "-1"][..],
+            &["mlm", "week", "target", "7"],
+            &["mlm", "week", "target", "2026-07"],
+            &["mlm", "week", "target", "-01"],
+            &["mlm", "w", "target", "-1"],
+            &["mlm", "-v", "week", "target", "-1"],
+            &["mlm", "week", "target", "-v", "7"],
+            &["mlm", "week", "target", "--", "-1"],
+        ] {
+            let failure = lone(args, today).unwrap_or_else(|| panic!("{args:?}"));
+            assert_eq!(failure.exit_code(), 2, "{args:?}");
+            let (kind, text) = clap_text(failure);
+            assert_eq!(
+                kind,
+                clap::error::ErrorKind::MissingRequiredArgument,
+                "{args:?}"
+            );
+            assert_eq!(text, bare, "{args:?}");
+            assert!(text.contains("<DURATION>") && !text.contains("<ARGS>"));
+        }
+    }
+
+    #[test]
+    fn other_lone_target_tokens_are_left_alone() {
+        let today = chrono::NaiveDate::from_ymd_opt(2027, 6, 15).unwrap();
+        for args in [
+            &["mlm", "week", "target", "35h"][..],
+            &["mlm", "week", "target", "-0"],
+            &["mlm", "week", "target", "53"],
+            &["mlm", "week", "target", "-99999999999999999999"],
+            &["mlm", "week", "target", "2026-07", "35h"],
+            &["mlm", "week", "7"],
+            &["mlm", "status", "-1"],
+        ] {
+            assert!(lone(args, today).is_none(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn parse_turns_a_lone_week_id_into_the_usage_error() {
+        let failure = super::parse(&os(&["mlm", "week", "target", "-1"])).unwrap_err();
+        assert!(matches!(failure, ParseFailure::Clap(_)), "{failure:?}");
+        assert_eq!(failure.exit_code(), 2);
+        assert!(super::parse(&os(&["mlm", "week", "target", "35h"])).is_ok());
     }
 
     // --- export notes: cli surface ---------------------------------------
