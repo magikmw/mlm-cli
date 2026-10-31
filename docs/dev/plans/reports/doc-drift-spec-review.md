@@ -1,5 +1,7 @@
 # doc-drift spec — review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Spec: `docs/dev/specs/2026-10-31-doc-drift.md`, branch `doc-drift` at `3a396c0`
 - Gate run: `cargo test` 1018 passed, 0 failed
 - Method: source reads and greps. The read-only hook blocks `cargo run`, running `target/debug/mlm`, `cargo package` and `cp`, so help output and the packaged file list were checked by reading `src/cli.rs`, the tests and `Cargo.toml`, not by running anything.

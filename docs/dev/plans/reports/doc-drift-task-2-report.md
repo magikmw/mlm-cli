@@ -1,5 +1,7 @@
 # doc-drift Task 2 (docs) — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Base: worktree was not on `doc-drift`; rebased onto `7b283e5` before any edit.
 - Commits: `ee88c00` content edits (README, AGENTS, SPEC, `docs/dev/README.md`), `7ac77a4` F6 banner pass (97 files, banners only).
 - Gates: `cargo fmt --check` clean, `cargo build` clean, `cargo test` 1018 passed / 0 failed, `cargo clippy --all-targets -- -D warnings` clean. Pre-commit hook passed on both commits (coverage unchanged at 99.5166%).

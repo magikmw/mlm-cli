@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 164
+- **Next entry**: 165
 - **Last release**: `v0.4.0`
-- **`main`**: `3e9213f` (`v0.4.0` + five unreleased changesets)
-- **Active changeset**: `doc-drift` (triaged, fix pass out, entry 163). `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **`main`**: doc-drift merge (`v0.4.0` + six unreleased changesets)
+- **Active changeset**: none. `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2223,6 +2223,20 @@ SPEC.md and PLAN.md:
   stays one line.
 - Final review (c): four doc comments rewrapped.
 - One fix-pass dispatch covers all of it.
+
+### 164. doc-drift closed out and merged to main
+
+- Fix pass merged (`cf15855`), gate green, 1024 tests.
+- The SPEC flag-body sentence sits in §3.9, not §7.4 as the final review
+  cited.
+- The fix pass found one more pre-existing case. A v0.1.0-era note with a
+  newline and no backslash still takes the recreate path. A debug build
+  trips its `debug_assert!`. A release build prints a recreate line across
+  several lines, which still replays in a POSIX shell. Dropped under the
+  edge-case rule, because only notes stored before v0.1.1 can hold a
+  newline.
+- The spec, the sweep report and every `doc-drift-*` report are bannered.
+- `doc-drift` merged to `main` `--no-ff`, unreleased.
 
 ## Open questions (still need answers)
 

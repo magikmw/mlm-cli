@@ -1,5 +1,7 @@
 # doc-drift Task 1 (code) — completion report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Spec: `docs/dev/specs/2026-10-31-doc-drift.md` (locked)
 - Base: rebased onto `doc-drift` @ `7b283e5` (the worktree started on `main`)
 - Gates: `cargo fmt --check`, `cargo build`, `cargo test` (all suites green, lib 855), `cargo clippy --all-targets -- -D warnings`, all clean

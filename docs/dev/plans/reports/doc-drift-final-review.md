@@ -1,5 +1,7 @@
 # doc-drift — final review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Baseline: `main` at `341ceaa`
 - Branch: `doc-drift`, tip `6a8b0e1` (clone `/tmp/cd-scratch/doc-drift-final`, HEAD verified)
 - Spec: `docs/dev/specs/2026-10-31-doc-drift.md` (locked), NOTES entries 159-162

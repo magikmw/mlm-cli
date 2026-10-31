@@ -1,5 +1,7 @@
 # doc-drift fresh-eyes run
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Sandbox: /tmp/cd-sandbox/doc-drift/ (`mlm 0.4.0` + `README.md`). Every run used `MLM_DB_PATH=/tmp/cd-sandbox/doc-drift/<name>.db`, with a fresh db for each scenario. Today was Sat 2026-10-31.
 
 ## Scenarios — what you ran, what it printed

@@ -1,5 +1,7 @@
 # doc-drift — fix pass
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Base: worktree rebased onto `doc-drift` at `e58dbdf` (it started on `main` at `962ac9f`)
 - Inputs: `doc-drift-final-review.md`, `doc-drift-fresh-eyes.md`, NOTES entry 163
 

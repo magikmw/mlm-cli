@@ -1,5 +1,7 @@
 # doc-drift-sweep — review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 - Tree: `main` at `341ceaa`, read on disk from the `msrv-fix` checkout (identical apart from the MSRV edit; Rust-version claims in `Cargo.toml` and `README.md:66` skipped as instructed)
 - Live docs checked: `README.md`, `AGENTS.md`, `docs/dev/SPEC.md`, `docs/dev/NOTES.md` (Current state block, phase-0 table, and non-log sections), `docs/dev/README.md`, `docs/SIGNING.md`, `CHANGELOG.md`, every `--help` string in `src/cli.rs`
 - Archived docs (`docs/dev/PLAN.md`, `docs/dev/specs/`, `docs/dev/plans/` including `plans/reports/`) checked for the banner only
