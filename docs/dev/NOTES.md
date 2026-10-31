@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 166
+- **Next entry**: 167
 - **Last release**: `v0.4.0`
 - **`main`**: doc-drift merge (`v0.4.0` + six unreleased changesets)
-- **Active changeset**: `deny-check` (spec draft, entry 165). `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Active changeset**: `deny-check` (locked, entry 166). `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2248,6 +2248,30 @@ SPEC.md and PLAN.md:
   `scripts/prep_release.sh` before the version bump.
 - Out: `bans`, `sources`, and a scheduled CI job.
 - Phase 14 skipped, because nothing user-visible changes.
+
+### 166. deny-check spec review folded, locked
+
+- The user added CodeQL's one open alert (`ci.yml` has no `permissions`)
+  to scope, fixed with a top-level `contents: read`. Entry 165 predates
+  that call.
+- Review: 16 findings (`deny-check-spec-review.md`), all folded:
+  - the advisory keys are named, and `unsound` fails too
+  - stdin that is not a terminal stops without prompting, so a piped `y`
+    does not continue
+  - `read` at end of input and the check's exit code are guarded against
+    `set -e`
+  - the check runs with `--locked`, so a stop leaves `Cargo.lock` as it
+    was
+  - `deny.toml` joins the package `exclude`, so Task 1 owns `Cargo.toml`
+    for that line
+  - `unused-allowed-license = "allow"`
+  - findings 3 and 9-13 become known issues: a tool error prompts like a
+    finding, prep needs the network, a fix needs a branch, `y` leaves no
+    record, `release.sh` alone skips the check, and the alert closes at
+    the next release push
+  - the script header names the prerequisite, and the coordinator updates
+    the NOTES phase-0 release row at close-out
+- Locked. One task. Phases 5-10 collapse into spec §7. Phase 14 skipped.
 
 ## Open questions (still need answers)
 
