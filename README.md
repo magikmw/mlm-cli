@@ -63,7 +63,7 @@ later.
 cargo install mlm
 ```
 
-Needs a Rust toolchain (1.85+, edition 2024) — install one via
+Needs a Rust toolchain (1.95+, edition 2024) — install one via
 [rustup](https://rustup.rs) if you don't have one. No other system
 dependency: `rusqlite`'s `bundled` feature compiles SQLite from
 source, so this works the same on Linux, Windows (MSVC), and macOS.

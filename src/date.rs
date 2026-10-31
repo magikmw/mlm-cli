@@ -159,32 +159,33 @@ pub fn parse_date(s: &str) -> Result<NaiveDate, DateWeekError> {
 /// `resolve_future_checked_date` instead, which adds that check.
 pub fn resolve_date(s: &str, today: NaiveDate) -> Result<NaiveDate, DateWeekError> {
     let err = |cause| DateWeekError::new(ArgKind::Date, s, cause);
-    if let Some(digits) = s.strip_prefix('-') {
-        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-            let n: u64 = match digits.parse() {
-                Ok(n) => n,
-                // The digit run itself doesn't fit in a u64 -- as
-                // unrepresentable as any other offset chrono can't
-                // handle, so the same Cause applies.
-                Err(_) => return Err(err(Cause::OutOfRange)),
-            };
-            if n == 0 {
-                return Err(err(Cause::Shape));
-            }
-            let resolved = today
-                .checked_sub_days(Days::new(n))
-                .ok_or_else(|| err(Cause::OutOfRange))?;
-            // `parse_date` only ever accepts a 4-digit year (`1000..=9999`
-            // via `has_ymd_shape`'s exactly-10-bytes check), so the two
-            // spellings of DATE must agree on that same domain -- a `-N`
-            // that resolves outside it would write a value `parse_date`
-            // (and therefore the storage read-back path) can never parse
-            // again.
-            if !(MIN_YEAR..=MAX_YEAR).contains(&resolved.year()) {
-                return Err(err(Cause::OutOfRange));
-            }
-            return Ok(resolved);
+    if let Some(digits) = s.strip_prefix('-')
+        && !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        let n: u64 = match digits.parse() {
+            Ok(n) => n,
+            // The digit run itself doesn't fit in a u64 -- as
+            // unrepresentable as any other offset chrono can't
+            // handle, so the same Cause applies.
+            Err(_) => return Err(err(Cause::OutOfRange)),
+        };
+        if n == 0 {
+            return Err(err(Cause::Shape));
         }
+        let resolved = today
+            .checked_sub_days(Days::new(n))
+            .ok_or_else(|| err(Cause::OutOfRange))?;
+        // `parse_date` only ever accepts a 4-digit year (`1000..=9999`
+        // via `has_ymd_shape`'s exactly-10-bytes check), so the two
+        // spellings of DATE must agree on that same domain -- a `-N`
+        // that resolves outside it would write a value `parse_date`
+        // (and therefore the storage read-back path) can never parse
+        // again.
+        if !(MIN_YEAR..=MAX_YEAR).contains(&resolved.year()) {
+            return Err(err(Cause::OutOfRange));
+        }
+        return Ok(resolved);
     }
     parse_date(s)
 }
