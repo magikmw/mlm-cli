@@ -226,7 +226,7 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [WEEK_ID]  Week to show: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
+  [WEEK_ID]  Week to show: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to the current week
 
 Options:
   -n, --notes    Show each date's notes under its row
@@ -259,7 +259,7 @@ Set an absolute target override for a week
 Usage: mlm week target [OPTIONS] [WEEK_ID] <DURATION>
 
 Arguments:
-  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7). Defaults to the current week
+  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to the current week
   <DURATION>  Target to set: 20h, 33h30m or 45m, up to 168h (human format, never raw minutes)
 
 Options:
