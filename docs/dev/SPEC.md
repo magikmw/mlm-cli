@@ -46,10 +46,9 @@ things known to be broken or confusing today. See §1.2a for that.
 - Shell prompt integration.
 - Non-ISO week conventions.
 - 12h (AM/PM) time input — accepted input is `HH:MM`/`HHMM`/`HH`, 24h only.
-- `+N`/`-N` relative week notation for `week`'s week-id argument. (This
-  is distinct from `status`'s `DATE` argument and `start`/`stop`/
-  `note`'s `--date` flag, both of which already accept a `-N` shorthand
-  — §3.4a, §3.5.)
+- `+N` relative notation for future weeks and months. `WEEK_ID` and
+  `MONTH` take `-N` for past ones (§3.6, §3.8). A future week takes
+  `YYYY-WW` or `WW`, and a future month takes `YYYY-MM` or `MM`.
 - Other `mlm export` formats, such as JSON or CSV, and an `--output`
   file. `mlm export notes` prints plain text to stdout, and the user
   redirects it (§3.8).
@@ -360,26 +359,49 @@ Current (or `WEEK_ID`) week's view:
   target (§7.2) — the headline figure appears only in the headline, not
   repeated here
 
-`WEEK_ID` accepts either a full id (`YYYY-WW`, e.g. `2026-07`) or a
-bare week number (`WW`, e.g. `7`), which defaults the year to the
-current one.
+`WEEK_ID` accepts a full id (`YYYY-WW`, e.g. `2026-07`), a bare week
+number (`WW`, e.g. `7`), which defaults the year to the current one,
+or `-N` for N ISO weeks before the current one (`-1` = last week). The
+current week is the ISO week of today's local date. `-N` has the
+grammar of `DATE`'s `-N` (§3.4a). It is `-` followed by one or more
+ASCII digits, N is at least `1`, and leading zeros are tolerated
+(`-01` = `-1`, `-07` is seven weeks ago), so `-0` is rejected. `-N`
+crosses year boundaries and week 53. On 2026-01-05 (week 2026-02),
+`-2` is `2025-52`. On 2027-01-04 (week 2027-01), `-1` is `2026-53` and
+`-2` is `2026-52`. The earliest week `-N` reaches is `1000-01` (§6.1).
+There is no `+N` (§1.2), so a future week takes `YYYY-WW` or `WW`.
+`mlm week --help` lists `WEEK_ID` as this:
+``Week to show: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to the current week``.
+
+`mlm week` takes `-1` as `WEEK_ID`, as `mlm status -1` takes it as
+`DATE` (§3.5). The argument parser passes each token it reads as a
+negative number (`-1`, `-1.5`, `-1e3`) on to the `WEEK_ID` parser.
+Only `-` plus digits resolves, so `mlm week -1.5` fails with the
+`WEEK_ID` shape error and exit `1` (§6.1). Any other token starting
+with `-` (`-1x`, `-x`, `--bogus`) stays a usage error from the
+argument parser, exit `2` (§6.3), as `mlm status -1x` is.
+`week target` (§3.7) and `export notes` (§3.8) pass every value
+starting with `-` to their parsers, so `-1x` there gets the shape
+error and exit `1`.
 
 `--notes`/`-n` works with or without `WEEK_ID`, in either order (`mlm
-week -n 43`, `mlm week 43 -n`). `mlm week --help` lists it as `Show
-each date's notes under its row`. The flag belongs to the view only,
-so `week target` (§3.7) does not take it. After `target`, `--notes`
-and `-n` are ordinary tokens in target's own argument list. `mlm week
-target 40h --notes` fails as an invalid `WEEK_ID` or `DURATION` with
-exit `1`, and `mlm week target 43 40h --notes` is a usage error with
-exit `2`. Neither writes a target.
+week -n 43`, `mlm week 43 -n`). A `-N` works the same, so
+`mlm week -1 -n` and `mlm week -n -1` both show last week with its
+notes. `mlm week --help` lists the flag as `Show each date's notes
+under its row`. The flag belongs to the view only, so `week target`
+(§3.7) does not take it. After `target`, `--notes` and `-n` are
+ordinary tokens in target's own argument list. `mlm week target 40h
+--notes` fails as an invalid `WEEK_ID` or `DURATION` with exit `1`,
+and `mlm week target 43 40h --notes` is a usage error with exit `2`.
+Neither writes a target.
 
 ### 3.7 `mlm week target [WEEK_ID] DURATION`
 
 Set an absolute target override for a week. `WEEK_ID` (same accepted
-forms as §3.6) defaults to the current week when omitted. `DURATION`
-uses the human duration format (§4.2), not raw minutes — e.g. `20h`,
-`33h30m` — so setting a target has the same friction as everything
-else here: no mental-math input.
+forms as §3.6, `-N` included) defaults to the current week when
+omitted. `DURATION` uses the human duration format (§4.2), not raw
+minutes — e.g. `20h`, `33h30m` — so setting a target has the same
+friction as everything else here: no mental-math input.
 
 `DURATION` is at most `168h` (10080 minutes, the hours in a week).
 `168h`, `167h60m` and `10080m` are accepted, and `168h1m` and `10081m`
@@ -421,10 +443,25 @@ error: put WEEK_ID after target: mlm week target 2026-41 20h
 
 The line echoes the week id and duration as typed, always spells `mlm
 week target` even when the user typed the `w` alias, and prints no
-`Usage:` block. The success echo above uses the normalized week id, so
+`Usage:` block. So `mlm week -1 target 35h` prints this:
+
+```
+error: put WEEK_ID after target: mlm week target -1 35h
+```
+
+The success echo above uses the normalized week id, so
 `mlm week target 2026-7 33h30m` prints `Week 2026-07 target: 33h 30m`.
-`mlm week target --help` shows the usage `mlm week target [OPTIONS]
-[WEEK_ID] <DURATION>` and an Arguments section naming both arguments.
+A `-N` echoes the week it resolved to, so with today in week 2026-43
+`mlm week target -1 35h` prints `Week 2026-42 target: 35h 00m` and
+leaves week 2026-43's target as it was. `mlm week target --help` shows
+the usage `mlm week target [OPTIONS] [WEEK_ID] <DURATION>` and an
+Arguments section naming both arguments. Its `WEEK_ID` line names the
+`-N` form:
+
+```
+  [WEEK_ID]   Week to set: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week). Defaults to the current week
+```
+
 Its `DURATION` line names the cap:
 
 ```
@@ -432,6 +469,28 @@ Its `DURATION` line names the cap:
 ```
 
 No parser error for this subcommand mentions `<ARGS>`.
+
+With one token, `mlm week target` reads it as `DURATION`, unless the
+token parses as a `WEEK_ID` (§3.6). Then `DURATION` is missing.
+`mlm week target -1`, `mlm week target 7` and
+`mlm week target 2026-07` print the same usage error as bare
+`mlm week target`, byte for byte, and exit `2` (§6.3). Stdout stays
+empty and no target is written. The `w` alias, `-v` before or after
+`target`, and a `--` before the token give the same error. It is a
+parse failure, so like the reminder it comes before every check. A
+bare number is a `WEEK_ID`, so `mlm week target 40`, missing its `h`,
+gets this error too.
+
+Only a token that parses as a `WEEK_ID` gives the usage error. Any
+other lone token keeps the `DURATION` error and exit `1`, including
+`-0`, an out-of-range `-N` such as `-99999999999999999999`, `0`, and
+`53` in a 52-week year. `mlm week target -0` prints this:
+
+```
+error: invalid duration "-0": expected a form like 20h, 33h30m, or 45m
+```
+
+`mlm week target 35h` still sets this week's target.
 
 ### 3.8 `mlm export notes [--date DATE | --week WEEK_ID | --month MONTH]`
 
@@ -447,13 +506,22 @@ subcommand, and `notes` is the only one.
   check
 - `--week`/`-w WEEK_ID`: Monday to Sunday of one ISO week, in the
   `WEEK_ID` forms of §3.6, with a bare `WW` in the current ISO year
+  and `-N` counted back from the current ISO week
 - `--month`/`-m MONTH`: the first to the last calendar day of one
   month. `MONTH` is `YYYY-MM` (e.g. `2026-03`), `YYYY-M` (`2026-3`, the
-  same month) or a bare `M`/`MM` (e.g. `3`) in the current calendar
-  year. The calendar year is not the ISO year, so on 2025-12-30 `-m 1`
-  is `2025-01`. The year is exactly four digits, and any value from
+  same month), a bare `M`/`MM` (e.g. `3`) in the current calendar
+  year, or `-N` for N calendar months before the current one. The
+  calendar year is not the ISO year, so on 2025-12-30 `-m 1` is
+  `2025-01`. The year is exactly four digits, and any value from
   `0000` to `9999` is accepted. February runs to the 28th or the 29th
   by the calendar.
+
+`-N` has the grammar of §3.6 for both flags, so `-0` is rejected and
+leading zeros are tolerated. The current week and month come from
+today's local date, and `-N` crosses year boundaries. On 2026-01-05
+(week 2026-02), `-w -2` is `2025-52`, and in January 2026 `-m -1` is
+`2025-12`, December 1 to 31. The earliest month `-m -N` reaches is
+`0000-01` (§6.1).
 
 At most one range flag is given. The range covers every date from its
 first to its last day, inclusive. A note belongs to its stored `date`,
@@ -462,10 +530,11 @@ ranged note read over the range, and touches no punch, total or
 target.
 
 All three flags accept values that start with `-`. So `-d -1` is
-yesterday, and `-w -1` and `-m -1` reach their own `WEEK_ID` and
-`MONTH` errors with exit `1` (§6.1) instead of a parser error. A flag
-followed by another flag takes that flag as its value, so `-m -d` fails
-as a bad `MONTH`.
+yesterday, `-w -1` is last week and `-m -1` is last month. Any other
+value starting with `-` reaches the flag's own parser and fails with
+exit `1` (§6.1), never with a parser error, so `-w -1x` and `-m -1x`
+get the `WEEK_ID` and `MONTH` shape errors. A flag followed by another
+flag takes that flag as its value, so `-m -d` fails as a bad `MONTH`.
 
 A future date, week or month is not an error. It has no notes, so the
 command prints nothing and exits `0` (§6.2).
@@ -482,8 +551,8 @@ These are usage errors from the argument parser, with exit `2` (§6.3):
 
 - command: `Print notes for a date, week or month, one per line (defaults to the current week)`
 - `-d, --date <DATE>`: ``Date to export: YYYY-MM-DD, or `-N` for N days before today (e.g. `-1` = yesterday)``
-- `-w, --week <WEEK_ID>`: `Week to export: YYYY-WW (e.g. 2026-07) or a bare week number (e.g. 7)`
-- `-m, --month <MONTH>`: `Month to export: YYYY-MM (e.g. 2026-03) or a bare month number (e.g. 3)`
+- `-w, --week <WEEK_ID>`: ``Week to export: YYYY-WW (e.g. 2026-07), a bare week number (e.g. 7), or `-N` for N weeks before this one (e.g. `-1` = last week)``
+- `-m, --month <MONTH>`: ``Month to export: YYYY-MM (e.g. 2026-03), a bare month number (e.g. 3), or `-N` for N months before this one (e.g. `-1` = last month)``
 
 ## 4. Time/duration semantics
 
@@ -733,24 +802,55 @@ and still exits `0`.
   not an error (§7.2). `mlm export notes` checks no range against today,
   so its `--date`, `--week` or `--month` may name a future range
   (§3.8, §6.2).
-- Malformed `WEEK_ID` (§3.6): not a bare week number or `YYYY-WW`
-  shape, or a week number that isn't a valid ISO week for its year
-  (most years have 52, some have 53 — `2027-53` is invalid if 2027
-  only has 52; this is a calendar-validity check, not a flat
+- Malformed `WEEK_ID` (§3.6): not a bare week number, a `YYYY-WW`
+  shape or a `-N`, or a week number that isn't a valid ISO week for
+  its year (most years have 52, some have 53 — `2027-53` is invalid if
+  2027 only has 52; this is a calendar-validity check, not a flat
   `1..=53` range test). An unpadded number is accepted and normalized
   (`2026-7` parses the same as `2026-07`), consistent with how
-  `TIME`/`DURATION` input is lenient about padding elsewhere.
-- Malformed `MONTH` (§3.8). A value that is not `YYYY-MM`, `YYYY-M` or
-  a bare `M`/`MM` prints this:
+  `TIME`/`DURATION` input is lenient about padding elsewhere. A bad
+  shape, `-0` included, prints this:
 
-  `invalid MONTH "<input>": expected YYYY-MM or MM`
+  `invalid WEEK_ID "<input>": expected YYYY-WW, WW or -N (N >= 1)`
+
+  A `-N` that would land before week `1000-01`, the earliest week the
+  absolute form accepts, prints this. So does a `-N` whose digit run is
+  too large for a `u64`, as for `DATE`:
+
+  `invalid WEEK_ID "<input>": week offset is out of range`
+
+  A `+` followed by one or more digits (`+1`, `+0`) gets the shape
+  message plus a hint, since `-N` reaches only past weeks. `+1` prints
+  this:
+
+  `invalid WEEK_ID "+1": expected YYYY-WW, WW or -N (N >= 1); a future week takes YYYY-WW or WW`
+
+  Any other value starting with `+` (`+1x`, `+`) gets the plain shape
+  message. `<input>` is the value as typed.
+- Malformed `MONTH` (§3.8). A value that is not `YYYY-MM`, `YYYY-M`, a
+  bare `M`/`MM` or a `-N`, `-0` included, prints this:
+
+  `invalid MONTH "<input>": expected YYYY-MM, MM or -N (N >= 1)`
 
   A month number of `0` or above `12` prints this:
 
   `invalid MONTH "<input>": month must be 1-12`
 
-  `<input>` is the value as typed. The year is exactly four digits, and
-  any four-digit year is accepted.
+  A `-N` that would land before `0000-01`, the earliest month the
+  absolute form accepts, prints this. So does a `-N` whose digit run is
+  too large for a `u64`:
+
+  `invalid MONTH "<input>": month offset is out of range`
+
+  A `+` followed by one or more digits (`+1`, `+0`) gets the shape
+  message plus a hint, since `-N` reaches only past months. `+1` prints
+  this:
+
+  `invalid MONTH "+1": expected YYYY-MM, MM or -N (N >= 1); a future month takes YYYY-MM or MM`
+
+  Any other value starting with `+` (`+1x`, `+`) gets the plain shape
+  message. `<input>` is the value as typed. The year is exactly four
+  digits, and any four-digit year is accepted.
 - Malformed `DURATION` (§3.7/§4.2): doesn't match the input grammar,
   or parses to a negative number of minutes. Zero is legal (a
   deliberate week off, see §2.3's `week_targets` note) — only
@@ -1769,6 +1869,18 @@ or less directly.
   notes on one date whose later `id` has the earlier `created_at_utc`
   print in `created_at_utc` order. `mlm ex n -w 2026-43` prints the
   same as the long form, and a non-ASCII body passes through unchanged.
+- **F16** - Relative weeks (§3.6, §3.7): on 2026-01-05 (week 2026-02),
+  `mlm week -1` shows week 2026-01, `mlm week -01` the same, and
+  `mlm week -2` week 2025-52. On 2027-01-04 (week 2027-01), `-1` shows
+  2026-53 and `-2` shows 2026-52. `mlm week -1 -n` and `mlm week -n -1`
+  both show last week with its notes. `mlm week target -1 35h` writes
+  last week's target and echoes last week's id, so on 2026-01-05 it
+  prints `Week 2026-01 target: 35h 00m`. A target already set for the
+  current week stays.
+- **F17** - Relative export ranges (§3.8): `mlm ex n -w -1` prints last
+  week's notes, Monday to Sunday, and `mlm ex n -m -1` last month's.
+  Neither prints a note from outside its range. In January 2026 `-m -1`
+  covers 2025-12-01 to 2025-12-31.
 
 ### 8.2 Error / edge paths (§6 direct mapping)
 
@@ -1803,9 +1915,16 @@ or less directly.
   A `stop` to that date also warns about each one on stderr (E27).
 - **E9** — `week target` with a negative `DURATION` → hard error;
   zero is not an error (F7b).
-- **E10** — `week target` missing the `DURATION` argument entirely →
-  parser missing-argument error whose usage names `[WEEK_ID]
-  <DURATION>` and never `<ARGS>`, exit `2`.
+- **E10** — `week target` missing the `DURATION` argument → parser
+  missing-argument error whose usage names `[WEEK_ID] <DURATION>` and
+  never `<ARGS>`, exit `2`. Bare `mlm week target` gives it. So does one
+  token that parses as a `WEEK_ID` (`-1`, `7`, `2026-07`), with stderr
+  byte-identical to the bare case, nothing on stdout and no target
+  written (§3.7). `mlm w target -1`, `mlm -v week target -1`,
+  `mlm week target -v 7` and `mlm week target -- -1` give it too. Any
+  other lone token, such as `-0`, `-99999999999999999999`, `0` or `53`
+  in a 52-week year, keeps `invalid duration` with exit `1`.
+  `mlm week target 35h` still sets this week's target.
 - **E11** — `status` for a date with zero punches *and* zero notes:
   both the stint-list and Notes sections omitted (F4's rule applied
   to both blocks at once).
@@ -1888,8 +2007,9 @@ or less directly.
   anomalies and prints nothing when no earlier week has one.
 - **E24** - Argument order (§3.7, §6.1): `mlm week 2026-41 target 20h`
   prints `error: put WEEK_ID after target: mlm week target 2026-41 20h`,
-  no `Usage:` block, exit `2`. `mlm week 7 foo` keeps the parser's own
-  error.
+  no `Usage:` block, exit `2`. `mlm week -1 target 35h` prints
+  `error: put WEEK_ID after target: mlm week target -1 35h`, exit `2`.
+  `mlm week 7 foo` keeps the parser's own error.
 - **E25** - Future `status DATE` (§6.1): `status` with a date after
   today exits `1` with the future-date message. `mlm week` for a
   future week still prints.
@@ -1922,13 +2042,13 @@ or less directly.
   `-d -1` is yesterday. A range with no notes, and a future date, week
   or month, print nothing and exit `0`.
 - **E29** - `mlm export notes` value errors (§6.1): `-m 2026-003`,
-  `-m 26-03`, `-m 2026-` and `-m -1` fail with the shape message, e.g.
-  `-m abc` prints `error: invalid MONTH "abc": expected YYYY-MM or MM`.
+  `-m 26-03`, `-m 2026-` and `-m -0` fail with the shape message, e.g.
+  `-m abc` prints `error: invalid MONTH "abc": expected YYYY-MM, MM or -N (N >= 1)`.
   `-m 0`, `-m 13` and `-m 2026-13` fail with the range message, e.g.
   `-m 13` prints `error: invalid MONTH "13": month must be 1-12`. A bad
-  `DATE` and a bad `WEEK_ID`, `-w -1` included, print their existing
+  `DATE` and a bad `WEEK_ID`, `-w -0` included, print their §6.1
   messages, and `-m -d` fails as a bad `MONTH`. Each exits `1` with
-  nothing on stdout.
+  nothing on stdout. `-w -1` and `-m -1` are ranges (F17).
 - **E30** - `mlm export notes` usage errors (§3.8, §6.3): bare `mlm
   export` (its output lists `notes`), two range flags such as `-d
   2026-10-19 -w 2026-43`, one flag given twice such as `-m 3 -m 4`, and
@@ -1960,4 +2080,35 @@ or less directly.
 
   With stderr a closed pipe, a malformed `TIME` still exits `1` and the
   `week WEEK_ID target` shape still exits `2`.
+- **E35** - Relative-id shape errors (§3.6, §6.1): `mlm week -0`,
+  `mlm week -1.5`, `mlm week target -1x 35h` and `mlm ex n -w -1x`
+  print the `WEEK_ID` shape error, e.g. `mlm week -0` prints
+  `error: invalid WEEK_ID "-0": expected YYYY-WW, WW or -N (N >= 1)`.
+  `mlm ex n -m -0` and `mlm ex n -m -1x` print the `MONTH` one, e.g.
+  `error: invalid MONTH "-1x": expected YYYY-MM, MM or -N (N >= 1)`.
+  Each exits `1`, prints nothing to stdout and writes nothing.
+- **E36** - Offset out of range (§6.1): `mlm week -99999999999999999999`
+  prints
+  `error: invalid WEEK_ID "-99999999999999999999": week offset is out of range`.
+  On 2026-02-12, `mlm week -53540` is week `1000-01`, and `-53541`
+  prints the week offset error. In February 2026,
+  `mlm ex n -m -24313` is `0000-01` and exits `0`, and `-m -24314`
+  prints
+  `error: invalid MONTH "-24314": month offset is out of range`. A
+  25-digit `-m` run prints the month offset error too. Each error exits
+  `1` with nothing on stdout. No `-N` panics or resolves to a week
+  before `1000-01`.
+- **E37** - Future hint (§6.1): `mlm week +1`, `mlm week target +1 35h`
+  and `mlm ex n -w +1` print
+  `error: invalid WEEK_ID "+1": expected YYYY-WW, WW or -N (N >= 1); a future week takes YYYY-WW or WW`,
+  and `mlm ex n -m +1` prints
+  `error: invalid MONTH "+1": expected YYYY-MM, MM or -N (N >= 1); a future month takes YYYY-MM or MM`.
+  `+0` gets the hint too, and `+1x` and `+` get the plain shape
+  message. `mlm status +1` keeps
+  `error: invalid DATE "+1": expected YYYY-MM-DD or -N (N >= 1)`, with
+  no hint. Each exits `1`.
+- **E38** - `mlm week` hyphen tokens (§3.6, §6.3): `mlm week -1x`,
+  `mlm week -x` and `mlm week --bogus` are usage errors from the
+  argument parser, exit `2`, with nothing on stdout. `mlm week -1.5`
+  reaches the `WEEK_ID` parser instead and fails as in E35.
 
