@@ -1,5 +1,7 @@
 # deny-check Task 1 report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec: `docs/dev/specs/2026-10-31-deny-check.md` (§3, §4, §5).
 Base: the worktree started on `main` and was rebased onto `deny-check` at `79be0b5` before any work.
 

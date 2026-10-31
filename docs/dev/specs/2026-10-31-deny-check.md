@@ -1,5 +1,7 @@
 # Dependency check before release — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `33537d1` (`v0.4.0` + `orphan-stop-warning` + `week-notes` + `export-notes` + `panic-fixes` + `relative-ids` + `doc-drift`, unreleased).
 **Branch**: `deny-check`.
 **Status**: locked 2026-10-31 after one review

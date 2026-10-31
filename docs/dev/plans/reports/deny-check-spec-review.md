@@ -1,5 +1,7 @@
 # deny-check spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec: `docs/dev/specs/2026-10-31-deny-check.md` (working copy, with the uncommitted §5 edit).
 Baseline checked: `main` = `33537d1`, matching spec line 3.
 
