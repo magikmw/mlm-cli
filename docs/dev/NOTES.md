@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 169
+- **Next entry**: 170
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: none. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: `release-ci-check` (spec draft, entry 169). Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2304,6 +2304,18 @@ SPEC.md and PLAN.md:
 - Follow-up: `prep_release.sh`'s last line suggests
   `release.sh "v0.5.0"`, but `release.sh` takes the bare version and
   rejects the `v` form.
+
+### 169. CI items queued; release-ci-check brainstorm
+
+- The user asked to work through the three CI items in sequence: CI
+  before release, changelog noise, and a scheduled `cargo deny`.
+- For CI before release, the user picked option A from three:
+  - A: `prep_release.sh` pushes `HEAD` to a throwaway `release-check`
+    branch, waits for CI and pauses on failure
+  - B: push each changeset branch at its merge gate
+  - C: push `main` after each changeset, which puts unreleased docs on
+    GitHub
+- `release.sh` keeps its CI wait as the hard gate. Phase 14 skipped.
 
 ## Open questions (still need answers)
 
