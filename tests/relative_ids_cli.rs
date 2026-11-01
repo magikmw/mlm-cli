@@ -223,7 +223,9 @@ fn week_hyphen_junk_is_a_usage_error() {
         assert_eq!(stdout(&o), "", "{tok}");
         let e = stderr(&o);
         assert!(e.starts_with("error: unexpected argument '"), "{tok}: {e}");
-        assert!(e.contains("Usage: mlm week"), "{tok}: {e}");
+        // Windows prints the binary as mlm.exe in usage lines.
+        let usage = e.replace("mlm.exe ", "mlm ");
+        assert!(usage.contains("Usage: mlm week"), "{tok}: {e}");
         assert!(!db.exists(), "{tok}");
     }
 }
