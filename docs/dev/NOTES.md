@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 168
-- **Last release**: `v0.4.0`
-- **`main`**: deny-check merge (`v0.4.0` + seven unreleased changesets)
-- **Active changeset**: none. `deny-check` (entry 167), `doc-drift` (entry 164), `relative-ids`, `panic-fixes`, `export-notes` and `week-notes` are on `main` and unreleased. `orphan-stop-warning` is on `main` and unreleased; the user wants more changesets in the next release
+- **Next entry**: 169
+- **Last release**: `v0.5.0`
+- **`main`**: `v0.5.0`
+- **Active changeset**: none. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2284,6 +2284,26 @@ SPEC.md and PLAN.md:
   prerequisite.
 - The spec and reports are bannered. `deny-check` merged to `main`
   `--no-ff`, unreleased.
+
+### 168. v0.5.0 released
+
+- Ships orphan-stop-warning, week-notes, export-notes, panic-fixes,
+  relative-ids, doc-drift and deny-check.
+- `prep_release.sh`'s new dependency check passed. The changelog section
+  was rewritten by hand from git-cliff's draft.
+- The first CI run on `b34ec66` failed on Windows only.
+  `week_hyphen_junk_is_a_usage_error` expected `Usage: mlm week`, and
+  Windows prints `mlm.exe`. Changesets reach `main`'s remote only at
+  release, so new CLI tests first run on Windows at release time.
+  `88d9775` normalizes the name as the other usage tests do. CI passed,
+  and `v0.5.0` was tagged on `88d9775` by hand, per `release.sh`'s
+  recovery steps.
+- Release workflow green. The GitHub Release holds 20 assets with a
+  `.sig` for each archive, and crates.io shows 0.5.0. The CodeQL
+  workflow-permissions alert is closed.
+- Follow-up: `prep_release.sh`'s last line suggests
+  `release.sh "v0.5.0"`, but `release.sh` takes the bare version and
+  rejects the `v` form.
 
 ## Open questions (still need answers)
 
