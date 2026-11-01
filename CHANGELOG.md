@@ -2,6 +2,40 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-10-31
+
+### 🚀 Features
+
+- *(week)* `mlm week --notes` (`-n`) lists each date's notes under its row
+- *(export)* `mlm export notes` (`mlm ex n`) prints a date's, a week's or a month's notes as plain lines, e.g. `mlm export notes --month 2026-10 > october.txt`
+- *(week, export)* Week and month ids take `-N` for N weeks or months back: `mlm week -1`, `mlm week target -1 35h`, `mlm ex n -w -1`, `mlm ex n -m -1`. A `+N` id gets a hint to use the absolute form
+- *(stop)* `mlm stop` warns on stderr when the date it wrote to has an orphaned end, with the same hints `status` shows
+
+### 🔄 Changed
+
+- *(week)* `week target` rejects a target above `168h`
+- *(cli)* A closed stdout pipe (`mlm week | head -1`) exits `141` quietly; any other write failure prints `error: cannot write output: <reason>` and exits `1`
+- *(delete)* A deleted note whose text holds a backslash prints `deleted note (YYYY-MM-DD): <text>` instead of a recreate command
+- *(cli)* `delete note|punch --help` explains how `ID` is numbered
+- Minimum supported Rust is 1.95
+
+### 🐛 Bug Fixes
+
+- *(cli)* Commands no longer panic in the repeated hour when clocks go back
+- *(cli)* A time typed in the repeated hour stores the earlier pass, and a time inside the spring-forward gap is rejected instead of stored an hour off
+- *(cli)* Piping output into a command that exits early (`mlm week | true`) no longer panics
+
+### 📚 Documentation
+
+- README: build steps start with a clone, the dev loop uses a throwaway database, and the delete section explains recreate-line quoting across shells
+- README and `--help` match what the commands print
+
+### ⚙️ Miscellaneous Tasks
+
+- `prep_release.sh` runs `cargo deny` (advisories and licenses) and pauses on a finding
+- CI's token is read-only
+- The crates.io package no longer ships the internal dev docs
+
 ## [0.4.0] - 2026-10-04
 
 ### 🚀 Features
