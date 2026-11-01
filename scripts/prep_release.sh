@@ -127,5 +127,5 @@ Version bumped to ${new_version}.
 
 CHANGELOG.md updated for review.
 
-When ready, trigger ./scripts/release.sh "$tag"
+When ready, trigger ./scripts/release.sh ${new_version}
 EOF
