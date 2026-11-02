@@ -51,8 +51,6 @@ A new `.github/workflows/deny.yml`:
     with an exact version (looked up at implementation time, recorded
     in the report), `command: check advisories`, reading the repo's
     `deny.toml`
-- no `--locked` concern: the action never writes back, and the run is
-  read-only
 
 ## 4. Testing
 
