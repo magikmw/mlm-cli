@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 175
+- **Next entry**: 178
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: none. `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: none. `release-ci-check`, `changelog-noise` and `deny-schedule` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2402,6 +2402,51 @@ SPEC.md and PLAN.md:
   `^[A-Za-z]+$` and is not `mlm`.
 - Phase 13 skipped, a two-file config and docs change already checked
   by hand. Phase 14 skipped per entry 173.
+- Spec and both reports bannered. Merged to `main`, unreleased.
+
+### 175. deny-schedule brainstorm
+
+- Item 2.3 from entry 169. Design agreed with the user: a weekly
+  workflow (Monday 06:00 UTC, plus manual runs) runs `cargo deny check
+  advisories` through `EmbarkStudios/cargo-deny-action` at a pinned
+  version, with `contents: read`. A finding turns the run red and
+  GitHub emails the owner. Licenses stay in prep, since they change
+  only with `Cargo.lock`.
+- The user called the 60-day schedule pause, unmaintained advisories
+  going red, and the first run waiting for a push maintenance notes,
+  not known issues. The spec lists them under §1.3.
+
+### 176. deny-schedule spec review folded, locked
+
+- Review: 9 findings and 7 gaps (`deny-schedule-spec-review.md`). The
+  reviewer had no web tool, so its Actions and action claims are
+  unchecked. The task checks the action's inputs.
+- F1: the failure email goes to whoever last changed the cron line.
+- F3, F8, F9: the action uses its `v2` major tag, as `checkout@v6` does,
+  so its bundled `cargo-deny` keeps up with the advisory database.
+- F5: `arguments: --locked`, as prep runs it.
+- F6: `deny.toml`'s header comment may change, and names both uses.
+- F2, F7, U1-U7: the reachable ones join the §1.3 maintenance notes
+  (email recipient, weekly re-email, yanked and unsound go red, first
+  run waits for a push).
+- F4: a local pass does not prove the action's run. The coordinator
+  starts a manual run once the workflow reaches GitHub.
+- Locked. One task. Phase 14 skipped.
+
+### 177. deny-schedule implemented, closed out
+
+- Task 1 merged into `deny-schedule`. Gate green: 1024 tests, `deny.yml`
+  parses with the cron, `workflow_dispatch` and `contents: read`, and
+  `cargo deny --locked check advisories` passes locally.
+- The task report checked `cargo-deny-action@v2`'s `action.yml`. It
+  runs `cargo-deny --log-level warn --manifest-path ./Cargo.toml
+  --locked check advisories` and fetches the advisory database itself.
+- The action bundles `cargo-deny` 0.20.2, while prep uses the local
+  0.19.8. The first manual run on GitHub shows whether `deny.toml`
+  works under 0.20.
+- Pending: a manual run once the workflow reaches GitHub.
+- Phase 13 skipped, one small workflow file checked by hand. Phase 14
+  skipped per entry 176.
 - Spec and both reports bannered. Merged to `main`, unreleased.
 
 ## Open questions (still need answers)
