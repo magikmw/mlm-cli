@@ -1,5 +1,7 @@
 # Changelog noise — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `18d4d8e` (`v0.5.0` + the
 `prep_release.sh` hint fix + `release-ci-check`, unreleased).
 **Branch**: `changelog-noise`.

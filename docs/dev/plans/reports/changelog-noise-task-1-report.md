@@ -1,5 +1,7 @@
 # changelog-noise Task 1 report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 **Status**: green. Every §5 check holds and all four cargo gates pass.
 
 ## Base

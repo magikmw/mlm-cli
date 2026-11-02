@@ -1,5 +1,7 @@
 # changelog-noise spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: docs/dev/specs/2026-11-02-changelog-noise.md against cliff.toml, AGENTS.md, CHANGELOG.md, scripts/prep_release.sh, scripts/release.sh, NOTES.md entry 172, and `git log`.
 
 Limit: the review sandbox refused `git-cliff` (not on the read-only list) and refused `git clone`/`cp` for a scratch repo. No git-cliff output was observed. Semantics claims below come from reading cliff.toml and from knowledge of git-cliff 2.x, and are marked "unverified" where they matter. The implementer should confirm each by running it.
