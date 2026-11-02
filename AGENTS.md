@@ -98,6 +98,24 @@ detail, so it's not what this rule forbids).
   dependency needed on any of them.
 - Cargo.lock is committed (this ships a binary).
 
+### Commit messages
+
+`git-cliff` builds `CHANGELOG.md` from commit subjects, so the prefix
+decides where a commit lands.
+
+- Subjects start with a Conventional Commits prefix: `feat:`, `fix:`,
+  `refactor:`, `perf:`, `style:`, `test:`, `build:`, `ci:`, `chore:`,
+  `revert:` or `docs:`.
+- `feat:` and `fix:` are for changes a user of `mlm` can see. A code
+  change users cannot see takes `refactor:`, `test:`, `build:` or
+  `chore:`.
+- `docs:` with no scope is internal (specs, plans, reports, NOTES) and
+  stays out of the changelog.
+- A doc change users should see takes a scope, e.g. `docs(readme): ...`
+  or `docs(help): ...`.
+- Task commits start with a type too, e.g. `fix: ...`, and name the
+  changeset and task in the body, since a scope shows in the changelog.
+
 ## Verifying changes
 
 ```sh
