@@ -4,7 +4,9 @@
 `prep_release.sh` hint fix + `release-ci-check` + `changelog-noise`,
 unreleased).
 **Branch**: `deny-schedule`.
-**Status**: draft.
+**Status**: locked 2026-11-02 after one review
+(`docs/dev/plans/reports/deny-schedule-spec-review.md`, folded in
+NOTES.md entry 176).
 **Input**: the user's go-ahead on 2026-11-02 for item 2.3 (NOTES.md
 entry 169), with the design in entry 175.
 
@@ -13,13 +15,15 @@ entry 169), with the design in entry 175.
 `cargo deny` runs only in `prep_release.sh`, so an advisory published
 between releases waits for the next release. After this changeset a
 GitHub workflow runs the advisories check every week. A finding turns
-the run red, and GitHub emails the repo owner.
+the run red, and GitHub emails the account that last changed the
+schedule.
 
 ## 1.1 Non-goals
 
 - No `licenses`, `bans` or `sources` check in the job.
 - No issue, comment or other write on a finding.
-- No change to `ci.yml`, `deny.toml` or the release scripts.
+- No change to `ci.yml`, the release scripts or `deny.toml`'s checks.
+  Only its header comment changes.
 
 ## 1.2 Known issues
 
@@ -29,9 +33,16 @@ None.
 
 - GitHub disables scheduled workflows on a repo with no activity for 60
   days. A push or a manual enable turns the job back on.
-- `unmaintained = "all"` in `deny.toml` makes an unmaintained advisory
-  turn the run red, the same as a vulnerability.
-- The job first runs once the workflow reaches GitHub's default branch.
+- `deny.toml` makes unmaintained, unsound and yanked advisories turn
+  the run red, the same as a vulnerability.
+- The failure email goes to the account that last changed the cron
+  line, and only when its Actions notifications are on. A red run
+  emails again each week until fixed, and the fix needs its own push.
+- The job first runs once the workflow reaches GitHub's default branch,
+  which happens at the next release unless pushed sooner. Manual runs
+  need the same.
+- The action's major tag moves with its releases, so its bundled
+  `cargo-deny` stays current with the advisory database.
 
 ## 2. Prerequisites
 
@@ -47,23 +58,25 @@ A new `.github/workflows/deny.yml`:
 - top-level `permissions: contents: read`
 - one job on `ubuntu-latest`:
   - `actions/checkout@v6`, as in `ci.yml`
-  - `EmbarkStudios/cargo-deny-action`, pinned to its latest release tag
-    with an exact version (looked up at implementation time, recorded
-    in the report), `command: check advisories`, reading the repo's
-    `deny.toml`
+  - `EmbarkStudios/cargo-deny-action@v2`, a major tag like
+    `actions/checkout@v6`, with `command: check advisories` and
+    `arguments: --locked`, as `prep_release.sh` runs it. It reads
+    `deny.toml` at the repo root
+- `deny.toml`'s header comment names both places the file is used
 
 ## 4. Testing
 
 GitHub Actions cannot run locally here. The implementer:
 
 - checks `deny.yml` is valid YAML and matches §3
-- reads the pinned action release's `action.yml` (or its README) to
-  confirm the input names used
+- reads the action's `action.yml` at `v2` to confirm the input names,
+  that `arguments` takes `--locked`, and that the action fetches the
+  advisory database itself, and records them in the report
 - runs `cargo deny --locked check advisories` locally and records it
-  passes, so the first scheduled run is expected green
+  passes
 
-Real behavior is first seen on the first scheduled or manual run after
-the workflow reaches GitHub.
+Real behavior is first seen on a manual run after the workflow reaches
+GitHub. The coordinator starts one then and checks it goes green.
 
 ## 5. Tasks
 
@@ -71,7 +84,7 @@ One task, no plan beyond this spec.
 
 | Task | Owns | Covers |
 |---|---|---|
-| 1 | `.github/workflows/deny.yml` | §3 |
+| 1 | `.github/workflows/deny.yml`, `deny.toml` (header comment only) | §3 |
 
 ## User-visible surface
 

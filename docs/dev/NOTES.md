@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 176
+- **Next entry**: 177
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: `deny-schedule` (draft, entry 175). `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: `deny-schedule` (locked, entry 176). `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2415,6 +2415,23 @@ SPEC.md and PLAN.md:
 - The user called the 60-day schedule pause, unmaintained advisories
   going red, and the first run waiting for a push maintenance notes,
   not known issues. The spec lists them under §1.3.
+
+### 176. deny-schedule spec review folded, locked
+
+- Review: 9 findings and 7 gaps (`deny-schedule-spec-review.md`). The
+  reviewer had no web tool, so its Actions and action claims are
+  unchecked. The task checks the action's inputs.
+- F1: the failure email goes to whoever last changed the cron line.
+- F3, F8, F9: the action uses its `v2` major tag, as `checkout@v6` does,
+  so its bundled `cargo-deny` keeps up with the advisory database.
+- F5: `arguments: --locked`, as prep runs it.
+- F6: `deny.toml`'s header comment may change, and names both uses.
+- F2, F7, U1-U7: the reachable ones join the §1.3 maintenance notes
+  (email recipient, weekly re-email, yanked and unsound go red, first
+  run waits for a push).
+- F4: a local pass does not prove the action's run. The coordinator
+  starts a manual run once the workflow reaches GitHub.
+- Locked. One task. Phase 14 skipped.
 
 ## Open questions (still need answers)
 
