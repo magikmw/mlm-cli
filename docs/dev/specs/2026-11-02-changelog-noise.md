@@ -100,11 +100,11 @@ and records each output in the task report:
 - `git-cliff v0.4.0..v0.5.0` shows no unscoped `docs:` entry, keeps the
   `feat:` and `fix:` entries, and shows no `Adversarial review` line
 - in a throwaway clone under `/tmp`, commits `docs(readme): x`,
-  `doc(help): x2`, `docs: y`, `doc: z`, `docs!: z2`,
+  `doc(help): xx`, `docs: y`, `doc: z`, `docs!: z2`,
   `docs(review): adversarial review`, `feat: mlm does w`,
   `feat(scope)!: mlm v`, `fix: cliff.toml u`, `fix: plain t` and
   `build: s` give:
-  - Documentation `*(readme)* X` and `*(help)* X2`
+  - Documentation `*(readme)* X` and `*(help)* Xx`
   - Features `mlm does w` and `*(scope)* [**breaking**] mlm v`
   - Bug Fixes `cliff.toml u` and `Plain t`
   - Miscellaneous Tasks `S`
