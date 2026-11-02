@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 175
+- **Next entry**: 176
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: none. `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: `deny-schedule` (draft, entry 175). `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2403,6 +2403,18 @@ SPEC.md and PLAN.md:
 - Phase 13 skipped, a two-file config and docs change already checked
   by hand. Phase 14 skipped per entry 173.
 - Spec and both reports bannered. Merged to `main`, unreleased.
+
+### 175. deny-schedule brainstorm
+
+- Item 2.3 from entry 169. Design agreed with the user: a weekly
+  workflow (Monday 06:00 UTC, plus manual runs) runs `cargo deny check
+  advisories` through `EmbarkStudios/cargo-deny-action` at a pinned
+  version, with `contents: read`. A finding turns the run red and
+  GitHub emails the owner. Licenses stay in prep, since they change
+  only with `Cargo.lock`.
+- The user called the 60-day schedule pause, unmaintained advisories
+  going red, and the first run waiting for a push maintenance notes,
+  not known issues. The spec lists them under §1.3.
 
 ## Open questions (still need answers)
 
