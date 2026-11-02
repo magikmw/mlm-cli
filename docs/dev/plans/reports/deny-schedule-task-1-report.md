@@ -1,5 +1,7 @@
 # deny-schedule Task 1 report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 **Spec**: `docs/dev/specs/2026-11-02-deny-schedule.md` §3, §4, §5.
 **Branch**: `worktree-agent-af2221c48102d9db6`, rebased onto
 `deny-schedule` (the worktree started on `main` at `88d9775`, which

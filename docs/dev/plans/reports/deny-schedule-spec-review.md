@@ -1,5 +1,7 @@
 # deny-schedule spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Reviewed: docs/dev/specs/2026-11-02-deny-schedule.md against ci.yml, deny.toml, scripts/prep_release.sh:88-96, Cargo.toml, NOTES.md 165-167, 175.
 
 Verification limits: no web tool was available. Everything about GitHub Actions and cargo-deny-action below comes from prior knowledge and is marked UNVERIFIED. The implementer's step to read the pinned release's `action.yml` is the only real check, and the spec should say what it must confirm (F3, F4).

@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 177
+- **Next entry**: 178
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: `deny-schedule` (locked, entry 176). `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: none. `release-ci-check`, `changelog-noise` and `deny-schedule` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2432,6 +2432,22 @@ SPEC.md and PLAN.md:
 - F4: a local pass does not prove the action's run. The coordinator
   starts a manual run once the workflow reaches GitHub.
 - Locked. One task. Phase 14 skipped.
+
+### 177. deny-schedule implemented, closed out
+
+- Task 1 merged into `deny-schedule`. Gate green: 1024 tests, `deny.yml`
+  parses with the cron, `workflow_dispatch` and `contents: read`, and
+  `cargo deny --locked check advisories` passes locally.
+- The task report checked `cargo-deny-action@v2`'s `action.yml`. It
+  runs `cargo-deny --log-level warn --manifest-path ./Cargo.toml
+  --locked check advisories` and fetches the advisory database itself.
+- The action bundles `cargo-deny` 0.20.2, while prep uses the local
+  0.19.8. The first manual run on GitHub shows whether `deny.toml`
+  works under 0.20.
+- Pending: a manual run once the workflow reaches GitHub.
+- Phase 13 skipped, one small workflow file checked by hand. Phase 14
+  skipped per entry 176.
+- Spec and both reports bannered. Merged to `main`, unreleased.
 
 ## Open questions (still need answers)
 

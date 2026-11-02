@@ -1,5 +1,7 @@
 # Scheduled advisory check — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `ca852e6` (`v0.5.0` + the
 `prep_release.sh` hint fix + `release-ci-check` + `changelog-noise`,
 unreleased).
