@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 170
+- **Next entry**: 171
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: `release-ci-check` (spec draft, entry 169). Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: `release-ci-check` (locked, entry 170). Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2316,6 +2316,24 @@ SPEC.md and PLAN.md:
   - C: push `main` after each changeset, which puts unreleased docs on
     GitHub
 - `release.sh` keeps its CI wait as the hard gate. Phase 14 skipped.
+
+### 170. release-ci-check spec review folded, locked
+
+- Review: 14 findings (`release-ci-check-spec-review.md`), all folded:
+  - F1, F12: every `gh`, `jq` and `git push` call is guarded, and an
+    exit and interrupt trap deletes the branch
+  - F2, F3: delete any leftover branch before pushing, and match the run
+    by branch, event, sha and creation time
+  - F4, F6, F7: validate `CI_CHECK_TIMEOUT`, name the real timeout, and
+    check tools before pushing
+  - F5: the script header and the phase-0 release row stop calling prep
+    local only
+  - F8: hand tests push to a local bare repo with a stubbed `gh`
+  - F11: push with `--quiet`
+  - F9, F10, F13, F14 become known issues
+- The user accepted that pushed pre-release commits stay public by sha
+  and in the Actions tab (F9), and that prep gets no skip flag (F13).
+- Locked. One task. Phase 14 skipped.
 
 ## Open questions (still need answers)
 

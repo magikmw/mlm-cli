@@ -3,7 +3,9 @@
 **Baseline**: written against `main` at `d03bc0a` (`v0.5.0` + the
 `prep_release.sh` hint fix and the v0.5.0 NOTES entry, unreleased).
 **Branch**: `release-ci-check`.
-**Status**: draft.
+**Status**: locked 2026-11-02 after one review
+(`docs/dev/plans/reports/release-ci-check-spec-review.md`, folded in
+NOTES.md entry 170).
 **Input**: the user's choice on 2026-11-02 of option A in NOTES.md
 entry 169.
 
@@ -24,6 +26,7 @@ for CI, and pauses on a failure, as the dependency check does.
   hard gate.
 - No CI on changeset branches or on `main` between releases.
 - No change to what CI runs.
+- No flag to skip the check in prep.
 
 ## 1.2 Known issues
 
