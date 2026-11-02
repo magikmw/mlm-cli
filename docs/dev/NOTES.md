@@ -10,7 +10,7 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 178
+- **Next entry**: 179
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
 - **Active changeset**: none. `release-ci-check`, `changelog-noise` and `deny-schedule` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
@@ -2448,6 +2448,14 @@ SPEC.md and PLAN.md:
 - Phase 13 skipped, one small workflow file checked by hand. Phase 14
   skipped per entry 176.
 - Spec and both reports bannered. Merged to `main`, unreleased.
+
+### 178. CI items pushed and checked on GitHub
+
+- With the user's approval, `main` pushed at `fb541b6` (25 commits:
+  `release-ci-check`, `changelog-noise`, `deny-schedule`, unreleased).
+- CI green on all five targets.
+- A manual Advisories run went green, so `deny.toml` works under the
+  action's `cargo-deny` 0.20.2. Entry 177's pending check is done.
 
 ## Open questions (still need answers)
 
