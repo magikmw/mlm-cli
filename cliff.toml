@@ -10,7 +10,8 @@
 # everything else falls into a single "Other Changes" bucket via the
 # catch-all `".*"` parser at the end of `commit_parsers`. This is pragmatic,
 # not aspirational: going forward, using Conventional Commits prefixes will
-# get commits sorted into the nicer named groups below for free.
+# get commits sorted into the nicer named groups below for free. AGENTS.md
+# ("Commit messages") names the prefixes to use.
 
 [changelog]
 # Used by `--prepend` to remove the previous header.
@@ -34,7 +35,12 @@ body = """
     {% for commit in entry.commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
+            {% set first_word = commit.message | split(pat=" ") | first %}\
+            {% if first_word is matching("^[A-Za-z]+$") and first_word != "mlm" %}\
+                {{ commit.message | upper_first }}\
+            {% else %}\
+                {{ commit.message }}\
+            {% endif %}\
     {% endfor %}
 {% endfor %}
 
@@ -87,12 +93,15 @@ commit_parsers = [
     { message = "^report:", skip = true },
     { message = "^feat", group = "<!-- 0 -->🚀 Features" },
     { message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
-    { message = "^docs?(\\(|:)", group = "<!-- 3 -->📚 Documentation" },
+    # An unscoped `docs:` commit is internal (specs, plans, NOTES) and is
+    # skipped. A scoped `docs(<scope>):` commit is user-facing and is grouped.
+    { message = "^docs?!?:", skip = true },
+    { message = "^docs?\\(", group = "<!-- 3 -->📚 Documentation" },
     { message = "^perf", group = "<!-- 4 -->⚡ Performance" },
     { message = "^refactor", group = "<!-- 2 -->🚜 Refactor" },
     { message = "^style", group = "<!-- 5 -->🎨 Styling" },
     { message = "^test", group = "<!-- 6 -->🧪 Testing" },
-    { message = "^chore|^ci", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
+    { message = "^chore|^ci|^build", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
     { message = "^revert", group = "<!-- 9 -->◀️ Revert" },
     { message = ".*", group = "<!-- 11 -->💼 Other Changes" },
 ]

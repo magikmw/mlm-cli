@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 173
+- **Next entry**: 175
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: `changelog-noise` (brainstorm, entry 172). `release-ci-check` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: none. `release-ci-check` and `changelog-noise` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -2367,6 +2367,42 @@ SPEC.md and PLAN.md:
 - Two small fixes ride along: a postprocessor so `upper_first` no longer
   turns `mlm` into `Mlm`, and agents told to type their commits so
   fewer entries land in "Other Changes".
+
+### 173. changelog-noise spec review folded, locked
+
+- Review: 9 findings and 7 gaps (`changelog-noise-spec-review.md`).
+  The reviewer's sandbox refused `git-cliff`, so its semantics claims
+  are unchecked. The coordinator confirmed F1 from `git-cliff
+  --unreleased`, which prints `Prep_release.sh`.
+- F1, F2, F3: the `mlm` postprocessor is replaced by a template rule.
+  `upper_first` applies only when the first word is all letters and not
+  `mlm`, so identifiers keep their case and the breaking marker does
+  not matter.
+- F4: hand tests add `--prepend`, breaking, `docs!:` and `doc(scope):`
+  cases.
+- F5: `docs!:` and `doc!:` are skipped too.
+- F6: AGENTS lists `build`, `style` and `revert`, and `^build` joins
+  Miscellaneous Tasks.
+- F9: AGENTS says which type an internal code change takes.
+- F7, G2-G7 become known issues. F8: the surface section names
+  `CHANGELOG.md`. Phase 14 still skipped, since the coordinator reads
+  the generated section at prep.
+- Locked. One task.
+
+### 174. changelog-noise implemented, closed out
+
+- Task 1 merged into `changelog-noise`. Gate green: fmt, 1024 tests,
+  clippy. `git-cliff --unreleased` shows no unscoped `docs:` entry and
+  prints `prep_release.sh suggests ...` lowercase.
+- The task report records every §5 hand check before and after. The
+  harness blocked `git tag`, so the fixture check used a commit range
+  with `--tag v9.9.9`. The prepend check ran as `prep_release.sh` runs
+  it and left the old sections byte-identical.
+- The template capitalizes an entry only when its first word matches
+  `^[A-Za-z]+$` and is not `mlm`.
+- Phase 13 skipped, a two-file config and docs change already checked
+  by hand. Phase 14 skipped per entry 173.
+- Spec and both reports bannered. Merged to `main`, unreleased.
 
 ## Open questions (still need answers)
 
