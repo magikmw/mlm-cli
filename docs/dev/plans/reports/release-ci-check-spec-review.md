@@ -1,5 +1,7 @@
 # release-ci-check spec review
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec: `docs/dev/specs/2026-11-02-release-ci-check.md` (draft, branch `release-ci-check` at `4f31184`).
 
 ## Scope and method

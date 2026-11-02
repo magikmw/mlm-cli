@@ -1,5 +1,7 @@
 # CI check before release — design spec
 
+> **Archived — historical changeset spec.** Superseded by `docs/dev/SPEC.md`, which folds in the decisions made here.
+
 **Baseline**: written against `main` at `d03bc0a` (`v0.5.0` + the
 `prep_release.sh` hint fix and the v0.5.0 NOTES entry, unreleased).
 **Branch**: `release-ci-check`.

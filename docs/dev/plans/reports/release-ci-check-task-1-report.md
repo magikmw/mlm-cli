@@ -1,5 +1,7 @@
 # release-ci-check Task 1 report
 
+> **Archived — historical review/report record.** Not authoritative. Current spec: `docs/dev/SPEC.md`.
+
 Spec: `docs/dev/specs/2026-11-02-release-ci-check.md` (§3, §4, §5).
 Decisions: NOTES.md entries 169-170. Review: `release-ci-check-spec-review.md`.
 

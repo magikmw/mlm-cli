@@ -10,10 +10,10 @@ Read this block at changeset start, not the log below. Update it at
 each phase close. Find log entries with `grep -n '^[0-9]\+\. '` and
 read only the one you need.
 
-- **Next entry**: 171
+- **Next entry**: 173
 - **Last release**: `v0.5.0`
 - **`main`**: `v0.5.0`
-- **Active changeset**: `release-ci-check` (locked, entry 170). Everything through `deny-check` shipped in `v0.5.0`
+- **Active changeset**: `changelog-noise` (brainstorm, entry 172). `release-ci-check` merged to `main`, unreleased. Everything through `deny-check` shipped in `v0.5.0`
 - **Possible issues**: SPEC.md §1.2a (the only list; not duplicated here)
 - **Triage rules**: "Triaging review findings" below; apply at every fold
 
@@ -25,7 +25,7 @@ Phase 0 profile (`coordinating-development`), set in entry 65:
 | Doc root | `docs/dev/` — `SPEC.md`, `NOTES.md`, `specs/`, `plans/`, `plans/reports/` |
 | Decision log | this file, numbered entries |
 | Model tier | Sonnet everywhere; escalation needs in-the-moment approval |
-| Release | `scripts/prep_release.sh` (dependency check, reversible bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running. The check needs `cargo-deny` 0.19 and the network, and pauses on a finding |
+| Release | `scripts/prep_release.sh` (dependency check, CI check on `HEAD` via a throwaway `release-check` branch, bump + changelog), then `scripts/release.sh` (irreversible tag + push); read both before running. Prep needs `cargo-deny` 0.19, the network, `gh` (authenticated), `jq` and push access, and pauses on a finding or a failed CI run |
 | Branches | one per changeset, one per task merged `--no-ff` into it, changeset to `main` at release |
 | Changeset id | topic slug, not a number |
 | Spec location | `docs/dev/specs/<date>-<slug>.md` |
@@ -2334,6 +2334,39 @@ SPEC.md and PLAN.md:
 - The user accepted that pushed pre-release commits stay public by sha
   and in the Actions tab (F9), and that prep gets no skip flag (F13).
 - Locked. One task. Phase 14 skipped.
+
+### 171. release-ci-check implemented, closed out
+
+- Task 1 merged into `release-ci-check`. Gate green: fmt, 1024 tests,
+  clippy, `bash -n`, `ci.yml` push branches `main` and `release-check`.
+  The task report records 16 hand tests against a local bare repo with
+  a stubbed `gh`, 15 of them failing on the old script.
+- Implementer choices, all inside the spec:
+  - `gh repo view` runs before any push, so a bad `gh` login gives the
+    skip prompt with nothing pushed
+  - the creation-time filter runs in `jq` on the client
+  - a leftover `release-check` is deleted silently before the push
+  - the branch is deleted before the prompt, so a stop at the prompt
+    leaves nothing behind
+- New known issue: the push time comes from the local clock. A clock
+  well ahead of GitHub's filters out the new run, so the check times
+  out into the prompt. Not fixed, since a synced clock never hits it.
+- The user skipped phase 13. Phase 14 skipped, nothing user-visible.
+- Phase-0 release row names the CI check and its prerequisites and no
+  longer calls prep reversible.
+- Spec and both reports bannered. Merged to `main`, unreleased.
+
+### 172. changelog-noise brainstorm
+
+- git-cliff puts every `docs:` commit under Documentation. Nearly all
+  are process commits (spec drafts, folds, locks, NOTES logs,
+  close-outs), so the 0.5.0 section was rewritten by hand.
+- The user chose to skip unscoped `docs:` commits and keep scoped ones.
+  A user-facing doc change is committed as `docs(readme): ...` or
+  similar and still shows.
+- Two small fixes ride along: a postprocessor so `upper_first` no longer
+  turns `mlm` into `Mlm`, and agents told to type their commits so
+  fewer entries land in "Other Changes".
 
 ## Open questions (still need answers)
 
