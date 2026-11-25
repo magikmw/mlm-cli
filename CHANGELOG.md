@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.1] - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- The bundled SQLite is now 3.54.1 (via `rusqlite` 0.41), fixing RUSTSEC-2026-0459 / CVE-2026-119375. Opening a database whose `-wal` file has a mismatched page size could return stale process memory
+
+### ⚙️ Miscellaneous Tasks
+
+- `rustix` updated to 1.1.6 (RUSTSEC-2026-0486). mlm never calls the affected xattr functions
+- A weekly CI job runs `cargo deny check advisories`
+- `prep_release.sh` checks CI on HEAD before bumping and suggests the version `release.sh` accepts
+- The changelog skips unscoped `docs:` commits and keeps `mlm` and identifiers in their original case
+
 ## [0.5.0] - 2026-10-31
 
 ### 🚀 Features
